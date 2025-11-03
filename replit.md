@@ -35,12 +35,13 @@ Preferred communication style: Simple, everyday language.
 
 **Key Frontend Features:**
 1. Dashboard with draggable widget grid for customization
-2. Account management with connection status indicators
+2. Account management with connection status indicators (separate Connect/Disconnect buttons with color-coded states)
 3. Real-time activity feed for trade execution monitoring
 4. Trading calendar with P&L visualization
 5. Position scaling controls for follower accounts
 6. Chart visualizations using Recharts library
 7. Theme toggle (light/dark mode) with localStorage persistence
+8. User profile management with bio editor (200 character limit) and profile picture upload (base64 storage, 2MB client limit)
 
 ### Backend Architecture
 
@@ -64,6 +65,8 @@ Preferred communication style: Simple, everyday language.
 
 **Current Endpoints:**
 - `POST /api/tradovate/test-connection` - Validates credentials and tests Tradovate connectivity
+- `GET /api/auth/me` - Returns current user profile including bio and profilePicture
+- `PATCH /api/user/profile` - Updates user profile (bio and/or profilePicture)
 
 ### Data Storage Solutions
 
@@ -78,6 +81,7 @@ Preferred communication style: Simple, everyday language.
    - Primary authentication entity
    - Stores username and hashed passwords
    - UUID primary keys
+   - Profile fields: bio (text, up to 200 characters) and profilePicture (base64 encoded string)
 
 2. **Accounts Table:**
    - Trading account configurations
@@ -100,9 +104,17 @@ Preferred communication style: Simple, everyday language.
 ### Authentication & Authorization
 
 **Current Implementation:**
-- Basic user authentication structure defined in schema
-- Session-based approach prepared (connect-pg-simple package included)
-- User creation and lookup methods implemented in storage layer
+- Session-based authentication with username/password login
+- User registration and login flows with protected routes
+- User context provider for accessing authenticated user data across the application
+- Profile management allowing users to add bio and profile picture
+
+**User Profile Features:**
+- Bio field with 200 character limit and real-time character counter
+- Profile picture upload with client-side 2MB size validation
+- Profile pictures stored as base64 encoded strings
+- Sidebar displays user avatar (profile picture or initial) and bio
+- Settings page provides profile editing interface
 
 **Trading Platform Authentication:**
 - Separate credential management per trading platform
