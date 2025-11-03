@@ -2,6 +2,9 @@ import { StatsCard } from "@/components/stats-card";
 import { AccountCard } from "@/components/account-card";
 import { TradeLogTable } from "@/components/trade-log-table";
 import { AddAccountDialog } from "@/components/add-account-dialog";
+import { PerformanceChart } from "@/components/performance-chart";
+import { AccountBalanceChart } from "@/components/account-balance-chart";
+import { TradeDistributionChart } from "@/components/trade-distribution-chart";
 import { Wallet, TrendingUp, Activity, Users } from "lucide-react";
 
 export default function Dashboard() {
@@ -80,6 +83,30 @@ export default function Dashboard() {
     },
   ];
 
+  const performanceData = [
+    { time: '9:00', pnl: 0 },
+    { time: '9:30', pnl: 450 },
+    { time: '10:00', pnl: 820 },
+    { time: '10:30', pnl: 1200 },
+    { time: '11:00', pnl: 1650 },
+    { time: '11:30', pnl: 2340 },
+    { time: '12:00', pnl: 2780 },
+    { time: '12:30', pnl: 2950 },
+    { time: '13:00', pnl: 3100 },
+  ];
+
+  const balanceData = mockAccounts.map(acc => ({
+    name: acc.name.replace(' Account', ''),
+    balance: acc.balance,
+    pnl: acc.pnl,
+  }));
+
+  const distributionData = [
+    { name: 'Successful', value: 124, color: 'hsl(var(--chart-2))' },
+    { name: 'Failed', value: 8, color: 'hsl(var(--destructive))' },
+    { name: 'Pending', value: 16, color: 'hsl(var(--chart-4))' },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -113,10 +140,17 @@ export default function Dashboard() {
         />
         <StatsCard
           label="Trades Copied"
-          value="3"
+          value="148"
           icon={Activity}
         />
       </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <PerformanceChart data={performanceData} title="Today's P&L Performance" />
+        <AccountBalanceChart data={balanceData} title="Account Balances & P&L" />
+      </div>
+
+      <TradeDistributionChart data={distributionData} title="Trade Execution Status" />
 
       <div>
         <h2 className="mb-4 text-xl font-semibold">Connected Accounts</h2>

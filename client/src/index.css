@@ -14,15 +14,15 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  --background: 0 0% 100%;
+  --background: 0 0% 98%;
 
-  --foreground: 220 13% 13%;
+  --foreground: 220 13% 9%;
 
   --border: 220 13% 91%;
 
-  --card: 220 13% 98%;
+  --card: 0 0% 100%;
 
-  --card-foreground: 220 13% 13%;
+  --card-foreground: 220 13% 9%;
 
   --card-border: 220 13% 93%;
 
@@ -64,16 +64,16 @@
 
   --accent-foreground: 220 10% 13%;
 
-  --destructive: 0 84% 35%;
+  --destructive: 0 72% 51%;
 
-  --destructive-foreground: 0 84% 97%;
+  --destructive-foreground: 0 0% 100%;
 
   --input: 220 13% 80%;
   --ring: 217 91% 35%;
-  --chart-1: 217 91% 35%;
-  --chart-2: 142 76% 36%;
+  --chart-1: 217 91% 45%;
+  --chart-2: 142 76% 45%;
   --chart-3: 262 83% 58%;
-  --chart-4: 24 95% 53%;
+  --chart-4: 38 92% 50%;
   --chart-5: 189 94% 43%;
 
   --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -182,9 +182,9 @@
 
   --accent-foreground: 220 10% 95%;
 
-  --destructive: 0 84% 35%;
+  --destructive: 0 72% 51%;
 
-  --destructive-foreground: 0 84% 97%;
+  --destructive-foreground: 0 0% 100%;
 
   --input: 220 13% 30%;
   --ring: 217 91% 45%;
