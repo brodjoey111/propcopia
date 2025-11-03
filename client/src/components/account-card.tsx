@@ -96,12 +96,16 @@ export function AccountCard({
           <Button
             variant="outline"
             size="sm"
-            className="flex-1"
+            className={`flex-1 ${
+              isConnected 
+                ? 'border-chart-2 text-chart-2 hover:bg-chart-2/10' 
+                : 'border-destructive text-destructive hover:bg-destructive/10'
+            }`}
             onClick={onDisconnect}
             data-testid={`button-disconnect-${id}`}
           >
             <Unplug className="mr-2 h-3 w-3" />
-            Disconnect
+            {isConnected ? 'Connected' : 'Disconnected'}
           </Button>
         </div>
       </div>
