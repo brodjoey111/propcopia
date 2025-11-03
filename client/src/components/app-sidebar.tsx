@@ -1,4 +1,4 @@
-import { LayoutDashboard, Wallet, History, Settings, Activity } from "lucide-react";
+import { LayoutDashboard, Wallet, History, Settings, Activity, Plug } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
   Sidebar,
@@ -33,6 +33,11 @@ const menuItems = [
     title: "Live Activity",
     url: "/activity",
     icon: Activity,
+  },
+  {
+    title: "Test Connection",
+    url: "/test-connection",
+    icon: Plug,
   },
   {
     title: "Settings",

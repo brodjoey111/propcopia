@@ -12,6 +12,7 @@ import Accounts from "@/pages/accounts";
 import Trades from "@/pages/trades";
 import Activity from "@/pages/activity";
 import Settings from "@/pages/settings";
+import TestConnection from "@/pages/test-connection";
 
 function Router() {
   return (
@@ -21,6 +22,7 @@ function Router() {
       <Route path="/trades" component={Trades} />
       <Route path="/activity" component={Activity} />
       <Route path="/settings" component={Settings} />
+      <Route path="/test-connection" component={TestConnection} />
       <Route component={NotFound} />
     </Switch>
   );
