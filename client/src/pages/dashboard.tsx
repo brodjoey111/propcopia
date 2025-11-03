@@ -5,6 +5,7 @@ import { AddAccountDialog } from "@/components/add-account-dialog";
 import { PerformanceChart } from "@/components/performance-chart";
 import { AccountBalanceChart } from "@/components/account-balance-chart";
 import { TradeDistributionChart } from "@/components/trade-distribution-chart";
+import { DraggableDashboardGrid } from "@/components/draggable-dashboard-grid";
 import { Wallet, TrendingUp, Activity, Users } from "lucide-react";
 
 export default function Dashboard() {
@@ -107,19 +108,11 @@ export default function Dashboard() {
     { name: 'Pending', value: 16, color: 'hsl(var(--chart-4))' },
   ];
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold">Dashboard</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Monitor your trading accounts and activity
-          </p>
-        </div>
-        <AddAccountDialog onAdd={(account) => console.log('Account added:', account)} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+  // Stats cards sections
+  const statsCards = [
+    {
+      id: 'stat-balance',
+      component: (
         <StatsCard
           label="Total Balance"
           value="$125,340"
@@ -127,43 +120,114 @@ export default function Dashboard() {
           icon={Wallet}
           testId="text-total-balance"
         />
+      ),
+    },
+    {
+      id: 'stat-accounts',
+      component: (
         <StatsCard
           label="Active Accounts"
           value="3"
           icon={Users}
         />
+      ),
+    },
+    {
+      id: 'stat-pnl',
+      component: (
         <StatsCard
           label="Today's P&L"
           value="$3,100"
           change={8.4}
           icon={TrendingUp}
         />
+      ),
+    },
+    {
+      id: 'stat-trades',
+      component: (
         <StatsCard
           label="Trades Copied"
           value="148"
           icon={Activity}
         />
+      ),
+    },
+  ];
+
+  // Chart sections
+  const chartSections = [
+    {
+      id: 'chart-performance',
+      component: <PerformanceChart data={performanceData} title="Today's P&L Performance" />,
+    },
+    {
+      id: 'chart-balance',
+      component: <AccountBalanceChart data={balanceData} title="Account Balances & P&L" />,
+    },
+  ];
+
+  // Account card sections
+  const accountSections = mockAccounts.map((account) => ({
+    id: `account-${account.id}`,
+    component: (
+      <AccountCard
+        key={account.id}
+        {...account}
+        onConfigure={() => console.log(`Configure ${account.name}`)}
+        onDisconnect={() => console.log(`Disconnect ${account.name}`)}
+      />
+    ),
+  }));
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold">Dashboard</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Monitor your trading accounts and activity • Drag sections to customize layout
+          </p>
+        </div>
+        <AddAccountDialog onAdd={(account) => console.log('Account added:', account)} />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <PerformanceChart data={performanceData} title="Today's P&L Performance" />
-        <AccountBalanceChart data={balanceData} title="Account Balances & P&L" />
+      <div>
+        <DraggableDashboardGrid
+          sections={statsCards}
+          gridClassName="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4"
+          storageKey="dashboard-stats-layout"
+        />
       </div>
 
-      <TradeDistributionChart data={distributionData} title="Trade Execution Status" />
+      <div>
+        <DraggableDashboardGrid
+          sections={chartSections}
+          gridClassName="grid grid-cols-1 gap-6 lg:grid-cols-2"
+          storageKey="dashboard-charts-layout"
+        />
+      </div>
+
+      <div>
+        <DraggableDashboardGrid
+          sections={[
+            {
+              id: 'distribution-chart',
+              component: <TradeDistributionChart data={distributionData} title="Trade Execution Status" />,
+            },
+          ]}
+          gridClassName="grid grid-cols-1"
+          storageKey="dashboard-distribution-layout"
+        />
+      </div>
 
       <div>
         <h2 className="mb-4 text-xl font-semibold">Connected Accounts</h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {mockAccounts.map((account) => (
-            <AccountCard
-              key={account.id}
-              {...account}
-              onConfigure={() => console.log(`Configure ${account.name}`)}
-              onDisconnect={() => console.log(`Disconnect ${account.name}`)}
-            />
-          ))}
-        </div>
+        <DraggableDashboardGrid
+          sections={accountSections}
+          gridClassName="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
+          storageKey="dashboard-accounts-layout"
+        />
       </div>
 
       <div>
