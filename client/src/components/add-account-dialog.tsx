@@ -55,7 +55,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
         <DialogHeader>
           <DialogTitle>Add Trading Account</DialogTitle>
           <DialogDescription>
-            Connect a new NinjaTrader or Tradovate account to start copying trades.
+            Add a simulated account to start copying trades. API credentials are optional and can be added later for live trading.
           </DialogDescription>
         </DialogHeader>
 
@@ -96,28 +96,26 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="apiKey">API Key</Label>
+                <Label htmlFor="apiKey">API Key <span className="text-xs text-muted-foreground">(Optional)</span></Label>
                 <Input
                   id="apiKey"
                   type="password"
-                  placeholder="Enter your API key"
+                  placeholder="Optional - for live trading"
                   value={formData.apiKey}
                   onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
                   data-testid="input-api-key"
-                  required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="apiSecret">API Secret</Label>
+                <Label htmlFor="apiSecret">API Secret <span className="text-xs text-muted-foreground">(Optional)</span></Label>
                 <Input
                   id="apiSecret"
                   type="password"
-                  placeholder="Enter your API secret"
+                  placeholder="Optional - for live trading"
                   value={formData.apiSecret}
                   onChange={(e) => setFormData({ ...formData, apiSecret: e.target.value })}
                   data-testid="input-api-secret"
-                  required
                 />
               </div>
 
@@ -126,7 +124,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
                   Cancel
                 </Button>
                 <Button type="submit" data-testid="button-save-account">
-                  Connect Account
+                  Add Account
                 </Button>
               </DialogFooter>
             </form>
