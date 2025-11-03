@@ -55,9 +55,9 @@ export default function TestConnection() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold">Test Tradovate Connection</h1>
+        <h1 className="text-3xl font-semibold">Test Live Connection <Badge variant="secondary">Optional</Badge></h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Verify your Tradovate API credentials and connection
+          Advanced: Test your Tradovate API credentials for live trading. Not required for simulated trading.
         </p>
       </div>
 
