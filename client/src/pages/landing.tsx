@@ -13,6 +13,7 @@ import {
   Globe,
   CheckCircle2,
   ArrowRight,
+  Check,
 } from "lucide-react";
 
 export default function Landing() {
@@ -69,6 +70,61 @@ export default function Landing() {
     "Comprehensive trade history and analytics",
     "Customizable position scaling per account",
     "Real-time connection status monitoring",
+  ];
+
+  const pricingTiers = [
+    {
+      name: "Starter",
+      price: "$49",
+      period: "/month",
+      description: "Perfect for individual traders getting started",
+      features: [
+        "1 Master Account",
+        "Up to 3 Follower Accounts",
+        "Real-time trade copying",
+        "Position scaling controls",
+        "Basic performance tracking",
+        "Email support",
+      ],
+      cta: "Start Free Trial",
+      popular: false,
+    },
+    {
+      name: "Professional",
+      price: "$149",
+      period: "/month",
+      description: "For active traders managing multiple accounts",
+      features: [
+        "1 Master Account",
+        "Up to 10 Follower Accounts",
+        "Real-time trade copying",
+        "Advanced position scaling",
+        "Comprehensive analytics",
+        "Custom trade filters",
+        "Priority email support",
+        "Trade history & reports",
+      ],
+      cta: "Start Free Trial",
+      popular: true,
+    },
+    {
+      name: "Enterprise",
+      price: "$399",
+      period: "/month",
+      description: "For professional trading firms",
+      features: [
+        "Unlimited Master Accounts",
+        "Unlimited Follower Accounts",
+        "Advanced position scaling",
+        "Full analytics & reporting",
+        "Custom trade strategies",
+        "API access",
+        "Dedicated account manager",
+        "24/7 priority support",
+      ],
+      cta: "Contact Sales",
+      popular: false,
+    },
   ];
 
   return (
@@ -205,6 +261,81 @@ export default function Landing() {
                 </p>
               </Card>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing Section */}
+      <section className="relative">
+        <div className="mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8">
+          <div className="mx-auto mb-16 max-w-2xl text-center">
+            <h2 className="mb-4 text-3xl font-bold tracking-tight sm:text-4xl" data-testid="heading-pricing">
+              Simple, Transparent Pricing
+            </h2>
+            <p className="text-lg text-muted-foreground" data-testid="text-pricing-description">
+              Choose the plan that fits your trading needs. All plans include a 14-day free trial.
+            </p>
+          </div>
+          <div className="grid gap-8 lg:grid-cols-3">
+            {pricingTiers.map((tier) => (
+              <Card
+                key={tier.name}
+                className={`relative flex flex-col ${tier.popular ? "border-primary shadow-lg" : ""}`}
+                data-testid={`card-pricing-${tier.name.toLowerCase()}`}
+              >
+                {tier.popular && (
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                    <Badge className="px-3 py-1" data-testid="badge-pricing-popular">
+                      Most Popular
+                    </Badge>
+                  </div>
+                )}
+
+                <div className="space-y-4 p-6 pb-8">
+                  <h3 className="text-2xl font-semibold" data-testid={`text-pricing-tier-${tier.name.toLowerCase()}`}>
+                    {tier.name}
+                  </h3>
+                  <p className="text-sm text-muted-foreground" data-testid={`text-pricing-desc-${tier.name.toLowerCase()}`}>
+                    {tier.description}
+                  </p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-4xl font-bold" data-testid={`text-pricing-price-${tier.name.toLowerCase()}`}>
+                      {tier.price}
+                    </span>
+                    <span className="text-muted-foreground">{tier.period}</span>
+                  </div>
+                </div>
+
+                <div className="flex-1 space-y-4 p-6 pt-0">
+                  <ul className="space-y-3">
+                    {tier.features.map((feature, index) => (
+                      <li
+                        key={index}
+                        className="flex items-start gap-2"
+                        data-testid={`pricing-feature-${tier.name.toLowerCase()}-${index}`}
+                      >
+                        <Check className="h-5 w-5 shrink-0 text-primary" />
+                        <span className="text-sm">{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="p-6 pt-0">
+                  <Button
+                    className="w-full"
+                    variant={tier.popular ? "default" : "outline"}
+                    size="lg"
+                    data-testid={`button-pricing-cta-${tier.name.toLowerCase()}`}
+                    asChild
+                  >
+                    <Link href="/auth">
+                      {tier.cta}
+                    </Link>
+                  </Button>
+                </div>
+              </Card>
+            ))}
           </div>
         </div>
       </section>
