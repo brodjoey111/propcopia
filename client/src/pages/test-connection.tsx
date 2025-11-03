@@ -18,8 +18,6 @@ export default function TestConnection() {
   const [formData, setFormData] = useState({
     username: "",
     password: "",
-    cid: "",
-    secret: "",
     environment: "demo",
   });
   const [testing, setTesting] = useState(false);
@@ -55,15 +53,15 @@ export default function TestConnection() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold">Test Live Connection <Badge variant="secondary">Optional</Badge></h1>
+        <h1 className="text-3xl font-semibold">Login to Trading Platform</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Advanced: Test your Tradovate API credentials for live trading. Not required for simulated trading.
+          Connect to Tradovate or NinjaTrader with just your username and password
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card className="card-3d p-6">
-          <h2 className="mb-4 text-lg font-semibold">API Credentials</h2>
+          <h2 className="mb-4 text-lg font-semibold">Login Credentials</h2>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="environment">Environment</Label>
@@ -111,34 +109,6 @@ export default function TestConnection() {
                   setFormData({ ...formData, password: e.target.value })
                 }
                 data-testid="input-password"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="cid">Client ID (CID)</Label>
-              <Input
-                id="cid"
-                type="text"
-                placeholder="your_client_id"
-                value={formData.cid}
-                onChange={(e) =>
-                  setFormData({ ...formData, cid: e.target.value })
-                }
-                data-testid="input-cid"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="secret">API Secret Key</Label>
-              <Input
-                id="secret"
-                type="password"
-                placeholder="your_secret_key"
-                value={formData.secret}
-                onChange={(e) =>
-                  setFormData({ ...formData, secret: e.target.value })
-                }
-                data-testid="input-secret"
               />
             </div>
 

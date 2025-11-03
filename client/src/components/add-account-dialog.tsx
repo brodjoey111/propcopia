@@ -31,8 +31,8 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
   const [formData, setFormData] = useState({
     name: "",
     accountType: "follower",
-    apiKey: "",
-    apiSecret: "",
+    username: "",
+    password: "",
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -40,7 +40,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
     console.log("Adding account:", { ...formData, platform });
     onAdd?.({ ...formData, platform });
     setOpen(false);
-    setFormData({ name: "", accountType: "follower", apiKey: "", apiSecret: "" });
+    setFormData({ name: "", accountType: "follower", username: "", password: "" });
   };
 
   return (
@@ -55,7 +55,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
         <DialogHeader>
           <DialogTitle>Add Trading Account</DialogTitle>
           <DialogDescription>
-            Add a simulated account to start copying trades. API credentials are optional and can be added later for live trading.
+            Add a simulated account or connect to your live trading platform
           </DialogDescription>
         </DialogHeader>
 
@@ -96,26 +96,26 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="apiKey">API Key <span className="text-xs text-muted-foreground">(Optional)</span></Label>
+                <Label htmlFor="username">Username <span className="text-xs text-muted-foreground">(Optional - for live trading)</span></Label>
                 <Input
-                  id="apiKey"
-                  type="password"
-                  placeholder="Optional - for live trading"
-                  value={formData.apiKey}
-                  onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-                  data-testid="input-api-key"
+                  id="username"
+                  type="text"
+                  placeholder="Optional - your platform username"
+                  value={formData.username}
+                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  data-testid="input-username"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="apiSecret">API Secret <span className="text-xs text-muted-foreground">(Optional)</span></Label>
+                <Label htmlFor="password">Password <span className="text-xs text-muted-foreground">(Optional - for live trading)</span></Label>
                 <Input
-                  id="apiSecret"
+                  id="password"
                   type="password"
-                  placeholder="Optional - for live trading"
-                  value={formData.apiSecret}
-                  onChange={(e) => setFormData({ ...formData, apiSecret: e.target.value })}
-                  data-testid="input-api-secret"
+                  placeholder="Optional - your platform password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  data-testid="input-password"
                 />
               </div>
 

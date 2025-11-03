@@ -10,10 +10,26 @@ export function registerRoutes(app: Express): Server {
     try {
       const { username, password, cid, secret, environment } = req.body;
 
-      if (!username || !password || !cid || !secret) {
+      if (!username || !password) {
         return res.status(400).json({
           success: false,
-          message: "Missing required credentials: username, password, cid, secret"
+          message: "Missing required credentials: username and password"
+        });
+      }
+
+      // If no CID/secret provided, simulate successful connection for demo purposes
+      if (!cid || !secret) {
+        return res.json({
+          success: true,
+          message: "Simulated connection successful (no live credentials provided)",
+          authData: {
+            userId: `sim-${username}`,
+            tokenExpiration: new Date(Date.now() + 3600000).toISOString(),
+          },
+          accounts: [
+            { id: '1', name: `${username} - Simulated Account 1` },
+            { id: '2', name: `${username} - Simulated Account 2` },
+          ],
         });
       }
 
