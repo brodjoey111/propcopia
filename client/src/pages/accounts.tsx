@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { AccountCard } from "@/components/account-card";
 import { AddAccountDialog } from "@/components/add-account-dialog";
 import { EmptyState } from "@/components/empty-state";
@@ -5,7 +6,7 @@ import { Wallet } from "lucide-react";
 
 export default function Accounts() {
   // todo: remove mock functionality
-  const mockAccounts = [
+  const initialMockAccounts = [
     {
       id: '1',
       name: 'Main Trading',
@@ -51,7 +52,24 @@ export default function Accounts() {
     },
   ];
 
-  const hasAccounts = mockAccounts.length > 0;
+  const [accounts, setAccounts] = useState(initialMockAccounts);
+
+  const handleAddAccount = (newAccount: any) => {
+    const accountToAdd = {
+      id: `${accounts.length + 1}`,
+      name: newAccount.name,
+      platform: newAccount.platform,
+      accountType: newAccount.accountType as 'master' | 'follower',
+      isConnected: false,
+      balance: 0,
+      openPositions: 0,
+      pnl: 0,
+      ...(newAccount.accountType === 'follower' && { positionScaling: 100 }),
+    };
+    setAccounts([...accounts, accountToAdd] as any);
+  };
+
+  const hasAccounts = accounts.length > 0;
 
   return (
     <div className="space-y-6">
@@ -63,13 +81,13 @@ export default function Accounts() {
           </p>
         </div>
         {hasAccounts && (
-          <AddAccountDialog onAdd={(account) => console.log('Account added:', account)} />
+          <AddAccountDialog onAdd={handleAddAccount} />
         )}
       </div>
 
       {hasAccounts ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {mockAccounts.map((account) => (
+          {accounts.map((account) => (
             <AccountCard
               key={account.id}
               {...account}
