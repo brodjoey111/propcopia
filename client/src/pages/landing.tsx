@@ -91,7 +91,7 @@ export default function Landing() {
               funded accounts and trading combines.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-4">
-              <Link href="/dashboard">
+              <Link href="/auth">
                 <Button size="lg" className="gap-2" data-testid="button-get-started">
                   Get Started
                   <ArrowRight className="h-4 w-4" />
@@ -222,15 +222,15 @@ export default function Landing() {
                 credit card required.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-4">
-                <Link href="/dashboard">
+                <Link href="/auth">
                   <Button size="lg" className="gap-2" data-testid="button-cta-primary">
-                    Launch Dashboard
+                    Get Started Now
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Link>
-                <Link href="/accounts">
+                <Link href="/test-connection">
                   <Button size="lg" variant="outline" data-testid="button-cta-secondary">
-                    Manage Accounts
+                    Test Connection
                   </Button>
                 </Link>
               </div>

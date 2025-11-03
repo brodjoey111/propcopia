@@ -1,14 +1,46 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import MemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
+
+// Session type definitions
+declare module "express-session" {
+  interface SessionData {
+    userId: string;
+    username: string;
+  }
+}
 
 declare module 'http' {
   interface IncomingMessage {
     rawBody: unknown
   }
 }
+
+// Session configuration
+const MemStore = MemoryStore(session);
+const sessionSecret = process.env.SESSION_SECRET || 'dev-secret-please-change-in-production';
+
+app.use(
+  session({
+    secret: sessionSecret,
+    resave: false,
+    saveUninitialized: false,
+    store: new MemStore({
+      checkPeriod: 86400000, // prune expired entries every 24h
+    }),
+    cookie: {
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+    },
+  })
+);
+
 app.use(express.json({
   verify: (req, _res, buf) => {
     req.rawBody = buf;

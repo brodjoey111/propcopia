@@ -7,8 +7,11 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CandlestickBackground } from "@/components/candlestick-background";
+import { UserProvider } from "@/contexts/user-context";
+import { ProtectedRoute } from "@/components/protected-route";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
+import Auth from "@/pages/auth";
 import Dashboard from "@/pages/dashboard";
 import Accounts from "@/pages/accounts";
 import Trades from "@/pages/trades";
@@ -37,42 +40,48 @@ function AppLayout() {
   };
 
   return (
-    <SidebarProvider style={style as React.CSSProperties}>
-      <div className="flex h-screen w-full">
-        <AppSidebar />
-        <div className="flex flex-1 flex-col">
-          <header className="flex items-center justify-between border-b p-4">
-            <SidebarTrigger data-testid="button-sidebar-toggle" />
-            <ThemeToggle />
-          </header>
-          <main className="flex-1 overflow-auto p-6">
-            <div className="mx-auto max-w-7xl">
-              <AppRouter />
-            </div>
-          </main>
+    <ProtectedRoute>
+      <SidebarProvider style={style as React.CSSProperties}>
+        <div className="flex h-screen w-full">
+          <AppSidebar />
+          <div className="flex flex-1 flex-col">
+            <header className="flex items-center justify-between border-b p-4">
+              <SidebarTrigger data-testid="button-sidebar-toggle" />
+              <ThemeToggle />
+            </header>
+            <main className="flex-1 overflow-auto p-6">
+              <div className="mx-auto max-w-7xl">
+                <AppRouter />
+              </div>
+            </main>
+          </div>
         </div>
-      </div>
-    </SidebarProvider>
+      </SidebarProvider>
+    </ProtectedRoute>
   );
 }
 
 export default function App() {
   const [location] = useLocation();
-  const isLandingPage = location === "/";
+  const isPublicPage = location === "/" || location === "/auth";
 
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        {isLandingPage && <CandlestickBackground />}
-        {isLandingPage ? (
-          <Landing />
-        ) : (
-          <>
-            <CandlestickBackground />
-            <AppLayout />
-          </>
-        )}
-        <Toaster />
+        <UserProvider>
+          {isPublicPage && <CandlestickBackground />}
+          {location === "/" ? (
+            <Landing />
+          ) : location === "/auth" ? (
+            <Auth />
+          ) : (
+            <>
+              <CandlestickBackground />
+              <AppLayout />
+            </>
+          )}
+          <Toaster />
+        </UserProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

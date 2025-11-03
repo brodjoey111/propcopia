@@ -1,5 +1,7 @@
-import { LayoutDashboard, Wallet, History, Settings, Activity, Plug } from "lucide-react";
+import { LayoutDashboard, Wallet, History, Settings, Activity, Plug, LogOut, User } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { useUser } from "@/contexts/user-context";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -48,6 +50,7 @@ const menuItems = [
 
 export function AppSidebar() {
   const [location] = useLocation();
+  const { user, logout } = useUser();
 
   return (
     <Sidebar>
@@ -81,11 +84,27 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="p-4">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <div className="h-2 w-2 rounded-full bg-status-online" />
-          <span>All systems operational</span>
+      <SidebarFooter className="space-y-2 p-4">
+        <div className="flex items-center gap-2 rounded-lg border p-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+            <User className="h-4 w-4" />
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <p className="truncate text-sm font-medium" data-testid="text-username">
+              {user?.username || "User"}
+            </p>
+            <p className="text-xs text-muted-foreground">Trader</p>
+          </div>
         </div>
+        <Button
+          variant="outline"
+          className="w-full gap-2"
+          onClick={logout}
+          data-testid="button-logout"
+        >
+          <LogOut className="h-4 w-4" />
+          Logout
+        </Button>
       </SidebarFooter>
     </Sidebar>
   );
