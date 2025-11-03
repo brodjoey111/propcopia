@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Unplug } from "lucide-react";
+import { Settings, Unplug, Globe } from "lucide-react";
 
 interface AccountCardProps {
   id: string;
@@ -15,6 +15,7 @@ interface AccountCardProps {
   positionScaling?: number;
   maxContracts?: number;
   blockedTickers?: string[];
+  riskMode?: 'global' | 'custom';
   onConfigure?: React.ReactNode;
   onConnect?: () => void;
   onDisconnect?: () => void;
@@ -32,23 +33,31 @@ export function AccountCard({
   positionScaling,
   maxContracts,
   blockedTickers = [],
+  riskMode,
   onConfigure,
   onConnect,
   onDisconnect,
 }: AccountCardProps) {
   const isPnlPositive = pnl >= 0;
   const hasRestrictions = maxContracts !== undefined || blockedTickers.length > 0;
+  const isUsingGlobalSettings = riskMode === 'global';
 
   return (
     <Card className="card-3d shimmer p-4" data-testid={`card-account-${id}`}>
       <div className="space-y-4">
         <div className="flex items-start justify-between">
           <div className="flex-1">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="font-semibold" data-testid={`text-account-name-${id}`}>{name}</h3>
               <Badge variant={accountType === "master" ? "default" : "secondary"} className="text-xs">
                 {accountType}
               </Badge>
+              {isUsingGlobalSettings && (
+                <Badge variant="outline" className="text-xs gap-1" data-testid={`badge-global-mode-${id}`}>
+                  <Globe className="h-3 w-3" />
+                  Global
+                </Badge>
+              )}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">{platform}</p>
           </div>

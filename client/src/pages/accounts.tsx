@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AccountCard } from "@/components/account-card";
 import { AddAccountDialog } from "@/components/add-account-dialog";
 import { ConfigureAccountDialog } from "@/components/configure-account-dialog";
+import { GlobalRiskSettingsDialog } from "@/components/global-risk-settings-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { Wallet } from "lucide-react";
 
@@ -27,6 +28,7 @@ export default function Accounts() {
       balance: 28900,
       openPositions: 3,
       pnl: 620,
+      riskMode: 'custom' as const,
       positionScaling: 50,
       maxContracts: 10,
       blockedTickers: ['ES', 'NQ'],
@@ -40,6 +42,7 @@ export default function Accounts() {
       balance: 44100,
       openPositions: 3,
       pnl: 1240,
+      riskMode: 'global' as const,
       positionScaling: 100,
       blockedTickers: [] as string[],
     },
@@ -52,6 +55,7 @@ export default function Accounts() {
       balance: 15000,
       openPositions: 0,
       pnl: -230,
+      riskMode: 'global' as const,
       positionScaling: 75,
       maxContracts: 5,
       blockedTickers: ['YM'],
@@ -59,6 +63,11 @@ export default function Accounts() {
   ];
 
   const [accounts, setAccounts] = useState(initialMockAccounts);
+  const [globalSettings, setGlobalSettings] = useState({
+    positionScaling: 100,
+    maxContracts: undefined as number | undefined,
+    blockedTickers: [] as string[],
+  });
 
   const handleAddAccount = (newAccount: any) => {
     const accountToAdd = {
@@ -92,6 +101,7 @@ export default function Accounts() {
   };
 
   const handleConfigure = (accountId: string, config: {
+    riskMode: 'global' | 'custom';
     positionScaling: number;
     maxContracts: number | null;
     blockedTickers: string[];
@@ -101,12 +111,40 @@ export default function Accounts() {
         return account;
       }
       return { 
-        ...account, 
+        ...account,
+        riskMode: config.riskMode as 'global' | 'custom',
         positionScaling: config.positionScaling,
         maxContracts: config.maxContracts || undefined,
         blockedTickers: config.blockedTickers,
-      };
+      } as any;
     }));
+  };
+
+  const handleGlobalSettingsUpdate = (config: {
+    positionScaling: number;
+    maxContracts: number | null;
+    blockedTickers: string[];
+  }) => {
+    setGlobalSettings({
+      positionScaling: config.positionScaling,
+      maxContracts: config.maxContracts || undefined,
+      blockedTickers: config.blockedTickers,
+    });
+  };
+
+  const getEffectiveSettings = (account: any) => {
+    if (account.accountType !== 'follower') return account;
+    
+    if (account.riskMode === 'global') {
+      return {
+        ...account,
+        positionScaling: globalSettings.positionScaling,
+        maxContracts: globalSettings.maxContracts,
+        blockedTickers: globalSettings.blockedTickers,
+      };
+    }
+    
+    return account;
   };
 
   const hasAccounts = accounts.length > 0;
@@ -121,34 +159,48 @@ export default function Accounts() {
           </p>
         </div>
         {hasAccounts && (
-          <AddAccountDialog onAdd={handleAddAccount} />
+          <div className="flex gap-2">
+            <GlobalRiskSettingsDialog
+              positionScaling={globalSettings.positionScaling}
+              maxContracts={globalSettings.maxContracts}
+              blockedTickers={globalSettings.blockedTickers}
+              onSave={handleGlobalSettingsUpdate}
+            />
+            <AddAccountDialog onAdd={handleAddAccount} />
+          </div>
         )}
       </div>
 
       {hasAccounts ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {accounts.map((account) => (
-            <AccountCard
-              key={account.id}
-              {...account}
-              onConfigure={
-                account.accountType === 'follower'
-                  ? (
-                      <ConfigureAccountDialog
-                        accountId={account.id}
-                        accountName={account.name}
-                        positionScaling={account.positionScaling}
-                        maxContracts={account.maxContracts}
-                        blockedTickers={account.blockedTickers || []}
-                        onSave={(config) => handleConfigure(account.id, config)}
-                      />
-                    )
-                  : undefined
-              }
-              onConnect={() => handleConnect(account.id)}
-              onDisconnect={() => handleDisconnect(account.id)}
-            />
-          ))}
+          {accounts.map((account) => {
+            const effectiveAccount = getEffectiveSettings(account);
+            return (
+              <AccountCard
+                key={account.id}
+                {...effectiveAccount}
+                riskMode={account.riskMode}
+                onConfigure={
+                  account.accountType === 'follower'
+                    ? (
+                        <ConfigureAccountDialog
+                          accountId={account.id}
+                          accountName={account.name}
+                          riskMode={account.riskMode || 'global'}
+                          positionScaling={account.positionScaling}
+                          maxContracts={account.maxContracts}
+                          blockedTickers={account.blockedTickers || []}
+                          globalSettings={globalSettings}
+                          onSave={(config) => handleConfigure(account.id, config)}
+                        />
+                      )
+                    : undefined
+                }
+                onConnect={() => handleConnect(account.id)}
+                onDisconnect={() => handleDisconnect(account.id)}
+              />
+            );
+          })}
         </div>
       ) : (
         <EmptyState

@@ -9,6 +9,9 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   bio: text("bio"),
   profilePicture: text("profile_picture"),
+  globalPositionScaling: integer("global_position_scaling").default(100),
+  globalMaxContracts: integer("global_max_contracts"),
+  globalBlockedTickers: text("global_blocked_tickers").array(),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -21,8 +24,15 @@ export const updateUserProfileSchema = createInsertSchema(users).pick({
   profilePicture: true,
 });
 
+export const updateGlobalRiskSettingsSchema = createInsertSchema(users).pick({
+  globalPositionScaling: true,
+  globalMaxContracts: true,
+  globalBlockedTickers: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type UpdateUserProfile = z.infer<typeof updateUserProfileSchema>;
+export type UpdateGlobalRiskSettings = z.infer<typeof updateGlobalRiskSettingsSchema>;
 export type User = typeof users.$inferSelect;
 
 export const accounts = pgTable("accounts", {
@@ -34,6 +44,7 @@ export const accounts = pgTable("accounts", {
   apiSecret: text("api_secret"),
   isConnected: boolean("is_connected").default(false),
   balance: decimal("balance", { precision: 12, scale: 2 }),
+  riskMode: text("risk_mode").default("global"),
   positionScaling: integer("position_scaling").default(100),
   maxContracts: integer("max_contracts"),
   blockedTickers: text("blocked_tickers").array(),
