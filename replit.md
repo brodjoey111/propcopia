@@ -38,16 +38,38 @@ Preferred communication style: Simple, everyday language.
 2. Account management with connection status indicators (separate Connect/Disconnect buttons with color-coded states)
 3. Real-time activity feed for trade execution monitoring
 4. Trading calendar with P&L visualization
-5. Position scaling controls for follower accounts
+5. **Enhanced position scaling controls for follower accounts:**
+   - Position scaling percentage (10-200%, adjustable via slider)
+   - Maximum contracts per trade limit (optional, prevents over-leveraging)
+   - Blocked ticker symbols (blacklist specific instruments)
+   - Real-time validation with visual feedback
+   - Configuration dialog with comprehensive controls
 6. Chart visualizations using Recharts library
 7. Theme toggle (light/dark mode) with localStorage persistence
 8. User profile management with bio editor (200 character limit) and profile picture upload (base64 storage, 2MB client limit)
 9. Public pricing page with three subscription tiers (Starter, Professional, Enterprise) and FAQ section
+10. Landing page with integrated pricing section
 
 **Public Pages:**
-- Landing page (/) - Marketing homepage
+- Landing page (/) - Marketing homepage with integrated pricing section
 - Authentication page (/auth) - Login and signup with link to pricing
 - Pricing page (/pricing) - Three subscription tiers with features, pricing, and FAQ
+
+**Position Scaling Configuration:**
+- **ConfigureAccountDialog Component** - Comprehensive configuration dialog for follower accounts
+  - Slider control for position scaling (10-200% in 5% increments)
+  - Optional max contracts input with strict validation (positive integers only)
+  - Ticker blacklist with add/remove functionality
+  - Real-time validation: rejects zero, negatives, decimals, exponential notation, leading zeros
+  - Visual feedback: error messages, red borders, disabled save button
+  - Enter key support for adding tickers
+  - Automatic uppercase conversion for ticker symbols
+  - Duplicate ticker prevention
+- **Account Card Display** - Visual indicators for configured restrictions
+  - "Max X contracts" badge when limit is set
+  - "X blocked ticker(s)" badge when tickers are blacklisted
+  - Scaling percentage display for all follower accounts
+  - Only follower accounts can be configured (master accounts disabled)
 
 ### Backend Architecture
 
@@ -95,6 +117,10 @@ Preferred communication style: Simple, everyday language.
    - API credentials (encrypted keys and secrets)
    - Connection status and last sync timestamp
    - Balance tracking and position scaling multipliers
+   - **Enhanced position control fields:**
+     - `positionScaling`: integer (default 100) - percentage scaling 10-200%
+     - `maxContracts`: integer (nullable) - maximum contracts per trade limit
+     - `blockedTickers`: text array - list of blocked ticker symbols
 
 3. **Trades Table:**
    - Trade execution history
