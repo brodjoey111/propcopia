@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { CandlestickBackground } from "@/components/candlestick-background";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Accounts from "@/pages/accounts";
@@ -37,6 +38,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        <CandlestickBackground />
         <SidebarProvider style={style as React.CSSProperties}>
           <div className="flex h-screen w-full">
             <AppSidebar />
