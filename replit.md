@@ -42,6 +42,12 @@ Preferred communication style: Simple, everyday language.
 6. Chart visualizations using Recharts library
 7. Theme toggle (light/dark mode) with localStorage persistence
 8. User profile management with bio editor (200 character limit) and profile picture upload (base64 storage, 2MB client limit)
+9. Public pricing page with three subscription tiers (Starter, Professional, Enterprise) and FAQ section
+
+**Public Pages:**
+- Landing page (/) - Marketing homepage
+- Authentication page (/auth) - Login and signup with link to pricing
+- Pricing page (/pricing) - Three subscription tiers with features, pricing, and FAQ
 
 ### Backend Architecture
 
