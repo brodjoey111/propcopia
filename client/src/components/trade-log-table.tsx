@@ -52,7 +52,7 @@ export function TradeLogTable({ trades }: TradeLogTableProps) {
   };
 
   return (
-    <Card>
+    <Card className="card-3d">
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>

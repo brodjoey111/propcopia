@@ -24,7 +24,7 @@ export function PerformanceChart({ data, title }: PerformanceChartProps) {
   };
 
   return (
-    <Card className="p-6">
+    <Card className="card-3d p-6">
       <h3 className="mb-4 font-semibold">{title}</h3>
       <ResponsiveContainer width="100%" height={300}>
         <AreaChart data={data}>

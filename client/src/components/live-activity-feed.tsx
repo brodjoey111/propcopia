@@ -31,7 +31,7 @@ export function LiveActivityFeed({ activities }: LiveActivityFeedProps) {
   };
 
   return (
-    <Card className="p-4">
+    <Card className="card-3d p-4">
       <div className="mb-4 flex items-center gap-2">
         <Activity className="h-4 w-4" />
         <h3 className="font-semibold">Live Activity</h3>

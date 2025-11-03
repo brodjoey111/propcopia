@@ -37,7 +37,7 @@ export default function Settings() {
 
         <div>
           <h2 className="mb-4 text-xl font-semibold">Trade Copying Rules</h2>
-          <Card className="p-6">
+          <Card className="card-3d p-6">
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
@@ -84,7 +84,7 @@ export default function Settings() {
 
         <div>
           <h2 className="mb-4 text-xl font-semibold">Notifications</h2>
-          <Card className="p-6">
+          <Card className="card-3d p-6">
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">

@@ -62,7 +62,7 @@ export default function TestConnection() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card className="p-6">
+        <Card className="card-3d p-6">
           <h2 className="mb-4 text-lg font-semibold">API Credentials</h2>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -161,7 +161,7 @@ export default function TestConnection() {
         </Card>
 
         <div className="space-y-6">
-          <Card className="p-6">
+          <Card className="card-3d p-6">
             <h2 className="mb-4 text-lg font-semibold">Connection Status</h2>
             {!result ? (
               <p className="text-center text-sm text-muted-foreground py-8">
@@ -227,7 +227,7 @@ export default function TestConnection() {
             )}
           </Card>
 
-          <Card className="p-6">
+          <Card className="card-3d p-6">
             <h2 className="mb-4 text-lg font-semibold">Requirements</h2>
             <ul className="space-y-2 text-sm">
               <li className="flex items-start gap-2">

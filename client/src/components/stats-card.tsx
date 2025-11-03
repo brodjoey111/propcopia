@@ -14,7 +14,7 @@ export function StatsCard({ label, value, change, icon: Icon, testId }: StatsCar
   const isPositive = change !== undefined && change >= 0;
 
   return (
-    <Card className="p-6">
+    <Card className="card-3d stats-glow shimmer p-6">
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -24,7 +24,7 @@ export function StatsCard({ label, value, change, icon: Icon, testId }: StatsCar
             {value}
           </p>
           {change !== undefined && (
-            <div className={`mt-2 flex items-center gap-1 text-sm ${isPositive ? 'text-chart-2' : 'text-destructive'}`}>
+            <div className={`mt-2 flex items-center gap-1 text-sm font-semibold ${isPositive ? 'text-chart-2' : 'text-destructive'}`}>
               {isPositive ? (
                 <TrendingUp className="h-3 w-3" />
               ) : (
@@ -37,8 +37,8 @@ export function StatsCard({ label, value, change, icon: Icon, testId }: StatsCar
           )}
         </div>
         {Icon && (
-          <div className="rounded-md bg-primary/10 p-2">
-            <Icon className="h-5 w-5 text-primary" />
+          <div className="rounded-md bg-primary/20 p-3 shadow-lg">
+            <Icon className="h-6 w-6 text-primary" />
           </div>
         )}
       </div>

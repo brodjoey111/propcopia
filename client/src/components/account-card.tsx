@@ -33,7 +33,7 @@ export function AccountCard({
   const isPnlPositive = pnl >= 0;
 
   return (
-    <Card className="p-4" data-testid={`card-account-${id}`}>
+    <Card className="card-3d shimmer p-4" data-testid={`card-account-${id}`}>
       <div className="space-y-4">
         <div className="flex items-start justify-between">
           <div className="flex-1">

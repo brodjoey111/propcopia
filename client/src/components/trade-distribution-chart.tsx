@@ -24,7 +24,7 @@ export function TradeDistributionChart({ data, title }: TradeDistributionChartPr
   const total = data.reduce((sum, item) => sum + item.value, 0);
 
   return (
-    <Card className="p-6">
+    <Card className="card-3d p-6">
       <h3 className="mb-4 font-semibold">{title}</h3>
       <div className="flex items-center gap-6">
         <ResponsiveContainer width="50%" height={200}>

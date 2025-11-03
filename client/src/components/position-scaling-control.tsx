@@ -24,7 +24,7 @@ export function PositionScalingControl({
   };
 
   return (
-    <Card className="p-6">
+    <Card className="card-3d p-6">
       <div className="space-y-6">
         <div>
           <h3 className="font-semibold">{accountName}</h3>
