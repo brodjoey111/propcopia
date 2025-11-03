@@ -64,14 +64,14 @@
 
   --accent-foreground: 220 10% 13%;
 
-  --destructive: 0 72% 51%;
+  --destructive: 0 84% 60%;
 
   --destructive-foreground: 0 0% 100%;
 
   --input: 220 13% 80%;
   --ring: 217 91% 35%;
   --chart-1: 217 91% 45%;
-  --chart-2: 142 76% 45%;
+  --chart-2: 142 71% 45%;
   --chart-3: 262 83% 58%;
   --chart-4: 38 92% 50%;
   --chart-5: 189 94% 43%;
@@ -182,14 +182,14 @@
 
   --accent-foreground: 220 10% 95%;
 
-  --destructive: 0 72% 51%;
+  --destructive: 0 84% 60%;
 
   --destructive-foreground: 0 0% 100%;
 
   --input: 220 13% 30%;
   --ring: 217 91% 45%;
   --chart-1: 217 91% 65%;
-  --chart-2: 142 76% 56%;
+  --chart-2: 142 71% 55%;
   --chart-3: 262 83% 68%;
   --chart-4: 24 95% 63%;
   --chart-5: 189 94% 63%;
