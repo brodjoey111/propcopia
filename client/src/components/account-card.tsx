@@ -14,6 +14,7 @@ interface AccountCardProps {
   pnl: number;
   positionScaling?: number;
   onConfigure?: () => void;
+  onConnect?: () => void;
   onDisconnect?: () => void;
 }
 
@@ -28,6 +29,7 @@ export function AccountCard({
   pnl,
   positionScaling,
   onConfigure,
+  onConnect,
   onDisconnect,
 }: AccountCardProps) {
   const isPnlPositive = pnl >= 0;
@@ -94,18 +96,30 @@ export function AccountCard({
             Configure
           </Button>
           <Button
-            variant="outline"
             size="sm"
             className={`flex-1 ${
               isConnected 
-                ? 'border-chart-2 text-chart-2 hover:bg-chart-2/10' 
-                : 'border-destructive text-destructive hover:bg-destructive/10'
+                ? 'bg-chart-2 text-white hover:bg-chart-2/90' 
+                : 'bg-muted text-muted-foreground hover:bg-muted/80'
+            }`}
+            onClick={onConnect}
+            disabled={isConnected}
+            data-testid={`button-connect-${id}`}
+          >
+            Connect
+          </Button>
+          <Button
+            size="sm"
+            className={`flex-1 ${
+              !isConnected 
+                ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' 
+                : 'bg-muted text-muted-foreground hover:bg-muted/80'
             }`}
             onClick={onDisconnect}
+            disabled={!isConnected}
             data-testid={`button-disconnect-${id}`}
           >
-            <Unplug className="mr-2 h-3 w-3" />
-            {isConnected ? 'Connected' : 'Disconnected'}
+            Disconnect
           </Button>
         </div>
       </div>

@@ -69,10 +69,18 @@ export default function Accounts() {
     setAccounts([...accounts, accountToAdd] as any);
   };
 
-  const handleToggleConnection = (accountId: string) => {
+  const handleConnect = (accountId: string) => {
     setAccounts(accounts.map(account => 
       account.id === accountId 
-        ? { ...account, isConnected: !account.isConnected }
+        ? { ...account, isConnected: true }
+        : account
+    ));
+  };
+
+  const handleDisconnect = (accountId: string) => {
+    setAccounts(accounts.map(account => 
+      account.id === accountId 
+        ? { ...account, isConnected: false }
         : account
     ));
   };
@@ -100,7 +108,8 @@ export default function Accounts() {
               key={account.id}
               {...account}
               onConfigure={() => console.log(`Configure ${account.name}`)}
-              onDisconnect={() => handleToggleConnection(account.id)}
+              onConnect={() => handleConnect(account.id)}
+              onDisconnect={() => handleDisconnect(account.id)}
             />
           ))}
         </div>
