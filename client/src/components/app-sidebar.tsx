@@ -25,7 +25,7 @@ const menuItems = [
     icon: Wallet,
   },
   {
-    title: "Trade Log",
+    title: "Trading Calendar",
     url: "/trades",
     icon: History,
   },
