@@ -35,6 +35,8 @@ export const accounts = pgTable("accounts", {
   isConnected: boolean("is_connected").default(false),
   balance: decimal("balance", { precision: 12, scale: 2 }),
   positionScaling: integer("position_scaling").default(100),
+  maxContracts: integer("max_contracts"),
+  blockedTickers: text("blocked_tickers").array(),
   lastSync: timestamp("last_sync"),
 });
 

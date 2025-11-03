@@ -13,7 +13,9 @@ interface AccountCardProps {
   openPositions: number;
   pnl: number;
   positionScaling?: number;
-  onConfigure?: () => void;
+  maxContracts?: number;
+  blockedTickers?: string[];
+  onConfigure?: React.ReactNode;
   onConnect?: () => void;
   onDisconnect?: () => void;
 }
@@ -28,11 +30,14 @@ export function AccountCard({
   openPositions,
   pnl,
   positionScaling,
+  maxContracts,
+  blockedTickers = [],
   onConfigure,
   onConnect,
   onDisconnect,
 }: AccountCardProps) {
   const isPnlPositive = pnl >= 0;
+  const hasRestrictions = maxContracts !== undefined || blockedTickers.length > 0;
 
   return (
     <Card className="card-3d shimmer p-4" data-testid={`card-account-${id}`}>
@@ -77,24 +82,45 @@ export function AccountCard({
           {positionScaling !== undefined && (
             <div>
               <p className="text-xs text-muted-foreground">Scaling</p>
-              <p className="mt-1 text-base font-semibold tabular-nums">
+              <p className="mt-1 text-base font-semibold tabular-nums" data-testid={`text-scaling-${id}`}>
                 {positionScaling}%
               </p>
             </div>
           )}
         </div>
 
+        {hasRestrictions && (
+          <div className="flex flex-wrap gap-2 border-t pt-3">
+            {maxContracts !== undefined && (
+              <Badge variant="outline" className="text-xs" data-testid={`badge-max-contracts-${id}`}>
+                Max {maxContracts} contracts
+              </Badge>
+            )}
+            {blockedTickers.length > 0 && (
+              <Badge variant="outline" className="text-xs" data-testid={`badge-blocked-tickers-${id}`}>
+                {blockedTickers.length} blocked ticker{blockedTickers.length > 1 ? 's' : ''}
+              </Badge>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1"
-            onClick={onConfigure}
-            data-testid={`button-configure-${id}`}
-          >
-            <Settings className="mr-2 h-3 w-3" />
-            Configure
-          </Button>
+          {onConfigure ? (
+            <div className="flex-1">
+              {onConfigure}
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              disabled
+              data-testid={`button-configure-${id}`}
+            >
+              <Settings className="mr-2 h-3 w-3" />
+              Configure
+            </Button>
+          )}
           <Button
             size="sm"
             className={`flex-1 ${

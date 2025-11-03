@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AccountCard } from "@/components/account-card";
 import { AddAccountDialog } from "@/components/add-account-dialog";
+import { ConfigureAccountDialog } from "@/components/configure-account-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { Wallet } from "lucide-react";
 
@@ -27,6 +28,8 @@ export default function Accounts() {
       openPositions: 3,
       pnl: 620,
       positionScaling: 50,
+      maxContracts: 10,
+      blockedTickers: ['ES', 'NQ'],
     },
     {
       id: '3',
@@ -38,6 +41,7 @@ export default function Accounts() {
       openPositions: 3,
       pnl: 1240,
       positionScaling: 100,
+      blockedTickers: [] as string[],
     },
     {
       id: '4',
@@ -49,6 +53,8 @@ export default function Accounts() {
       openPositions: 0,
       pnl: -230,
       positionScaling: 75,
+      maxContracts: 5,
+      blockedTickers: ['YM'],
     },
   ];
 
@@ -85,6 +91,24 @@ export default function Accounts() {
     ));
   };
 
+  const handleConfigure = (accountId: string, config: {
+    positionScaling: number;
+    maxContracts: number | null;
+    blockedTickers: string[];
+  }) => {
+    setAccounts(accounts.map(account => {
+      if (account.id !== accountId || account.accountType !== 'follower') {
+        return account;
+      }
+      return { 
+        ...account, 
+        positionScaling: config.positionScaling,
+        maxContracts: config.maxContracts || undefined,
+        blockedTickers: config.blockedTickers,
+      };
+    }));
+  };
+
   const hasAccounts = accounts.length > 0;
 
   return (
@@ -107,7 +131,20 @@ export default function Accounts() {
             <AccountCard
               key={account.id}
               {...account}
-              onConfigure={() => console.log(`Configure ${account.name}`)}
+              onConfigure={
+                account.accountType === 'follower'
+                  ? (
+                      <ConfigureAccountDialog
+                        accountId={account.id}
+                        accountName={account.name}
+                        positionScaling={account.positionScaling}
+                        maxContracts={account.maxContracts}
+                        blockedTickers={account.blockedTickers || []}
+                        onSave={(config) => handleConfigure(account.id, config)}
+                      />
+                    )
+                  : undefined
+              }
               onConnect={() => handleConnect(account.id)}
               onDisconnect={() => handleDisconnect(account.id)}
             />
