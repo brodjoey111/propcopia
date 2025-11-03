@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -113,7 +113,7 @@ export default function Auth() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
+    <div className="flex min-h-screen flex-col items-center justify-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
@@ -217,6 +217,16 @@ export default function Auth() {
           </Tabs>
         </CardContent>
       </Card>
+      <div className="mt-6 text-center">
+        <p className="text-sm text-muted-foreground">
+          Want to learn more?{" "}
+          <Link href="/pricing">
+            <span className="inline-block cursor-pointer font-medium text-primary hover-elevate active-elevate-2 rounded px-1" data-testid="link-pricing">
+              View Pricing
+            </span>
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }

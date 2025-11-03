@@ -18,6 +18,7 @@ import Trades from "@/pages/trades";
 import Activity from "@/pages/activity";
 import Settings from "@/pages/settings";
 import TestConnection from "@/pages/test-connection";
+import Pricing from "@/pages/pricing";
 
 function AppRouter() {
   return (
@@ -63,7 +64,7 @@ function AppLayout() {
 
 export default function App() {
   const [location] = useLocation();
-  const isPublicPage = location === "/" || location === "/auth";
+  const isPublicPage = location === "/" || location === "/auth" || location === "/pricing";
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -74,6 +75,8 @@ export default function App() {
             <Landing />
           ) : location === "/auth" ? (
             <Auth />
+          ) : location === "/pricing" ? (
+            <Pricing />
           ) : (
             <>
               <CandlestickBackground />
