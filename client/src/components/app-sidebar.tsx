@@ -2,6 +2,7 @@ import { LayoutDashboard, Wallet, History, Settings, Activity, Plug, LogOut, Use
 import { Link, useLocation } from "wouter";
 import { useUser } from "@/contexts/user-context";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Sidebar,
   SidebarContent,
@@ -86,14 +87,19 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter className="space-y-2 p-4">
         <div className="flex items-center gap-2 rounded-lg border p-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
-            <User className="h-4 w-4" />
-          </div>
+          <Avatar className="h-8 w-8">
+            <AvatarImage src={user?.profilePicture || undefined} alt={user?.username} />
+            <AvatarFallback>
+              {user?.username?.charAt(0).toUpperCase() || <User className="h-4 w-4" />}
+            </AvatarFallback>
+          </Avatar>
           <div className="flex-1 overflow-hidden">
             <p className="truncate text-sm font-medium" data-testid="text-username">
               {user?.username || "User"}
             </p>
-            <p className="text-xs text-muted-foreground">Trader</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {user?.bio || "Trader"}
+            </p>
           </div>
         </div>
         <Button

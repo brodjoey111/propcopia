@@ -6,6 +6,8 @@ import { useLocation } from "wouter";
 interface User {
   id: string;
   username: string;
+  bio?: string | null;
+  profilePicture?: string | null;
 }
 
 interface AuthResponse {

@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { TradovateAPI } from "./tradovate-api";
 import { storage } from "./storage";
 import bcrypt from "bcrypt";
-import { insertUserSchema } from "@shared/schema";
+import { insertUserSchema, updateUserProfileSchema } from "@shared/schema";
 
 const tradovateInstances = new Map<string, TradovateAPI>();
 
@@ -120,20 +120,69 @@ export function registerRoutes(app: Express): Server {
     });
   });
 
-  app.get("/api/auth/me", (req, res) => {
+  app.get("/api/auth/me", async (req, res) => {
     if (req.session?.userId) {
-      return res.json({
-        success: true,
-        user: {
-          id: req.session.userId,
-          username: req.session.username,
-        },
-      });
+      const user = await storage.getUser(req.session.userId);
+      if (user) {
+        return res.json({
+          success: true,
+          user: {
+            id: user.id,
+            username: user.username,
+            bio: user.bio,
+            profilePicture: user.profilePicture,
+          },
+        });
+      }
     }
     return res.status(401).json({
       success: false,
       message: "Not authenticated",
     });
+  });
+
+  app.patch("/api/user/profile", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const result = updateUserProfileSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid input: " + result.error.message,
+        });
+      }
+
+      const updatedUser = await storage.updateUserProfile(req.session.userId, result.data);
+      if (!updatedUser) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "Profile updated successfully",
+        user: {
+          id: updatedUser.id,
+          username: updatedUser.username,
+          bio: updatedUser.bio,
+          profilePicture: updatedUser.profilePicture,
+        },
+      });
+    } catch (error) {
+      console.error('Profile update error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
   });
   app.post("/api/tradovate/test-connection", async (req, res) => {
     try {
