@@ -13,6 +13,7 @@ import { Activity } from "lucide-react";
 export default function Auth() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState("login");
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [signupUsername, setSignupUsername] = useState("");
@@ -22,16 +23,20 @@ export default function Auth() {
   const loginMutation = useMutation({
     mutationFn: async (data: { username: string; password: string }) => {
       const response = await apiRequest("POST", "/api/auth/login", data);
-      return response;
+      const result = await response.json();
+      return result;
     },
-    onSuccess: async () => {
-      // Invalidate auth query to refresh user state
-      await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    onSuccess: async (data) => {
+      // Set user data directly in cache to avoid race condition
+      queryClient.setQueryData(["/api/auth/me"], data);
       toast({
         title: "Login successful",
         description: "Welcome back!",
       });
-      setLocation("/dashboard");
+      // Small delay to ensure query cache is updated
+      setTimeout(() => {
+        setLocation("/dashboard");
+      }, 100);
     },
     onError: (error: Error) => {
       toast({
@@ -52,8 +57,8 @@ export default function Auth() {
         title: "Account created",
         description: "You can now log in with your credentials.",
       });
-      // Switch to login tab
-      document.querySelector('[value="login"]')?.dispatchEvent(new Event('click', { bubbles: true }));
+      // Switch to login tab and pre-fill username
+      setActiveTab("login");
       setLoginUsername(signupUsername);
     },
     onError: (error: Error) => {
@@ -120,7 +125,7 @@ export default function Auth() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="login" className="w-full">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="login" data-testid="tab-login">Login</TabsTrigger>
               <TabsTrigger value="signup" data-testid="tab-signup">Sign Up</TabsTrigger>
