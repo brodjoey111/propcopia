@@ -1,9 +1,10 @@
-import { Check, TrendingUp } from "lucide-react";
+import { Check } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Logo } from "@/components/logo";
 
 const pricingTiers = [
   {
@@ -73,9 +74,8 @@ export default function Pricing() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Link href="/">
-              <div className="flex items-center gap-2 cursor-pointer hover-elevate">
-                <TrendingUp className="h-6 w-6" />
-                <span className="text-lg font-semibold">Trade Copier</span>
+              <div className="cursor-pointer hover-elevate rounded-md p-1">
+                <Logo size="md" showText={false} />
               </div>
             </Link>
             <Link href="/auth">

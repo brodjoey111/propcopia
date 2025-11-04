@@ -3,18 +3,19 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Logo } from "@/components/logo";
 import {
   Copy,
   Zap,
   Shield,
   BarChart3,
   Settings,
-  TrendingUp,
   Users,
   Globe,
   CheckCircle2,
   ArrowRight,
   Check,
+  TrendingUp,
 } from "lucide-react";
 
 export default function Landing() {
@@ -134,10 +135,7 @@ export default function Landing() {
       <header className="fixed top-0 left-0 right-0 z-50 border-b bg-background/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-6 w-6" />
-              <span className="text-lg font-semibold">Trade Copier</span>
-            </div>
+            <Logo size="md" showText={false} />
             <Link href="/auth">
               <Button variant="default" data-testid="button-signin">
                 Sign In

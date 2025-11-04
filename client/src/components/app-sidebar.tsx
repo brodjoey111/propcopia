@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useUser } from "@/contexts/user-context";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Logo } from "@/components/logo";
 import {
   Sidebar,
   SidebarContent,
@@ -67,13 +68,7 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-            <Activity className="h-5 w-5 text-primary-foreground" />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold">TradeCopier</h2>
-            <p className="text-xs text-muted-foreground">Futures Edition</p>
-          </div>
+          <Logo size="sm" showText={false} variant="sidebar" />
         </div>
       </SidebarHeader>
       <SidebarContent>

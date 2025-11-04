@@ -6,10 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Logo } from "@/components/logo";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Activity, TrendingUp } from "lucide-react";
 
 export default function Auth() {
   const [, setLocation] = useLocation();
@@ -119,9 +119,8 @@ export default function Auth() {
       <header className="fixed top-0 left-0 right-0 z-50 border-b bg-background/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <Link href="/">
-            <div className="flex items-center gap-2 cursor-pointer hover-elevate">
-              <TrendingUp className="h-6 w-6" />
-              <span className="text-lg font-semibold">Trade Copier</span>
+            <div className="cursor-pointer hover-elevate rounded-md p-1">
+              <Logo size="md" showText={false} />
             </div>
           </Link>
           <div className="flex items-center gap-4">
@@ -137,10 +136,10 @@ export default function Auth() {
       
       <Card className="w-full max-w-md mt-20">
         <CardHeader className="space-y-1 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
-            <Activity className="h-6 w-6 text-primary-foreground" />
+          <div className="mx-auto mb-4">
+            <Logo size="lg" showText={false} />
           </div>
-          <CardTitle className="text-2xl font-bold">TradeCopier</CardTitle>
+          <CardTitle className="text-2xl font-bold">Combine Trade Copier</CardTitle>
           <CardDescription>
             Sign in to your account or create a new one
           </CardDescription>
