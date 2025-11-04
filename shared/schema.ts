@@ -112,3 +112,24 @@ export const insertFollowSchema = createInsertSchema(follows).omit({
 
 export type InsertFollow = z.infer<typeof insertFollowSchema>;
 export type Follow = typeof follows.$inferSelect;
+
+export const traderPositions = pgTable("trader_positions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  symbol: text("symbol").notNull(),
+  quantity: integer("quantity").notNull(),
+  entryPrice: decimal("entry_price", { precision: 12, scale: 2 }).notNull(),
+  currentPrice: decimal("current_price", { precision: 12, scale: 2 }),
+  unrealizedPnl: decimal("unrealized_pnl", { precision: 12, scale: 2 }),
+  realizedPnl: decimal("realized_pnl", { precision: 12, scale: 2 }).default('0'),
+  timestamp: timestamp("timestamp").defaultNow(),
+});
+
+export const insertTraderPositionSchema = createInsertSchema(traderPositions).omit({
+  id: true,
+  timestamp: true,
+  unrealizedPnl: true,
+});
+
+export type InsertTraderPosition = z.infer<typeof insertTraderPositionSchema>;
+export type TraderPosition = typeof traderPositions.$inferSelect;

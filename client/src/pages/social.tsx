@@ -5,8 +5,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Heart, MessageCircle, Share2, TrendingUp, Users, Send, Sparkles, Loader2 } from "lucide-react";
+import { Heart, MessageCircle, Share2, TrendingUp, Users, Send, Sparkles, Loader2, Trophy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { LiveLeaderboard } from "@/components/live-leaderboard";
 import stockImage1 from '@assets/stock_images/stock_market_trading_ddaa40ef.jpg';
 import stockImage2 from '@assets/stock_images/stock_market_trading_a64dff59.jpg';
 import stockImage3 from '@assets/stock_images/stock_market_trading_8fe8b11a.jpg';
@@ -175,9 +176,13 @@ export default function Social() {
       </div>
 
       <Tabs defaultValue="feed" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="feed" data-testid="tab-feed">
             Feed
+          </TabsTrigger>
+          <TabsTrigger value="leaderboard" data-testid="tab-leaderboard">
+            <Trophy className="mr-2 h-4 w-4" />
+            Leaderboard
           </TabsTrigger>
           <TabsTrigger value="trending" data-testid="tab-trending">
             <TrendingUp className="mr-2 h-4 w-4" />
@@ -332,6 +337,10 @@ export default function Social() {
               </Card>
             ))}
           </div>
+        </TabsContent>
+
+        <TabsContent value="leaderboard" className="space-y-4">
+          <LiveLeaderboard />
         </TabsContent>
 
         <TabsContent value="trending" className="space-y-4">

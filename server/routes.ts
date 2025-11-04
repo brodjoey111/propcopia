@@ -1,9 +1,11 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { WebSocketServer } from "ws";
 import { TradovateAPI } from "./tradovate-api";
 import { storage } from "./storage";
 import bcrypt from "bcrypt";
 import { insertUserSchema, updateUserProfileSchema } from "@shared/schema";
+import { marketDataService, type MarketPrice } from "./market-data";
 
 const tradovateInstances = new Map<string, TradovateAPI>();
 
@@ -308,6 +310,165 @@ export function registerRoutes(app: Express): Server {
         message: error instanceof Error ? error.message : 'Unknown error occurred',
       });
     }
+  });
+
+  app.get("/api/market/prices", (req, res) => {
+    try {
+      const prices = marketDataService.getAllPrices();
+      const pricesArray = Array.from(prices.entries()).map(([_symbol, data]) => data);
+      
+      return res.json({
+        success: true,
+        data: pricesArray,
+      });
+    } catch (error) {
+      console.error('Error fetching market prices:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.get("/api/leaderboard", (req, res) => {
+    try {
+      const mockTraders = [
+        {
+          id: '1',
+          username: 'sarahtrader',
+          name: 'Sarah Martinez',
+          positions: [
+            { symbol: 'ES', quantity: 5, entryPrice: 5825.50, currentPrice: 0 },
+            { symbol: 'NQ', quantity: 2, entryPrice: 20450.00, currentPrice: 0 },
+          ],
+          totalPnl: 0,
+          returnPercent: 0,
+          isVerified: true,
+        },
+        {
+          id: '2',
+          username: 'mikethetrader',
+          name: 'Mike Chen',
+          positions: [
+            { symbol: 'ES', quantity: 3, entryPrice: 5810.00, currentPrice: 0 },
+            { symbol: 'YM', quantity: 1, entryPrice: 42950.00, currentPrice: 0 },
+          ],
+          totalPnl: 0,
+          returnPercent: 0,
+          isVerified: true,
+        },
+        {
+          id: '3',
+          username: 'jordanfx',
+          name: 'Jordan Lee',
+          positions: [
+            { symbol: 'NQ', quantity: 4, entryPrice: 20480.00, currentPrice: 0 },
+          ],
+          totalPnl: 0,
+          returnPercent: 0,
+          isVerified: false,
+        },
+        {
+          id: '4',
+          username: 'alexfutures',
+          name: 'Alex Thompson',
+          positions: [
+            { symbol: 'RTY', quantity: 8, entryPrice: 2095.50, currentPrice: 0 },
+            { symbol: 'ES', quantity: 2, entryPrice: 5830.00, currentPrice: 0 },
+          ],
+          totalPnl: 0,
+          returnPercent: 0,
+          isVerified: false,
+        },
+        {
+          id: '5',
+          username: 'emilytrades',
+          name: 'Emily Rodriguez',
+          positions: [
+            { symbol: 'NQ', quantity: 3, entryPrice: 20490.00, currentPrice: 0 },
+            { symbol: 'YM', quantity: 2, entryPrice: 42980.00, currentPrice: 0 },
+          ],
+          totalPnl: 0,
+          returnPercent: 0,
+          isVerified: true,
+        },
+      ];
+
+      const prices = marketDataService.getAllPrices();
+      
+      const tradersWithPnl = mockTraders.map(trader => {
+        let totalPnl = 0;
+        const startingCapital = 50000;
+
+        const updatedPositions = trader.positions.map(position => {
+          const currentPrice = prices.get(position.symbol)?.price || position.entryPrice;
+          const pnl = (currentPrice - position.entryPrice) * position.quantity * 50;
+          totalPnl += pnl;
+
+          return {
+            ...position,
+            currentPrice,
+            pnl,
+          };
+        });
+
+        const returnPercent = (totalPnl / startingCapital) * 100;
+
+        return {
+          ...trader,
+          positions: updatedPositions,
+          totalPnl,
+          returnPercent,
+        };
+      });
+
+      const sortedTraders = tradersWithPnl.sort((a, b) => b.returnPercent - a.returnPercent);
+
+      return res.json({
+        success: true,
+        data: sortedTraders,
+      });
+    } catch (error) {
+      console.error('Error fetching leaderboard:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  const wss = new WebSocketServer({ server, path: '/ws/market' });
+
+  wss.on('connection', (ws) => {
+    console.log('[WebSocket] Client connected to market data');
+
+    const symbols = ['ES', 'NQ', 'YM', 'RTY'];
+    const callbacks = new Map<string, (symbol: string, price: MarketPrice) => void>();
+
+    symbols.forEach(symbol => {
+      const callback = (sym: string, price: MarketPrice) => {
+        if (ws.readyState === ws.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'price_update',
+            symbol: sym,
+            data: price,
+          }));
+        }
+      };
+      callbacks.set(symbol, callback);
+      marketDataService.subscribe(symbol, callback);
+    });
+
+    ws.on('close', () => {
+      console.log('[WebSocket] Client disconnected from market data');
+      callbacks.forEach((callback, symbol) => {
+        marketDataService.unsubscribe(symbol, callback);
+      });
+    });
+
+    ws.on('error', (error) => {
+      console.error('[WebSocket] Error:', error);
+    });
   });
 
   return server;
