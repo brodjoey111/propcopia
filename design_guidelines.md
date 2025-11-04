@@ -1,216 +1,285 @@
 # Design Guidelines: Futures Trade Copier Dashboard
+## Robinhood-Inspired Design System
 
 ## Design Approach
 
-**Selected Framework:** Design System Approach inspired by Linear and modern fintech dashboards (Stripe, Robinhood)
+**Visual Framework:** Robinhood 2024 Design System
+- Minimalist "less is more" philosophy with sophisticated restraint
+- High information density without visual clutter
+- Precision-focused financial interface with bold accent usage
+- Clean, modern aesthetic prioritizing readability and instant clarity
 
 **Core Principles:**
-- Information density with breathing room
-- Instant clarity of account status and trade activity
-- Confidence-inspiring precision and reliability
-- Scannable data hierarchies for quick decision-making
+- Extreme simplicity with purposeful hierarchy
+- Confident use of whitespace for breathing room
+- Strategic accent deployment for critical information
+- Scannable data displays with excellent contrast
+
+---
+
+## Color Strategy
+
+**Foundation:**
+- Pure black (#000000) and pure white (#FFFFFF) base
+- Robin Neon (#d5fd51) for primary accents, CTAs, and active states
+- Mature neutral grays for hierarchy (8 shades from #171717 to #f5f5f5)
+
+**Semantic Colors:**
+- Positive/Gains: Vibrant green (#00c805)
+- Negative/Losses: Orange-tinted red (#ff5000)
+- Warning: Amber tones
+- Connection/Status: Robin Neon for active, gray for inactive
+
+**Application:**
+- Backgrounds: Pure white primary, black for sidebar/nav
+- Text: Black on white, white on black
+- Data emphasis: Robin Neon sparingly for important metrics
+- Cards: White with subtle gray borders (1px)
 
 ---
 
 ## Typography System
 
-**Font Family:** Inter (via Google Fonts CDN)
-- Primary: Inter (400, 500, 600, 700 weights)
+**Font Family:** Inter (Google Fonts CDN - 400, 500, 600, 700)
 
-**Type Scale:**
-- Page Headers: text-3xl font-semibold (36px)
-- Section Headers: text-xl font-semibold (20px)
-- Card Titles: text-base font-medium (16px)
-- Body Text: text-sm (14px)
+**Hierarchy:**
+- Dashboard Title: text-2xl font-bold (24px)
+- Section Headers: text-lg font-semibold (18px)
+- Card Titles: text-sm font-semibold uppercase tracking-wider (14px)
+- Body Text: text-base (16px)
 - Data Labels: text-xs font-medium uppercase tracking-wide (12px)
-- Numerical Data: text-base font-semibold tabular-nums (16px, monospaced numerals)
-- Trade Log Entries: text-sm font-mono (14px monospace)
+- Large Metrics: text-4xl font-bold tabular-nums (36px)
+- Numerical Data: text-lg font-semibold tabular-nums (18px)
+- Trade Details: text-sm font-mono (14px monospace)
+
+**Treatment:**
+- High contrast text (black on white, white on black)
+- Tabular numerals for all financial data
+- Uppercase labels for hierarchy
+- Letter-spacing on labels for sophistication
 
 ---
 
 ## Layout System
 
-**Spacing Primitives:** Use Tailwind units of 2, 3, 4, 6, 8, 12, 16
-- Component padding: p-4 to p-6
-- Section spacing: space-y-6 to space-y-8
-- Card gaps: gap-4 to gap-6
-- Tight groupings: space-y-2 to space-y-3
+**Spacing Units:** Tailwind 2, 3, 4, 6, 8, 12, 16, 24
+- Micro spacing: 2-3 (tight groupings)
+- Standard padding: 4-6 (cards, components)
+- Section gaps: 8-12 (vertical rhythm)
+- Major breaks: 16-24 (page sections)
 
-**Page Structure:**
+**Structure:**
 ```
-- Fixed sidebar navigation (w-64, left-aligned)
-- Main content area (flex-1 with max-w-7xl container)
-- Top navigation bar (h-16, sticky)
-- Content padding: p-6 to p-8
+- Black sidebar: w-64, fixed left, minimal icons + text
+- White main content: flex-1, max-w-7xl centered
+- Top bar: h-14, sticky, ultra-minimal
+- Content padding: px-8 py-6
+- Card spacing: gap-6 grid layouts
 ```
 
-**Grid Systems:**
-- Dashboard Stats: 3-4 column grid (grid-cols-1 md:grid-cols-2 lg:grid-cols-4)
-- Account Cards: 2-3 column grid (grid-cols-1 md:grid-cols-2 lg:grid-cols-3)
-- Forms: Single column with max-w-2xl
+**Grid Philosophy:**
+- Dashboard: 4-column stat grid (grid-cols-1 md:grid-cols-2 xl:grid-cols-4)
+- Accounts: 3-column (grid-cols-1 md:grid-cols-2 xl:grid-cols-3)
+- Forms: Single column, max-w-xl
+- Tables: Full-width with responsive scroll
 
 ---
 
 ## Component Library
 
-### Navigation Components
+### Navigation
 
-**Sidebar Navigation:**
-- Fixed left sidebar with application logo at top
-- Navigation items: p-3, rounded-lg, flex items with icons (Heroicons)
-- Icon size: h-5 w-5
-- Section dividers with labels (text-xs uppercase tracking-wide)
-- Account switcher dropdown at bottom
+**Sidebar (Robinhood-Style):**
+- Black background, full height, w-64
+- Logo at top (p-6)
+- Nav items: Minimal text + Heroicon (h-5 w-5), py-3 px-4
+- Active state: Robin Neon accent bar (4px left border) + text treatment
+- Account switcher: Bottom position, clean dropdown
+- Zero decorative elements, pure function
 
-**Top Navigation Bar:**
-- Account balance summary (right-aligned)
-- Real-time connection status indicators
-- User profile dropdown (far right)
-- Quick action buttons (+ Add Account)
+**Top Bar:**
+- Minimal height (h-14), white background
+- Right-aligned: Real-time balance + connection dot + profile
+- No search, no clutter - pure information
+- Sticky positioning
 
 ### Dashboard Components
 
-**Stats Cards (KPI Display):**
-- Border with subtle shadow
+**Metric Cards (Robinhood Minimalism):**
+- Pure white cards, 1px gray border, minimal shadow
 - Padding: p-6
+- Layout: Label (top) → Large value (center) → Change indicator (bottom)
 - Label: text-xs uppercase tracking-wide
-- Value: text-2xl font-bold tabular-nums
-- Change indicator: text-sm with up/down icon
-- Layout: Vertical stack with space-y-1
+- Value: text-4xl font-bold tabular-nums
+- Change: text-sm with arrow icon, semantic color
+- Card height: Uniform across grid
 
 **Account Status Cards:**
-- Card layout: p-4, rounded-lg, border
-- Header: Account name + connection badge
-- Body: Grid layout showing balance, open positions, P&L
-- Footer: Action buttons (Configure, Disconnect)
-- Connection badge: Inline pill with dot indicator
+- White card, rounded-lg, border-1
+- Header: Account name (font-semibold) + connection badge (inline)
+- Body: 2-column grid for balance/positions/P&L
+- Numerical emphasis: Larger font, tabular-nums
+- Footer: Minimal button group (text-sm, Robin Neon accent)
+- Padding: p-5
 
-**Trade Log Table:**
-- Full-width table with sticky header
-- Columns: Timestamp | Master Account | Symbol | Action | Quantity | Price | Followers Executed | Status
-- Row height: h-12
-- Alternating row treatment for scannability
-- Status badges: Inline pills (Success, Failed, Pending)
-- Monospace font for numerical data
-- Compact row spacing (py-2)
+**Trade Activity Feed:**
+- Borderless table with header row
+- Columns: Time | Account | Symbol | Action | Size | Price | Status
+- Header: text-xs uppercase, border-b-2 black
+- Rows: py-3, border-b-1 gray, hover state
+- Status badges: Minimal pills (small, rounded-full)
+- Symbol: font-semibold for emphasis
+- Monospace for prices/quantities
+- Max height: max-h-[600px] with smooth scroll
 
-### Forms & Inputs
+### Forms & Controls
 
-**Account Configuration Form:**
-- Section grouping with clear visual breaks (space-y-8)
-- Form fields: Full width labels above inputs
-- Input height: h-10
-- Label style: text-sm font-medium mb-2
-- Helper text: text-xs below inputs
-- Toggle switches for enable/disable features
-- Number inputs with +/- steppers for position scaling
+**Add Account / Configuration:**
+- Clean single-column form, max-w-xl
+- Labels above inputs: text-sm font-medium mb-1.5
+- Input height: h-11, rounded-lg, border-1
+- Focus states: Robin Neon border accent
+- Helper text: text-xs below, gray
+- Buttons: Full-width primary (Robin Neon bg) + ghost secondary
+- Section spacing: space-y-6
+- API credential inputs with minimal show/hide icon
 
-**Position Scaling Controls:**
-- Slider with value display (0-200%)
-- Preset buttons (25%, 50%, 100%, 200%)
-- Live preview calculation showing actual position size
-- Layout: Vertical stack within card (p-6)
+**Position Scaling:**
+- Horizontal slider with live value display
+- Preset buttons: Pill-shaped, inline row, gap-2
+- Live calculation preview: Card below with before/after comparison
+- Slider thumb: Robin Neon accent
+- Layout: Vertical stack, p-6 card
 
-### Data Display Components
+### Data Displays
 
-**Real-Time Trade Feed:**
-- Scrollable container (max-h-96 overflow-y-auto)
-- Trade entries: p-3, border-b
-- Timestamp: text-xs on left
-- Trade details: Flex row with symbol, action, quantity
-- Follower execution status: Grid of small badges
-- Auto-scroll to newest entries
+**Real-Time Trade Stream:**
+- Reverse chronological list, newest top
+- Entry height: Variable based on content, py-3
+- Timestamp: text-xs gray, monospace
+- Trade details: Flex row, symbol bold, action/size normal
+- Follower status: Inline badge row, gap-1
+- Subtle dividers (border-b)
+- Container: max-h-96, smooth scroll behavior
 
 **Account Summary Panel:**
-- Split layout: Account details (left) | Quick Stats (right)
-- Master/Follower designation badge
-- Connection status with last sync timestamp
-- Quick metrics: 2-column grid within panel
+- Two-section layout: Details | Quick Stats
+- Master/Follower: Small uppercase badge
+- Connection: Dot indicator + "Last synced" timestamp
+- Stats: 2-column grid, compact spacing
+- Minimal borders, maximum clarity
 
 **Status Indicators:**
-- Connection: Dot (h-2 w-2 rounded-full) + text label
-- Trade execution: Badge pills with icon + text
-- Account health: Large circular progress indicator
+- Connection: Small dot (h-2.5 w-2.5) + label, Robin Neon for active
+- Trade status: Tiny badges, uppercase, tracking-wide
+- Progress: Minimal circular or linear bars
 
-### Modal & Overlays
+### Modals & Overlays
 
 **Add Account Modal:**
-- Centered overlay (max-w-lg)
+- Centered, max-w-md, white card with shadow
 - Padding: p-6
-- Tabbed interface (NinjaTrader | Tradovate)
-- API credential inputs with show/hide toggles
-- Test connection button before save
-- Footer: Cancel + Save buttons (right-aligned)
+- Header: text-lg font-semibold mb-6
+- Form fields: Standard input treatment
+- Tab switching (NinjaTrader/Tradovate): Minimal underline style
+- Footer buttons: Right-aligned, gap-3
+- Close: Top-right X icon (h-5 w-5)
 
-**Configuration Drawer:**
-- Slide-in from right (w-96)
-- Full-height with scrollable content
-- Close button (top-right)
-- Content padding: p-6
-- Sections separated with space-y-6
+**Settings Drawer:**
+- Slide from right, w-80
+- Full-height, white background
+- Padding: p-6
+- Scrollable content
+- Close button prominent
+- Section dividers: Minimal, space-y-8
+
+---
+
+## Icon System
+
+**Library:** Heroicons outline (CDN)
+**Sizes:**
+- Navigation: h-5 w-5
+- Buttons/inline: h-4 w-4
+- Status dots: h-2.5 w-2.5
+- Empty states: h-12 w-12
+
+**Usage:**
+- Minimal decoration, maximum function
+- Consistent stroke width
+- Strategic placement only
+- No ornamental icons
 
 ---
 
 ## Interaction Patterns
 
 **Loading States:**
-- Skeleton screens for tables and cards
-- Inline spinners for button actions
-- Subtle pulse animation on pending trades
+- Skeleton screens: Pulsing gray rectangles matching content shape
+- Button loaders: Minimal spinner, Robin Neon
+- Inline status: Small animated dot
 
 **Empty States:**
-- Centered content (max-w-md mx-auto)
-- Icon illustration (h-16 w-16)
-- Heading + descriptive text + CTA button
-- Vertical stack with space-y-4
+- Centered, max-w-sm
+- Icon (h-12 w-12, gray)
+- Heading: text-lg font-semibold
+- Description: text-sm
+- CTA button: Robin Neon accent
+- Vertical stack, space-y-4
 
-**Error States:**
-- Inline alert banners (p-4 rounded-lg)
-- Icon + message + optional retry action
-- Dismissible close button
-
----
-
-## Icon System
-
-**Library:** Heroicons (via CDN)
-
-**Icon Usage:**
-- Navigation: outline style, h-5 w-5
-- Buttons: outline/solid style, h-4 w-4
-- Status indicators: solid style, h-3 w-3
-- Large illustrations: outline style, h-16 w-16
+**Alerts/Errors:**
+- Minimal banner, rounded-lg, p-4
+- Icon + message + action (inline flex)
+- Semantic colors for type
+- Dismissible X button
 
 ---
 
-## Responsive Behavior
+## Responsive Design
 
-**Breakpoints:**
-- Mobile (< 768px): Stack all grids to single column, collapsible sidebar
-- Tablet (768px - 1024px): 2-column layouts, permanent condensed sidebar
-- Desktop (> 1024px): Full 3-4 column layouts, expanded sidebar
+**Mobile (< 768px):**
+- Collapsible sidebar to bottom nav bar (5 icons)
+- Single-column cards, full-width
+- Tables: Horizontal scroll in container
+- Reduced padding (px-4 py-4)
+- Modals: Full-screen takeover
 
-**Mobile Adaptations:**
-- Bottom navigation bar replaces sidebar
-- Cards stack vertically with full width
-- Tables scroll horizontally in container
-- Modals become full-screen overlays
+**Tablet (768px - 1024px):**
+- Condensed sidebar (w-20, icon-only)
+- 2-column grids
+- Maintained spacing units
+
+**Desktop (> 1024px):**
+- Full sidebar (w-64)
+- 3-4 column grids
+- Maximum information density
+- Optimal padding (px-8)
 
 ---
 
 ## Special Considerations
 
-**Real-Time Updates:**
-- Subtle highlight flash on new trade entries (brief pulse)
-- Live updating numerical values with smooth transitions
-- WebSocket connection status always visible
+**Financial Data Precision:**
+- Tabular-nums on ALL numerical displays
+- Consistent decimals: 2 for USD, 4 for prices
+- Thousand separators (commas)
+- Negative values: Parentheses + semantic color
 
-**Data Precision:**
-- Always use tabular-nums for financial data
-- Consistent decimal places (2 for currency, 4 for prices)
-- Clear thousand separators in large numbers
+**Real-Time Features:**
+- Subtle pulse on new trade entries (brief)
+- Live value updates: Smooth number transitions
+- Connection status: Always visible in top bar
+- WebSocket indicator: Minimal dot animation
 
 **Critical Actions:**
-- Disconnect/Delete actions require confirmation modal
-- Position scaling changes show preview before applying
-- Emergency stop-all button (prominent, separate from other controls)
+- Disconnect/Delete: Confirmation modal required
+- Position changes: Live preview calculation
+- Emergency controls: Distinct visual treatment, isolated placement
+
+---
+
+## Images
+
+**No hero images** - This is a dashboard application focused on data and functionality. All visual interest comes from clean layout, strategic accent usage, and information hierarchy.
+
+**Icons only:** Heroicons for navigation, status, and functional elements. No decorative photography or illustrations.
