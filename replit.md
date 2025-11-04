@@ -46,7 +46,14 @@ Preferred communication style: Simple, everyday language.
 2. Account management with connection status indicators (separate Connect/Disconnect buttons with color-coded states)
 3. Real-time activity feed for trade execution monitoring
 4. Trading calendar with P&L visualization
-5. **Enhanced position scaling controls for follower accounts:**
+5. **Dark Mode Theme Toggle:**
+   - Moon/Sun icon toggle for easy theme switching
+   - Accessible across all pages (public and protected)
+   - localStorage persistence for user preference
+   - Smooth transitions between light and dark modes
+   - WCAG 2.0 compliant with proper aria-labels
+   - Positioned in top-right header on all pages
+6. **Enhanced position scaling controls for follower accounts:**
    - Position scaling percentage (10-200%, adjustable via slider)
    - Maximum contracts per trade limit (optional, prevents over-leveraging)
    - Blocked ticker symbols (blacklist specific instruments)
