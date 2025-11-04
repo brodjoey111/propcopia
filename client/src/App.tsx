@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { CandlestickBackground } from "@/components/candlestick-background";
 import { UserProvider } from "@/contexts/user-context";
 import { ProtectedRoute } from "@/components/protected-route";
+import { HelpChat } from "@/components/help-chat";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Auth from "@/pages/auth";
@@ -65,6 +66,7 @@ function AppLayout() {
             </main>
           </div>
         </div>
+        <HelpChat />
       </SidebarProvider>
     </ProtectedRoute>
   );

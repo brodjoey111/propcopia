@@ -6,8 +6,14 @@ import { storage } from "./storage";
 import bcrypt from "bcrypt";
 import { insertUserSchema, updateUserProfileSchema, insertWatchlistItemSchema } from "@shared/schema";
 import { marketDataService, type MarketPrice } from "./market-data";
+import OpenAI from "openai";
 
 const tradovateInstances = new Map<string, TradovateAPI>();
+
+const openai = new OpenAI({
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+});
 
 export function registerRoutes(app: Express): Server {
   const server = createServer(app);
@@ -730,6 +736,81 @@ export function registerRoutes(app: Express): Server {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to remove from watchlist',
+      });
+    }
+  });
+
+  // AI Help Chat endpoint
+  app.post("/api/chat", async (req, res) => {
+    try {
+      // Require authentication to prevent unauthorized API usage
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Unauthorized - please log in",
+        });
+      }
+
+      const { messages } = req.body;
+
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid messages format",
+        });
+      }
+
+      // Validate message objects have required fields
+      const isValid = messages.every(
+        (msg) =>
+          msg &&
+          typeof msg === "object" &&
+          typeof msg.role === "string" &&
+          typeof msg.content === "string" &&
+          (msg.role === "user" || msg.role === "assistant")
+      );
+
+      if (!isValid) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid message format - each message must have role and content",
+        });
+      }
+
+      const systemPrompt = `You are a helpful AI assistant for the Futures Trade Copier Dashboard application. 
+This is a trading platform that helps users:
+- Copy trades from master accounts to follower accounts
+- Track NinjaTrader and Tradovate platform accounts
+- Monitor real-time trading activity and performance
+- View market movers and track stocks in a watchlist
+- Manage position scaling and trade execution
+- Access economic calendars and social trading features
+
+Be concise, friendly, and helpful. Focus on explaining features, answering questions about the platform, 
+and helping users navigate the application. If users ask about specific trading strategies or financial advice, 
+remind them that you provide platform assistance only, not financial advice.`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...messages,
+        ],
+        temperature: 0.7,
+        max_tokens: 500,
+      });
+
+      const reply = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+
+      return res.json({
+        success: true,
+        message: reply,
+      });
+    } catch (error) {
+      console.error('Error in AI chat:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to get AI response',
       });
     }
   });
