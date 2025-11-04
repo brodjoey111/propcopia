@@ -16,9 +16,10 @@ export function Logo({ className = "", size = "md", showText = true, variant = "
 
   // Sidebar variant needs to be inverted in light mode (since sidebar is dark)
   // and normal in dark mode
+  // Default variant adds contrast/saturation in light mode for better visibility
   const filterClasses = variant === "sidebar" 
     ? "brightness-0 invert dark:brightness-100 dark:invert-0" 
-    : "dark:brightness-0 dark:invert";
+    : "contrast-125 saturate-150 dark:brightness-0 dark:invert";
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
