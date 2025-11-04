@@ -330,6 +330,116 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  app.get("/api/economic-calendar", (req, res) => {
+    try {
+      // Mock economic calendar data
+      // In production, this would call Finnhub API: https://finnhub.io/api/v1/calendar/economic
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const dayAfterTomorrow = new Date(today);
+      dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+
+      const mockEvents = [
+        {
+          id: '1',
+          date: today.toISOString().split('T')[0],
+          time: '08:30',
+          country: 'US',
+          event: 'Initial Jobless Claims',
+          impact: 'high',
+          forecast: '220K',
+          previous: '215K',
+        },
+        {
+          id: '2',
+          date: today.toISOString().split('T')[0],
+          time: '10:00',
+          country: 'US',
+          event: 'ISM Services PMI',
+          impact: 'high',
+          forecast: '53.5',
+          previous: '54.1',
+        },
+        {
+          id: '3',
+          date: today.toISOString().split('T')[0],
+          time: '14:00',
+          country: 'US',
+          event: 'FOMC Member Speech',
+          impact: 'medium',
+        },
+        {
+          id: '4',
+          date: tomorrow.toISOString().split('T')[0],
+          time: '08:30',
+          country: 'US',
+          event: 'Non-Farm Payrolls',
+          impact: 'high',
+          forecast: '180K',
+          previous: '175K',
+        },
+        {
+          id: '5',
+          date: tomorrow.toISOString().split('T')[0],
+          time: '08:30',
+          country: 'US',
+          event: 'Unemployment Rate',
+          impact: 'high',
+          forecast: '3.7%',
+          previous: '3.7%',
+        },
+        {
+          id: '6',
+          date: tomorrow.toISOString().split('T')[0],
+          time: '10:00',
+          country: 'EU',
+          event: 'ECB Interest Rate Decision',
+          impact: 'high',
+          forecast: '4.50%',
+          previous: '4.50%',
+        },
+        {
+          id: '7',
+          date: dayAfterTomorrow.toISOString().split('T')[0],
+          time: '08:30',
+          country: 'US',
+          event: 'Consumer Price Index (CPI)',
+          impact: 'high',
+          forecast: '3.2%',
+          previous: '3.1%',
+        },
+        {
+          id: '8',
+          date: dayAfterTomorrow.toISOString().split('T')[0],
+          time: '09:45',
+          country: 'US',
+          event: 'Core CPI',
+          impact: 'high',
+          forecast: '4.0%',
+          previous: '4.0%',
+        },
+        {
+          id: '9',
+          date: dayAfterTomorrow.toISOString().split('T')[0],
+          time: '14:30',
+          country: 'US',
+          event: 'Crude Oil Inventories',
+          impact: 'medium',
+          previous: '-2.5M',
+        },
+      ];
+
+      return res.json(mockEvents);
+    } catch (error) {
+      console.error('Error fetching economic calendar:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
   app.get("/api/leaderboard", (req, res) => {
     try {
       const mockTraders = [
