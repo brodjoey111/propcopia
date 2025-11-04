@@ -13,7 +13,7 @@ const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
       <div className="relative">
         <Input
           type={showPassword ? "text" : "password"}
-          className={`pr-10 ${className || ""}`}
+          className={`pr-12 ${className || ""}`}
           ref={ref}
           {...props}
         />
@@ -21,7 +21,7 @@ const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
           type="button"
           variant="ghost"
           size="sm"
-          className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 px-0 hover:bg-transparent"
+          className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 px-0 hover:bg-transparent"
           onClick={() => setShowPassword(!showPassword)}
           data-testid="button-toggle-password"
         >
