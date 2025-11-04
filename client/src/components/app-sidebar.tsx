@@ -1,4 +1,4 @@
-import { LayoutDashboard, Wallet, History, Settings, Activity, Plug, LogOut, User } from "lucide-react";
+import { LayoutDashboard, Wallet, History, Settings, Activity, Plug, LogOut, User, Users } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useUser } from "@/contexts/user-context";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,11 @@ const menuItems = [
     title: "Live Activity",
     url: "/activity",
     icon: Activity,
+  },
+  {
+    title: "Social",
+    url: "/social",
+    icon: Users,
   },
   {
     title: "Test Connection",

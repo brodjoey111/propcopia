@@ -77,3 +77,37 @@ export const insertTradeSchema = createInsertSchema(trades).omit({
 
 export type InsertTrade = z.infer<typeof insertTradeSchema>;
 export type Trade = typeof trades.$inferSelect;
+
+export const posts = pgTable("posts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  content: text("content").notNull(),
+  likes: integer("likes").default(0),
+  comments: integer("comments").default(0),
+  timestamp: timestamp("timestamp").defaultNow(),
+});
+
+export const insertPostSchema = createInsertSchema(posts).omit({
+  id: true,
+  likes: true,
+  comments: true,
+  timestamp: true,
+});
+
+export type InsertPost = z.infer<typeof insertPostSchema>;
+export type Post = typeof posts.$inferSelect;
+
+export const follows = pgTable("follows", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  followerId: varchar("follower_id").notNull(),
+  followingId: varchar("following_id").notNull(),
+  timestamp: timestamp("timestamp").defaultNow(),
+});
+
+export const insertFollowSchema = createInsertSchema(follows).omit({
+  id: true,
+  timestamp: true,
+});
+
+export type InsertFollow = z.infer<typeof insertFollowSchema>;
+export type Follow = typeof follows.$inferSelect;
