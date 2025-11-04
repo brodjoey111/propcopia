@@ -1,7 +1,7 @@
-import { type User, type InsertUser, type UpdateUserProfile, users } from "@shared/schema";
+import { type User, type InsertUser, type UpdateUserProfile, users, type WatchlistItem, type InsertWatchlistItem, watchlistItems } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 // modify the interface with any CRUD methods
 // you might need
@@ -20,13 +20,18 @@ export interface IStorage {
       maxDailyDrawdown?: string | null;
     }
   ): Promise<User | undefined>;
+  getWatchlist(userId: string): Promise<WatchlistItem[]>;
+  addToWatchlist(item: InsertWatchlistItem): Promise<WatchlistItem>;
+  removeFromWatchlist(userId: string, ticker: string): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
+  private watchlist: Map<string, WatchlistItem>;
 
   constructor() {
     this.users = new Map();
+    this.watchlist = new Map();
   }
 
   async getUser(id: string): Promise<User | undefined> {
@@ -100,6 +105,31 @@ export class MemStorage implements IStorage {
     this.users.set(id, updatedUser);
     return updatedUser;
   }
+
+  async getWatchlist(userId: string): Promise<WatchlistItem[]> {
+    return Array.from(this.watchlist.values()).filter(item => item.userId === userId);
+  }
+
+  async addToWatchlist(item: InsertWatchlistItem): Promise<WatchlistItem> {
+    const id = randomUUID();
+    const watchlistItem: WatchlistItem = {
+      ...item,
+      id,
+      addedAt: new Date(),
+    };
+    this.watchlist.set(id, watchlistItem);
+    return watchlistItem;
+  }
+
+  async removeFromWatchlist(userId: string, ticker: string): Promise<void> {
+    const items = Array.from(this.watchlist.entries());
+    for (const [id, item] of items) {
+      if (item.userId === userId && item.ticker === ticker) {
+        this.watchlist.delete(id);
+        return;
+      }
+    }
+  }
 }
 
 export class DbStorage implements IStorage {
@@ -142,6 +172,24 @@ export class DbStorage implements IStorage {
       .where(eq(users.id, id))
       .returning();
     return result[0];
+  }
+
+  async getWatchlist(userId: string): Promise<WatchlistItem[]> {
+    return await db.select().from(watchlistItems).where(eq(watchlistItems.userId, userId));
+  }
+
+  async addToWatchlist(item: InsertWatchlistItem): Promise<WatchlistItem> {
+    const result = await db.insert(watchlistItems).values(item).returning();
+    return result[0];
+  }
+
+  async removeFromWatchlist(userId: string, ticker: string): Promise<void> {
+    await db.delete(watchlistItems).where(
+      and(
+        eq(watchlistItems.userId, userId),
+        eq(watchlistItems.ticker, ticker)
+      )
+    );
   }
 }
 

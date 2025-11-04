@@ -160,3 +160,18 @@ export const insertDailySummarySchema = createInsertSchema(dailySummaries).omit(
 
 export type InsertDailySummary = z.infer<typeof insertDailySummarySchema>;
 export type DailySummary = typeof dailySummaries.$inferSelect;
+
+export const watchlistItems = pgTable("watchlist_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  ticker: text("ticker").notNull(),
+  addedAt: timestamp("added_at").defaultNow(),
+});
+
+export const insertWatchlistItemSchema = createInsertSchema(watchlistItems).omit({
+  id: true,
+  addedAt: true,
+});
+
+export type InsertWatchlistItem = z.infer<typeof insertWatchlistItemSchema>;
+export type WatchlistItem = typeof watchlistItems.$inferSelect;
