@@ -82,6 +82,7 @@ export const posts = pgTable("posts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull(),
   content: text("content").notNull(),
+  imageUrl: text("image_url"),
   likes: integer("likes").default(0),
   comments: integer("comments").default(0),
   timestamp: timestamp("timestamp").defaultNow(),

@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Heart, MessageCircle, Share2, TrendingUp, Users, Send } from "lucide-react";
+import { Heart, MessageCircle, Share2, TrendingUp, Users, Send, Sparkles, Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import stockImage1 from '@assets/stock_images/stock_market_trading_ddaa40ef.jpg';
+import stockImage2 from '@assets/stock_images/stock_market_trading_a64dff59.jpg';
+import stockImage3 from '@assets/stock_images/stock_market_trading_8fe8b11a.jpg';
 
 interface Post {
   id: string;
@@ -17,6 +20,7 @@ interface Post {
     isVerified: boolean;
   };
   content: string;
+  imageUrl?: string;
   timestamp: Date;
   likes: number;
   comments: number;
@@ -27,7 +31,23 @@ interface Post {
   };
 }
 
+const stockImages = [stockImage1, stockImage2, stockImage3];
+
+const getKeywordsFromContent = (content: string): string[] => {
+  const tradingKeywords = ['ES', 'NQ', 'SPX', 'trading', 'market', 'position', 'futures', 'stock', 'chart', 'strategy', 'trade', 'volatility'];
+  const words = content.toLowerCase().split(/\s+/);
+  return tradingKeywords.filter(keyword => 
+    words.some(word => word.includes(keyword.toLowerCase()))
+  );
+};
+
+const shouldAutoGenerateImage = (content: string): boolean => {
+  const keywords = getKeywordsFromContent(content);
+  return keywords.length > 0;
+};
+
 export default function Social() {
+  const { toast } = useToast();
   const mockPosts: Post[] = [
     {
       id: '1',
@@ -36,7 +56,8 @@ export default function Social() {
         username: '@sarahtrader',
         isVerified: true,
       },
-      content: 'Just closed a great ES position with +15 points! The key was patience and waiting for the right setup. Market volatility is your friend when you have a solid strategy. 📈',
+      content: 'Just closed a great ES position with +15 points! The key was patience and waiting for the right setup. Market volatility is your friend when you have a solid strategy.',
+      imageUrl: stockImage1,
       timestamp: new Date(Date.now() - 3600000),
       likes: 42,
       comments: 8,
@@ -54,6 +75,7 @@ export default function Social() {
         isVerified: true,
       },
       content: 'Market update: Seeing strong support at 4500 on SPX. Could be a good entry point for long positions. Always use proper risk management! #futures #trading',
+      imageUrl: stockImage2,
       timestamp: new Date(Date.now() - 7200000),
       likes: 67,
       comments: 12,
@@ -80,6 +102,7 @@ export default function Social() {
 
   const [posts, setPosts] = useState(mockPosts);
   const [newPost, setNewPost] = useState('');
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
   const handleLike = (postId: string) => {
     setPosts(posts.map(post => {
@@ -94,8 +117,24 @@ export default function Social() {
     }));
   };
 
-  const handleCreatePost = () => {
+  const handleCreatePost = async () => {
     if (!newPost.trim()) return;
+
+    setIsGeneratingImage(true);
+
+    const willGenerateImage = shouldAutoGenerateImage(newPost);
+    let imageUrl: string | undefined;
+
+    if (willGenerateImage) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const randomImage = stockImages[Math.floor(Math.random() * stockImages.length)];
+      imageUrl = randomImage;
+
+      toast({
+        title: "Image auto-generated!",
+        description: "We found a relevant image for your trading post.",
+      });
+    }
 
     const post: Post = {
       id: `${posts.length + 1}`,
@@ -105,6 +144,7 @@ export default function Social() {
         isVerified: false,
       },
       content: newPost,
+      imageUrl,
       timestamp: new Date(),
       likes: 0,
       comments: 0,
@@ -113,6 +153,7 @@ export default function Social() {
 
     setPosts([post, ...posts]);
     setNewPost('');
+    setIsGeneratingImage(false);
   };
 
   const formatTimeAgo = (date: Date) => {
@@ -163,14 +204,29 @@ export default function Social() {
                   className="min-h-[100px] resize-none"
                   data-testid="input-new-post"
                 />
+                {shouldAutoGenerateImage(newPost) && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    <span>Auto-generating image for your post...</span>
+                  </div>
+                )}
                 <div className="flex justify-end">
                   <Button
                     onClick={handleCreatePost}
-                    disabled={!newPost.trim()}
+                    disabled={!newPost.trim() || isGeneratingImage}
                     data-testid="button-post"
                   >
-                    <Send className="mr-2 h-4 w-4" />
-                    Post
+                    {isGeneratingImage ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Posting...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="mr-2 h-4 w-4" />
+                        Post
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>
@@ -223,6 +279,22 @@ export default function Social() {
                     <p className="text-sm whitespace-pre-wrap" data-testid={`content-${post.id}`}>
                       {post.content}
                     </p>
+
+                    {post.imageUrl && (
+                      <div className="relative rounded-lg overflow-hidden border" data-testid={`image-${post.id}`}>
+                        <img
+                          src={post.imageUrl}
+                          alt="Post image"
+                          className="w-full h-auto max-h-96 object-cover"
+                        />
+                        <div className="absolute top-2 right-2">
+                          <Badge variant="secondary" className="gap-1 text-xs">
+                            <Sparkles className="h-3 w-3" />
+                            Auto-generated
+                          </Badge>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex items-center gap-6 pt-2">
                       <Button
