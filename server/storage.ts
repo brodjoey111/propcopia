@@ -11,6 +11,15 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUserProfile(id: string, profile: UpdateUserProfile): Promise<User | undefined>;
+  updateOnboarding(
+    id: string,
+    data: {
+      onboardingStep?: number;
+      onboardingCompleted?: boolean;
+      dailyLossLimit?: string | null;
+      maxDailyDrawdown?: string | null;
+    }
+  ): Promise<User | undefined>;
 }
 
 export class MemStorage implements IStorage {
@@ -67,6 +76,30 @@ export class MemStorage implements IStorage {
     this.users.set(id, updatedUser);
     return updatedUser;
   }
+
+  async updateOnboarding(
+    id: string,
+    data: {
+      onboardingStep?: number;
+      onboardingCompleted?: boolean;
+      dailyLossLimit?: string | null;
+      maxDailyDrawdown?: string | null;
+    }
+  ): Promise<User | undefined> {
+    const user = this.users.get(id);
+    if (!user) {
+      return undefined;
+    }
+    const updatedUser: User = {
+      ...user,
+      onboardingStep: data.onboardingStep !== undefined ? data.onboardingStep : user.onboardingStep,
+      onboardingCompleted: data.onboardingCompleted !== undefined ? data.onboardingCompleted : user.onboardingCompleted,
+      dailyLossLimit: data.dailyLossLimit !== undefined ? data.dailyLossLimit : user.dailyLossLimit,
+      maxDailyDrawdown: data.maxDailyDrawdown !== undefined ? data.maxDailyDrawdown : user.maxDailyDrawdown,
+    };
+    this.users.set(id, updatedUser);
+    return updatedUser;
+  }
 }
 
 export class DbStorage implements IStorage {
@@ -89,6 +122,23 @@ export class DbStorage implements IStorage {
     const result = await db
       .update(users)
       .set(profile)
+      .where(eq(users.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async updateOnboarding(
+    id: string,
+    data: {
+      onboardingStep?: number;
+      onboardingCompleted?: boolean;
+      dailyLossLimit?: string | null;
+      maxDailyDrawdown?: string | null;
+    }
+  ): Promise<User | undefined> {
+    const result = await db
+      .update(users)
+      .set(data)
       .where(eq(users.id, id))
       .returning();
     return result[0];
