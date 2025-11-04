@@ -567,7 +567,7 @@ export function registerRoutes(app: Express): Server {
   // Market Movers - Top Gainers
   app.get("/api/market-movers/gainers", async (req, res) => {
     try {
-      const data = await fetchFromFMP('/stock_market/gainers');
+      const data = await fetchFromFMP('/stable/biggest-gainers');
       return res.json({
         success: true,
         data: data.slice(0, 100),
@@ -584,7 +584,7 @@ export function registerRoutes(app: Express): Server {
   // Market Movers - Top Losers
   app.get("/api/market-movers/losers", async (req, res) => {
     try {
-      const data = await fetchFromFMP('/stock_market/losers');
+      const data = await fetchFromFMP('/stable/biggest-losers');
       return res.json({
         success: true,
         data: data.slice(0, 100),
@@ -601,7 +601,7 @@ export function registerRoutes(app: Express): Server {
   // Market Movers - Most Active
   app.get("/api/market-movers/actives", async (req, res) => {
     try {
-      const data = await fetchFromFMP('/stock_market/actives');
+      const data = await fetchFromFMP('/stable/most-actives');
       return res.json({
         success: true,
         data: data.slice(0, 100),
@@ -654,20 +654,24 @@ export function registerRoutes(app: Express): Server {
     try {
       const type = req.query.type as string || 'gainers';
       
-      const [movers, sp500, nasdaq] = await Promise.all([
-        fetchFromFMP(`/stock_market/${type}`),
-        fetchFromFMP('/sp500_constituent'),
-        fetchFromFMP('/nasdaq_constituent'),
-      ]);
+      // Map type to correct stable endpoint
+      const typeMap: Record<string, string> = {
+        gainers: '/stable/biggest-gainers',
+        losers: '/stable/biggest-losers',
+        actives: '/stable/most-actives',
+      };
+      
+      const endpoint = typeMap[type] || typeMap.gainers;
+      
+      const movers = await fetchFromFMP(endpoint);
 
-      const sp500Symbols = new Set(sp500.map((s: any) => s.symbol));
-      const nasdaqSymbols = new Set(nasdaq.map((s: any) => s.symbol));
-
+      // Note: S&P 500 and NASDAQ constituent endpoints are legacy and not available in free tier
+      // Fund composition feature temporarily disabled
       const enrichedData = movers.slice(0, 100).map((stock: any) => ({
         ...stock,
         indices: {
-          sp500: sp500Symbols.has(stock.symbol),
-          nasdaq: nasdaqSymbols.has(stock.symbol),
+          sp500: false,
+          nasdaq: stock.exchange === 'NASDAQ',
         },
       }));
 
