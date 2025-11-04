@@ -10,7 +10,7 @@ const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
     const [showPassword, setShowPassword] = useState(false);
 
     return (
-      <div className="relative">
+      <div className="relative flex items-center">
         <Input
           type={showPassword ? "text" : "password"}
           className={`pr-12 ${className || ""}`}
@@ -21,7 +21,7 @@ const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
           type="button"
           variant="ghost"
           size="sm"
-          className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 px-0 hover:bg-transparent"
+          className="absolute right-2 h-8 w-8 px-0 hover:bg-transparent"
           onClick={() => setShowPassword(!showPassword)}
           data-testid="button-toggle-password"
         >
