@@ -44,11 +44,18 @@ Preferred communication style: Simple, everyday language.
    - Blocked ticker symbols (blacklist specific instruments)
    - Real-time validation with visual feedback
    - Configuration dialog with comprehensive controls
-6. Chart visualizations using Recharts library
-7. Theme toggle (light/dark mode) with localStorage persistence
-8. User profile management with bio editor (200 character limit) and profile picture upload (base64 storage, 2MB client limit)
-9. Public pricing page with three subscription tiers (Starter, Professional, Enterprise) and FAQ section
-10. Landing page with integrated pricing section
+6. **Social media community platform:**
+   - Feed for sharing trading insights and market analysis
+   - Post creation with real-time updates
+   - Like and engagement functionality
+   - Trending traders leaderboard with performance metrics
+   - Follow/following system for trader connections
+   - Verified trader badges
+7. Chart visualizations using Recharts library
+8. Theme toggle (light/dark mode) with localStorage persistence
+9. User profile management with bio editor (200 character limit) and profile picture upload (base64 storage, 2MB client limit)
+10. Public pricing page with three subscription tiers (Starter, Professional, Enterprise) and FAQ section
+11. Landing page with integrated pricing section
 
 **Public Pages:**
 - Landing page (/) - Marketing homepage with integrated pricing section
@@ -70,6 +77,25 @@ Preferred communication style: Simple, everyday language.
   - "X blocked ticker(s)" badge when tickers are blacklisted
   - Scaling percentage display for all follower accounts
   - Only follower accounts can be configured (master accounts disabled)
+
+**Social Media Features:**
+- **Social Feed Tab** - Main community feed
+  - Post creation textarea with character input
+  - Real-time post updates and state management
+  - Like/unlike functionality with visual feedback (heart icon fills)
+  - Comment and share buttons
+  - Performance badges showing trader returns
+  - Verified trader badges
+  - Relative timestamps ("3h ago", "just now")
+- **Trending Tab** - Top performers showcase
+  - Leaderboard of top traders by performance
+  - Return percentages with time period
+  - Follower counts
+  - Follow buttons for each trader
+- **Following Tab** - User's followed traders
+  - Empty state with call-to-action
+  - "Discover Traders" button for exploration
+- Currently implemented with in-memory mock data for demonstration
 
 ### Backend Architecture
 
@@ -128,6 +154,17 @@ Preferred communication style: Simple, everyday language.
    - Symbol, action (BUY/SELL), quantity, price
    - Status tracking (success/failed/pending)
    - Timestamp for chronological ordering
+
+4. **Posts Table:**
+   - Social media posts from traders
+   - Fields: userId, content, likes count, comments count, timestamp
+   - UUID primary keys
+   - Supports community engagement features
+
+5. **Follows Table:**
+   - Trader-to-trader following relationships
+   - Fields: followerId, followingId, timestamp
+   - Enables social networking features
 
 **Temporary Storage:**
 - In-memory storage implementation (`MemStorage` class) for development/testing
