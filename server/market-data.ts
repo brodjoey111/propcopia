@@ -21,6 +21,8 @@ class MarketDataService {
   private currentPrices: Map<string, MarketPrice> = new Map();
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private isConnecting = false;
+  private lastLiveUpdate: Map<string, number> = new Map();
+  private simulationInterval: NodeJS.Timeout | null = null;
 
   private symbolMapping: { [key: string]: string } = {
     'ES': 'ES=F',
@@ -30,7 +32,12 @@ class MarketDataService {
   };
 
   constructor() {
-    this.connect();
+    if (FINNHUB_API_KEY && FINNHUB_API_KEY.length > 10) {
+      console.log('[MarketData] Using Finnhub API for real-time data');
+      this.connect();
+    } else {
+      console.log('[MarketData] No API key configured, using simulated market data');
+    }
     this.startSimulatedUpdates();
   }
 
@@ -60,6 +67,7 @@ class MarketDataService {
             message.data.forEach((trade: any) => {
               const originalSymbol = this.getOriginalSymbol(trade.s);
               if (originalSymbol) {
+                this.lastLiveUpdate.set(originalSymbol, Date.now());
                 this.updatePrice(originalSymbol, trade.p);
               }
             });
@@ -121,28 +129,36 @@ class MarketDataService {
       });
     });
 
-    setInterval(() => {
+    this.simulationInterval = setInterval(() => {
+      const now = Date.now();
+      const staleThreshold = 30000;
+
       Object.keys(baseValues).forEach(symbol => {
-        const current = this.currentPrices.get(symbol);
-        if (current) {
-          const volatility = 0.0002;
-          const change = (Math.random() - 0.5) * current.price * volatility;
-          const newPrice = current.price + change;
-          
-          const openPrice = current.price - current.change;
-          const newChange = newPrice - openPrice;
-          const newChangePercent = (newChange / openPrice) * 100;
+        const lastUpdate = this.lastLiveUpdate.get(symbol) || 0;
+        const isStale = now - lastUpdate > staleThreshold;
 
-          const updatedPrice: MarketPrice = {
-            symbol,
-            price: newPrice,
-            change: newChange,
-            changePercent: newChangePercent,
-            timestamp: Date.now(),
-          };
+        if (!FINNHUB_API_KEY || isStale) {
+          const current = this.currentPrices.get(symbol);
+          if (current) {
+            const volatility = 0.0002;
+            const change = (Math.random() - 0.5) * current.price * volatility;
+            const newPrice = current.price + change;
+            
+            const openPrice = current.price - current.change;
+            const newChange = newPrice - openPrice;
+            const newChangePercent = (newChange / openPrice) * 100;
 
-          this.currentPrices.set(symbol, updatedPrice);
-          this.notifySubscribers(symbol, updatedPrice);
+            const updatedPrice: MarketPrice = {
+              symbol,
+              price: newPrice,
+              change: newChange,
+              changePercent: newChangePercent,
+              timestamp: Date.now(),
+            };
+
+            this.currentPrices.set(symbol, updatedPrice);
+            this.notifySubscribers(symbol, updatedPrice);
+          }
         }
       });
     }, 2000);
@@ -206,6 +222,9 @@ class MarketDataService {
   close() {
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
+    }
+    if (this.simulationInterval) {
+      clearInterval(this.simulationInterval);
     }
     if (this.ws) {
       this.ws.close();

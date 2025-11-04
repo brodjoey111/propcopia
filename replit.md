@@ -96,6 +96,17 @@ Preferred communication style: Simple, everyday language.
     - Posts without trading keywords post normally without images
     - Loading state during image generation
     - Toast notification confirms image was added
+- **Live Leaderboard Tab** - Real-time trader rankings
+  - Displays top 5 traders ranked by performance (return %)
+  - Real-time P&L updates driven by live market data
+  - WebSocket connection for streaming price updates
+  - Position badges showing symbol, direction (LONG/SHORT), quantity
+  - Color-coded returns and P&L (green for positive, red for negative)
+  - Live status indicator with pulsing icon
+  - Auto-reconnection on disconnect
+  - Rankings dynamically shift as market prices change
+  - Integrated with Finnhub API for real futures prices
+  - Fallback to simulated data when API unavailable
 - **Trending Tab** - Top performers showcase
   - Leaderboard of top traders by performance
   - Return percentages with time period
@@ -130,6 +141,21 @@ Preferred communication style: Simple, everyday language.
 - `POST /api/tradovate/test-connection` - Validates credentials and tests Tradovate connectivity
 - `GET /api/auth/me` - Returns current user profile including bio and profilePicture
 - `PATCH /api/user/profile` - Updates user profile (bio and/or profilePicture)
+- `GET /api/leaderboard` - Returns top traders with real-time P&L calculations
+- `GET /api/market/prices` - Returns current market prices for all tracked symbols
+- `WebSocket /ws/market` - Streams real-time market price updates
+
+**Market Data Integration:**
+- **Finnhub API** - Real-time futures market data via WebSocket
+  - Tracked symbols: ES, NQ, YM, RTY futures contracts
+  - Live price streaming with automatic reconnection
+  - Intelligent fallback to simulated data when API unavailable or stale (30s threshold)
+  - Simulated updates provide realistic market movement for development/demo
+- **Market Data Service** (`server/market-data.ts`)
+  - WebSocket connection management
+  - Pub/sub pattern for price subscriptions
+  - Real-time P&L calculations for trader positions
+  - Automatic data source switching (live API → simulated fallback)
 
 ### Data Storage Solutions
 
