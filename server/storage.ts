@@ -1,5 +1,7 @@
-import { type User, type InsertUser, type UpdateUserProfile } from "@shared/schema";
+import { type User, type InsertUser, type UpdateUserProfile, users } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 // modify the interface with any CRUD methods
 // you might need
@@ -35,6 +37,9 @@ export class MemStorage implements IStorage {
       id,
       bio: null,
       profilePicture: null,
+      globalPositionScaling: 100,
+      globalMaxContracts: null,
+      globalBlockedTickers: null,
     };
     this.users.set(id, user);
     return user;
@@ -55,4 +60,30 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+export class DbStorage implements IStorage {
+  async getUser(id: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.id, id));
+    return result[0];
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.username, username));
+    return result[0];
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const result = await db.insert(users).values(insertUser).returning();
+    return result[0];
+  }
+
+  async updateUserProfile(id: string, profile: UpdateUserProfile): Promise<User | undefined> {
+    const result = await db
+      .update(users)
+      .set(profile)
+      .where(eq(users.id, id))
+      .returning();
+    return result[0];
+  }
+}
+
+export const storage = new DbStorage();
