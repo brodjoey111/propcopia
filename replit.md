@@ -87,6 +87,15 @@ Preferred communication style: Simple, everyday language.
   - Performance badges showing trader returns
   - Verified trader badges
   - Relative timestamps ("3h ago", "just now")
+  - **Automatic Picture Posting:**
+    - Smart keyword detection for trading-related posts (ES, NQ, SPX, trading, market, futures, etc.)
+    - Real-time visual feedback with sparkles icon when trading keywords detected
+    - Automatic stock market image generation for trading posts
+    - 3 pre-loaded high-quality stock trading images
+    - "Auto-generated" badge on images
+    - Posts without trading keywords post normally without images
+    - Loading state during image generation
+    - Toast notification confirms image was added
 - **Trending Tab** - Top performers showcase
   - Leaderboard of top traders by performance
   - Return percentages with time period
