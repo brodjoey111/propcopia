@@ -10,6 +10,14 @@ The system provides real-time trade synchronization, comprehensive activity logg
 
 Preferred communication style: Simple, everyday language.
 
+**Design System:** Robinhood 2024 theme with minimalist aesthetic
+- Pure black and white foundation
+- Robin Neon (#d5fd51) yellow-green accent color for primary actions
+- Green (#00c805) for positive returns/gains
+- Orange-tinted red (#ff5000) for negative returns/losses
+- Clean, professional financial app aesthetic
+- "Less is more" design philosophy
+
 ## System Architecture
 
 ### Frontend Architecture
