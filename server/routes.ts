@@ -547,137 +547,58 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // FMP API helper function
-  async function fetchFromFMP(endpoint: string) {
-    const apiKey = process.env.FMP_API_KEY;
+  // Alpha Vantage API helper - Get top gainers/losers
+  async function fetchMarketMovers(type: 'gainers' | 'losers' | 'actives') {
+    const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
     if (!apiKey) {
-      throw new Error('FMP_API_KEY is not configured');
+      throw new Error('ALPHA_VANTAGE_API_KEY is not configured');
     }
     
-    const url = `https://financialmodelingprep.com/api/v3${endpoint}${endpoint.includes('?') ? '&' : '?'}apikey=${apiKey}`;
+    // Alpha Vantage has a TOP_GAINERS_LOSERS function
+    const url = `https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=${apiKey}`;
     const response = await fetch(url);
     
     if (!response.ok) {
-      throw new Error(`FMP API error: ${response.statusText}`);
+      throw new Error(`Alpha Vantage API error: ${response.statusText}`);
     }
     
-    return response.json();
+    const data = await response.json();
+    
+    // Alpha Vantage returns: { top_gainers: [], top_losers: [], most_actively_traded: [] }
+    if (data.Note || data['Error Message']) {
+      throw new Error(data.Note || data['Error Message'] || 'API rate limit exceeded');
+    }
+    
+    if (type === 'gainers') {
+      return data.top_gainers || [];
+    } else if (type === 'losers') {
+      return data.top_losers || [];
+    } else {
+      return data.most_actively_traded || [];
+    }
   }
 
-  // Market Movers - Top Gainers
-  app.get("/api/market-movers/gainers", async (req, res) => {
-    try {
-      const data = await fetchFromFMP('/stable/biggest-gainers');
-      return res.json({
-        success: true,
-        data: data.slice(0, 100),
-      });
-    } catch (error) {
-      console.error('Error fetching gainers:', error);
-      return res.status(500).json({
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to fetch gainers',
-      });
-    }
-  });
-
-  // Market Movers - Top Losers
-  app.get("/api/market-movers/losers", async (req, res) => {
-    try {
-      const data = await fetchFromFMP('/stable/biggest-losers');
-      return res.json({
-        success: true,
-        data: data.slice(0, 100),
-      });
-    } catch (error) {
-      console.error('Error fetching losers:', error);
-      return res.status(500).json({
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to fetch losers',
-      });
-    }
-  });
-
-  // Market Movers - Most Active
-  app.get("/api/market-movers/actives", async (req, res) => {
-    try {
-      const data = await fetchFromFMP('/stable/most-actives');
-      return res.json({
-        success: true,
-        data: data.slice(0, 100),
-      });
-    } catch (error) {
-      console.error('Error fetching most active:', error);
-      return res.status(500).json({
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to fetch most active stocks',
-      });
-    }
-  });
-
-  // Index Constituents - S&P 500
-  app.get("/api/market-movers/sp500-constituents", async (req, res) => {
-    try {
-      const data = await fetchFromFMP('/sp500_constituent');
-      return res.json({
-        success: true,
-        data,
-      });
-    } catch (error) {
-      console.error('Error fetching S&P 500 constituents:', error);
-      return res.status(500).json({
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to fetch S&P 500 constituents',
-      });
-    }
-  });
-
-  // Index Constituents - NASDAQ
-  app.get("/api/market-movers/nasdaq-constituents", async (req, res) => {
-    try {
-      const data = await fetchFromFMP('/nasdaq_constituent');
-      return res.json({
-        success: true,
-        data,
-      });
-    } catch (error) {
-      console.error('Error fetching NASDAQ constituents:', error);
-      return res.status(500).json({
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to fetch NASDAQ constituents',
-      });
-    }
-  });
-
-  // Combined Market Movers with Index Information
+  // Combined Market Movers endpoint using Alpha Vantage
   app.get("/api/market-movers", async (req, res) => {
     try {
-      const type = req.query.type as string || 'gainers';
+      const type = (req.query.type as string || 'gainers') as 'gainers' | 'losers' | 'actives';
       
-      // Map type to correct stable endpoint
-      const typeMap: Record<string, string> = {
-        gainers: '/stable/biggest-gainers',
-        losers: '/stable/biggest-losers',
-        actives: '/stable/most-actives',
-      };
-      
-      const endpoint = typeMap[type] || typeMap.gainers;
-      
-      const movers = await fetchFromFMP(endpoint);
+      const movers = await fetchMarketMovers(type);
 
-      // Note: S&P 500 and NASDAQ constituent endpoints are legacy and not available in free tier
-      // Fund composition feature temporarily disabled
-      const enrichedData = movers.slice(0, 100).map((stock: any) => ({
-        ...stock,
-        indices: {
-          sp500: false,
-          nasdaq: stock.exchange === 'NASDAQ',
-        },
+      // Transform Alpha Vantage data to match our frontend format
+      const transformedData = movers.slice(0, 100).map((stock: any) => ({
+        symbol: stock.ticker,
+        name: stock.ticker, // Alpha Vantage doesn't provide company name in this endpoint
+        price: parseFloat(stock.price),
+        changesPercentage: parseFloat(stock.change_percentage?.replace('%', '') || '0'),
+        change: parseFloat(stock.change_amount || '0'),
+        volume: parseInt(stock.volume || '0'),
+        exchange: 'US', // Alpha Vantage data is US stocks
       }));
 
       return res.json({
         success: true,
-        data: enrichedData,
+        data: transformedData,
       });
     } catch (error) {
       console.error('Error fetching market movers:', error);

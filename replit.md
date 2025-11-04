@@ -44,6 +44,7 @@ The system uses session-based authentication with username/password login. User 
 
 ### Market Data APIs
 - **Finnhub API**: Provides real-time futures market data via WebSocket, with symbols like ES, NQ, YM, RTY.
+- **Alpha Vantage API**: Provides market movers data (top gainers, top losers, most active stocks) for the Market Movers feature. Free tier with 500 API calls per day.
 
 ### Styling & UI
 - **Tailwind CSS**: Utility-first CSS framework.
