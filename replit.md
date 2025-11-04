@@ -59,18 +59,29 @@ Preferred communication style: Simple, everyday language.
    - Blocked ticker symbols (blacklist specific instruments)
    - Real-time validation with visual feedback
    - Configuration dialog with comprehensive controls
-6. **Social media community platform:**
+7. **Social media community platform:**
    - Feed for sharing trading insights and market analysis
    - Post creation with real-time updates
    - Like and engagement functionality
    - Trending traders leaderboard with performance metrics
    - Follow/following system for trader connections
    - Verified trader badges
-7. Chart visualizations using Recharts library
-8. Theme toggle (light/dark mode) with localStorage persistence
-9. User profile management with bio editor (200 character limit) and profile picture upload (base64 storage, 2MB client limit)
-10. Public pricing page with three subscription tiers (Starter, Professional, Enterprise) and FAQ section
-11. Landing page with integrated pricing section
+8. **Economic Calendar:**
+   - Displays upcoming economic events that may impact futures markets
+   - Events grouped by date (Today, Tomorrow, specific dates)
+   - Impact level indicators (High/Medium/Low) with color-coded badges
+   - Event details: time, country, name, actual/forecast/previous values
+   - High-impact events: red badges with AlertCircle icon (NFP, CPI, FOMC)
+   - Medium-impact events: chart-4 color with TrendingUp icon
+   - Low-impact events: muted styling
+   - Mock data structure ready for Finnhub API integration
+   - Responsive card-based layout with hover effects
+   - Full theme support (light/dark mode)
+9. Chart visualizations using Recharts library
+10. Theme toggle (light/dark mode) with localStorage persistence
+11. User profile management with bio editor (200 character limit) and profile picture upload (base64 storage, 2MB client limit)
+12. Public pricing page with three subscription tiers (Starter, Professional, Enterprise) and FAQ section
+13. Landing page with integrated pricing section
 
 **Public Pages:**
 - Landing page (/) - Marketing homepage with integrated pricing section
@@ -158,6 +169,7 @@ Preferred communication style: Simple, everyday language.
 - `PATCH /api/user/profile` - Updates user profile (bio and/or profilePicture)
 - `GET /api/leaderboard` - Returns top traders with real-time P&L calculations
 - `GET /api/market/prices` - Returns current market prices for all tracked symbols
+- `GET /api/economic-calendar` - Returns upcoming economic events with impact levels and data points (currently using mock data)
 - `WebSocket /ws/market` - Streams real-time market price updates
 
 **Market Data Integration:**
