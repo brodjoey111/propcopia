@@ -133,19 +133,21 @@ export default function Landing() {
       {/* Navigation Header */}
       <header className="fixed top-0 left-0 right-0 z-50 border-b bg-background/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-6 w-6" />
-            <span className="text-lg font-semibold">Trade Copier</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-6 w-6" />
+              <span className="text-lg font-semibold">Trade Copier</span>
+            </div>
+            <Link href="/auth">
+              <Button variant="default" data-testid="button-signin">
+                Sign In
+              </Button>
+            </Link>
           </div>
           <div className="flex items-center gap-4">
             <Link href="/pricing">
               <Button variant="ghost" data-testid="link-pricing">
                 Pricing
-              </Button>
-            </Link>
-            <Link href="/auth">
-              <Button variant="ghost" data-testid="link-login">
-                Login
               </Button>
             </Link>
             <ThemeToggle />

@@ -71,20 +71,20 @@ export default function Pricing() {
       {/* Navigation Header */}
       <header className="fixed top-0 left-0 right-0 z-50 border-b bg-background/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <Link href="/">
-            <div className="flex items-center gap-2 cursor-pointer hover-elevate">
-              <TrendingUp className="h-6 w-6" />
-              <span className="text-lg font-semibold">Trade Copier</span>
-            </div>
-          </Link>
           <div className="flex items-center gap-4">
+            <Link href="/">
+              <div className="flex items-center gap-2 cursor-pointer hover-elevate">
+                <TrendingUp className="h-6 w-6" />
+                <span className="text-lg font-semibold">Trade Copier</span>
+              </div>
+            </Link>
             <Link href="/auth">
-              <Button variant="ghost" data-testid="link-login-pricing">
-                Login
+              <Button variant="default" data-testid="button-signin-pricing">
+                Sign In
               </Button>
             </Link>
-            <ThemeToggle />
           </div>
+          <ThemeToggle />
         </div>
       </header>
       

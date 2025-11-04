@@ -84,9 +84,9 @@ Preferred communication style: Simple, everyday language.
 13. Landing page with integrated pricing section
 
 **Public Pages:**
-- Landing page (/) - Marketing homepage with integrated pricing section
+- Landing page (/) - Marketing homepage with integrated pricing section and prominent Sign In button on top left
 - Authentication page (/auth) - Login and signup with link to pricing
-- Pricing page (/pricing) - Three subscription tiers with features, pricing, and FAQ
+- Pricing page (/pricing) - Three subscription tiers with features, pricing, FAQ, and Sign In button on top left
 
 **Position Scaling Configuration:**
 - **ConfigureAccountDialog Component** - Comprehensive configuration dialog for follower accounts
