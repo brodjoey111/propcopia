@@ -4,7 +4,7 @@ import { WebSocketServer } from "ws";
 import { TradovateAPI } from "./tradovate-api";
 import { storage } from "./storage";
 import bcrypt from "bcrypt";
-import { insertUserSchema, updateUserProfileSchema } from "@shared/schema";
+import { insertUserSchema, updateUserProfileSchema, insertWatchlistItemSchema } from "@shared/schema";
 import { marketDataService, type MarketPrice } from "./market-data";
 
 const tradovateInstances = new Map<string, TradovateAPI>();
@@ -605,6 +605,131 @@ export function registerRoutes(app: Express): Server {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to fetch market movers',
+      });
+    }
+  });
+
+  // Watchlist endpoints
+  app.get("/api/watchlist", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({ success: false, message: "Unauthorized" });
+      }
+
+      const watchlist = await storage.getWatchlist(req.session.userId);
+      
+      // Fetch quotes for all watchlist items
+      const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
+      if (!apiKey) {
+        return res.json({
+          success: true,
+          data: watchlist.map(item => ({
+            ...item,
+            quote: null,
+          })),
+        });
+      }
+
+      const watchlistWithQuotes = await Promise.all(
+        watchlist.map(async (item) => {
+          try {
+            const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${item.ticker}&apikey=${apiKey}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data['Global Quote']) {
+              const quote = data['Global Quote'];
+              return {
+                ...item,
+                quote: {
+                  price: parseFloat(quote['05. price'] || '0'),
+                  change: parseFloat(quote['09. change'] || '0'),
+                  changePercent: parseFloat(quote['10. change percent']?.replace('%', '') || '0'),
+                  volume: parseInt(quote['06. volume'] || '0'),
+                },
+              };
+            }
+            return { ...item, quote: null };
+          } catch (error) {
+            console.error(`Error fetching quote for ${item.ticker}:`, error);
+            return { ...item, quote: null };
+          }
+        })
+      );
+
+      return res.json({
+        success: true,
+        data: watchlistWithQuotes,
+      });
+    } catch (error) {
+      console.error('Error fetching watchlist:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch watchlist',
+      });
+    }
+  });
+
+  app.post("/api/watchlist", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({ success: false, message: "Unauthorized" });
+      }
+
+      const result = insertWatchlistItemSchema.safeParse({
+        ...req.body,
+        userId: req.session.userId,
+      });
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid input: " + result.error.message,
+        });
+      }
+
+      // Check if ticker already exists in user's watchlist
+      const existingWatchlist = await storage.getWatchlist(req.session.userId);
+      if (existingWatchlist.some(item => item.ticker === result.data.ticker)) {
+        return res.status(409).json({
+          success: false,
+          message: "Ticker already in watchlist",
+        });
+      }
+
+      const item = await storage.addToWatchlist(result.data);
+
+      return res.json({
+        success: true,
+        data: item,
+      });
+    } catch (error) {
+      console.error('Error adding to watchlist:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to add to watchlist',
+      });
+    }
+  });
+
+  app.delete("/api/watchlist/:ticker", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({ success: false, message: "Unauthorized" });
+      }
+
+      const { ticker } = req.params;
+      await storage.removeFromWatchlist(req.session.userId, ticker);
+
+      return res.json({
+        success: true,
+        message: "Ticker removed from watchlist",
+      });
+    } catch (error) {
+      console.error('Error removing from watchlist:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to remove from watchlist',
       });
     }
   });

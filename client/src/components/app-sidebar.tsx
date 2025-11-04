@@ -1,4 +1,4 @@
-import { LayoutDashboard, Wallet, History, Settings, Activity, Plug, LogOut, User, Users, Calendar, TrendingUp } from "lucide-react";
+import { LayoutDashboard, Wallet, History, Settings, Activity, Plug, LogOut, User, Users, Calendar, TrendingUp, Star } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useUser } from "@/contexts/user-context";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,11 @@ const menuItems = [
     title: "Market Movers",
     url: "/market-movers",
     icon: TrendingUp,
+  },
+  {
+    title: "Watchlist",
+    url: "/watchlist",
+    icon: Star,
   },
   {
     title: "Test Connection",
