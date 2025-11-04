@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
-import MemoryStore from "memorystore";
+import connectPgSimple from "connect-pg-simple";
+import pg from "pg";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
@@ -20,20 +21,26 @@ declare module 'http' {
   }
 }
 
-// Session configuration
-const MemStore = MemoryStore(session);
+// Session configuration with PostgreSQL store
+const PgSession = connectPgSimple(session);
 const sessionSecret = process.env.SESSION_SECRET || 'dev-secret-please-change-in-production';
+
+const pgPool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+});
 
 app.use(
   session({
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
-    store: new MemStore({
-      checkPeriod: 86400000, // prune expired entries every 24h
+    store: new PgSession({
+      pool: pgPool,
+      createTableIfMissing: true,
+      tableName: 'session',
     }),
     cookie: {
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
