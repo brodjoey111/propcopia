@@ -12,6 +12,15 @@ export const users = pgTable("users", {
   globalPositionScaling: integer("global_position_scaling").default(100),
   globalMaxContracts: integer("global_max_contracts"),
   globalBlockedTickers: text("global_blocked_tickers").array(),
+  onboardingStep: integer("onboarding_step").default(0),
+  onboardingCompleted: boolean("onboarding_completed").default(false),
+  dailyTradingStreak: integer("daily_trading_streak").default(0),
+  safeTradingDays: integer("safe_trading_days").default(0),
+  riskEducationCompleted: boolean("risk_education_completed").default(false),
+  badges: text("badges").array().default(sql`ARRAY[]::text[]`),
+  lastActiveDate: timestamp("last_active_date"),
+  dailyLossLimit: decimal("daily_loss_limit", { precision: 12, scale: 2 }),
+  maxDailyDrawdown: decimal("max_daily_drawdown", { precision: 12, scale: 2 }),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -133,3 +142,21 @@ export const insertTraderPositionSchema = createInsertSchema(traderPositions).om
 
 export type InsertTraderPosition = z.infer<typeof insertTraderPositionSchema>;
 export type TraderPosition = typeof traderPositions.$inferSelect;
+
+export const dailySummaries = pgTable("daily_summaries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  date: timestamp("date").notNull(),
+  totalPnl: decimal("total_pnl", { precision: 12, scale: 2 }).default('0'),
+  drawdown: decimal("drawdown", { precision: 12, scale: 2 }).default('0'),
+  tradesExecuted: integer("trades_executed").default(0),
+  riskLimitRespected: boolean("risk_limit_respected").default(true),
+  streakMaintained: boolean("streak_maintained").default(true),
+});
+
+export const insertDailySummarySchema = createInsertSchema(dailySummaries).omit({
+  id: true,
+});
+
+export type InsertDailySummary = z.infer<typeof insertDailySummarySchema>;
+export type DailySummary = typeof dailySummaries.$inferSelect;

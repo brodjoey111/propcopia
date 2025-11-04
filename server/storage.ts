@@ -40,6 +40,15 @@ export class MemStorage implements IStorage {
       globalPositionScaling: 100,
       globalMaxContracts: null,
       globalBlockedTickers: null,
+      onboardingStep: 0,
+      onboardingCompleted: false,
+      dailyTradingStreak: 0,
+      safeTradingDays: 0,
+      riskEducationCompleted: false,
+      badges: [],
+      lastActiveDate: null,
+      dailyLossLimit: null,
+      maxDailyDrawdown: null,
     };
     this.users.set(id, user);
     return user;
