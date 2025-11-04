@@ -5,10 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Activity } from "lucide-react";
+import { Activity, TrendingUp } from "lucide-react";
 
 export default function Auth() {
   const [, setLocation] = useLocation();
@@ -113,8 +114,28 @@ export default function Auth() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-6">
-      <Card className="w-full max-w-md">
+    <div className="relative flex min-h-screen flex-col items-center justify-center p-6">
+      {/* Navigation Header */}
+      <header className="fixed top-0 left-0 right-0 z-50 border-b bg-background/80 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+          <Link href="/">
+            <div className="flex items-center gap-2 cursor-pointer hover-elevate">
+              <TrendingUp className="h-6 w-6" />
+              <span className="text-lg font-semibold">Trade Copier</span>
+            </div>
+          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/pricing">
+              <Button variant="ghost" data-testid="link-pricing-auth">
+                Pricing
+              </Button>
+            </Link>
+            <ThemeToggle />
+          </div>
+        </div>
+      </header>
+      
+      <Card className="w-full max-w-md mt-20">
         <CardHeader className="space-y-1 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
             <Activity className="h-6 w-6 text-primary-foreground" />

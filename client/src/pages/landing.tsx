@@ -2,6 +2,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Copy,
   Zap,
@@ -129,9 +130,31 @@ export default function Landing() {
 
   return (
     <div className="relative min-h-screen">
+      {/* Navigation Header */}
+      <header className="fixed top-0 left-0 right-0 z-50 border-b bg-background/80 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-6 w-6" />
+            <span className="text-lg font-semibold">Trade Copier</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <Link href="/pricing">
+              <Button variant="ghost" data-testid="link-pricing">
+                Pricing
+              </Button>
+            </Link>
+            <Link href="/auth">
+              <Button variant="ghost" data-testid="link-login">
+                Login
+              </Button>
+            </Link>
+            <ThemeToggle />
+          </div>
+        </div>
+      </header>
       
       {/* Hero Section */}
-      <section className="relative">
+      <section className="relative pt-20">
         <div className="mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8">
           <div className="mx-auto max-w-3xl text-center">
             <Badge className="mb-4" variant="outline" data-testid="badge-new">

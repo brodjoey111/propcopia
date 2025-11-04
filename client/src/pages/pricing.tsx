@@ -1,8 +1,9 @@
-import { Check } from "lucide-react";
+import { Check, TrendingUp } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const pricingTiers = [
   {
@@ -66,8 +67,28 @@ const pricingTiers = [
 
 export default function Pricing() {
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-16">
+    <div className="relative min-h-screen bg-background">
+      {/* Navigation Header */}
+      <header className="fixed top-0 left-0 right-0 z-50 border-b bg-background/80 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+          <Link href="/">
+            <div className="flex items-center gap-2 cursor-pointer hover-elevate">
+              <TrendingUp className="h-6 w-6" />
+              <span className="text-lg font-semibold">Trade Copier</span>
+            </div>
+          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/auth">
+              <Button variant="ghost" data-testid="link-login-pricing">
+                Login
+              </Button>
+            </Link>
+            <ThemeToggle />
+          </div>
+        </div>
+      </header>
+      
+      <div className="container mx-auto px-4 py-16 pt-32">
         {/* Header */}
         <div className="mb-16 text-center">
           <h1 className="mb-4 text-4xl font-bold tracking-tight" data-testid="text-pricing-title">
