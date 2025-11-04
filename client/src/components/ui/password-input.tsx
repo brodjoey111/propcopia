@@ -13,15 +13,15 @@ const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
       <div className="relative">
         <Input
           type={showPassword ? "text" : "password"}
-          className={className}
+          className={`pr-10 ${className || ""}`}
           ref={ref}
           {...props}
         />
         <Button
           type="button"
           variant="ghost"
-          size="icon"
-          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+          size="sm"
+          className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 px-0 hover:bg-transparent"
           onClick={() => setShowPassword(!showPassword)}
           data-testid="button-toggle-password"
         >
