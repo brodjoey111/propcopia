@@ -1,13 +1,9 @@
 # Futures Trade Copier Dashboard
 
 ## Overview
-
-This is a futures trading copy system that enables traders to automatically replicate trades from a master trading account to multiple follower accounts. The application supports NinjaTrader and Tradovate trading platforms, allowing users to manage multiple accounts, monitor live trading activity, track performance metrics, and configure position scaling for each follower account.
-
-The system provides real-time trade synchronization, comprehensive activity logging, and a visual dashboard for monitoring account balances, P&L, and trade execution status.
+The Futures Trade Copier Dashboard is a comprehensive application designed to automate futures trading by replicating trades from master accounts to multiple follower accounts. It supports NinjaTrader and Tradovate platforms, offering features like real-time trade synchronization, performance monitoring, and customizable position scaling. The system provides a visual dashboard for tracking account balances, P&L, and trade execution, aiming to deliver a professional financial app experience.
 
 ## User Preferences
-
 Preferred communication style: Simple, everyday language.
 
 **Design System:** Robinhood 2024 theme with minimalist aesthetic
@@ -21,264 +17,34 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Frontend Architecture
-
-**Framework & Tooling:**
-- **React 18** with TypeScript for type-safe component development
-- **Vite** as the build tool and development server
-- **Wouter** for lightweight client-side routing
-- **TanStack Query (React Query)** for server state management and caching
-
-**UI Component System:**
-- **shadcn/ui** component library built on Radix UI primitives
-- **Tailwind CSS** for utility-first styling with custom design tokens
-- **Design System:** Inspired by Linear and modern fintech dashboards (Stripe, Robinhood) emphasizing information density, clarity, and scannable hierarchies
-- **Typography:** Inter font family loaded via Google Fonts CDN
-- **Color System:** CSS custom properties for theme variables supporting light/dark modes
-- **Interactive Features:** Drag-and-drop dashboard customization using @dnd-kit libraries
-
-**State Management Strategy:**
-- React Query for API data fetching, caching, and synchronization
-- Local component state for UI interactions
-- No global state management library (Redux, Zustand, etc.) - keeping state close to components
-
-**Key Frontend Features:**
-1. Dashboard with draggable widget grid for customization
-2. Account management with connection status indicators (separate Connect/Disconnect buttons with color-coded states)
-3. Real-time activity feed for trade execution monitoring
-4. Trading calendar with P&L visualization
-5. **Dark Mode Theme Toggle:**
-   - Moon/Sun icon toggle for easy theme switching
-   - Accessible across all pages (public and protected)
-   - localStorage persistence for user preference
-   - Smooth transitions between light and dark modes
-   - WCAG 2.0 compliant with proper aria-labels
-   - Positioned in top-right header on all pages
-6. **Enhanced position scaling controls for follower accounts:**
-   - Position scaling percentage (10-200%, adjustable via slider)
-   - Maximum contracts per trade limit (optional, prevents over-leveraging)
-   - Blocked ticker symbols (blacklist specific instruments)
-   - Real-time validation with visual feedback
-   - Configuration dialog with comprehensive controls
-7. **Social media community platform:**
-   - Feed for sharing trading insights and market analysis
-   - Post creation with real-time updates
-   - Like and engagement functionality
-   - Trending traders leaderboard with performance metrics
-   - Follow/following system for trader connections
-   - Verified trader badges
-8. **Economic Calendar:**
-   - Displays upcoming economic events that may impact futures markets
-   - Events grouped by date (Today, Tomorrow, specific dates)
-   - Impact level indicators (High/Medium/Low) with color-coded badges
-   - Event details: time, country, name, actual/forecast/previous values
-   - High-impact events: red badges with AlertCircle icon (NFP, CPI, FOMC)
-   - Medium-impact events: chart-4 color with TrendingUp icon
-   - Low-impact events: muted styling
-   - Mock data structure ready for Finnhub API integration
-   - Responsive card-based layout with hover effects
-   - Full theme support (light/dark mode)
-9. Chart visualizations using Recharts library
-10. Theme toggle (light/dark mode) with localStorage persistence
-11. User profile management with bio editor (200 character limit) and profile picture upload (base64 storage, 2MB client limit)
-12. Public pricing page with three subscription tiers (Starter, Professional, Enterprise) and FAQ section
-13. Landing page with integrated pricing section
-
-**Public Pages:**
-- Landing page (/) - Marketing homepage with integrated pricing section and prominent Sign In button on top left
-- Authentication page (/auth) - Login and signup with link to pricing
-- Pricing page (/pricing) - Three subscription tiers with features, pricing, FAQ, and Sign In button on top left
-
-**Position Scaling Configuration:**
-- **ConfigureAccountDialog Component** - Comprehensive configuration dialog for follower accounts
-  - Slider control for position scaling (10-200% in 5% increments)
-  - Optional max contracts input with strict validation (positive integers only)
-  - Ticker blacklist with add/remove functionality
-  - Real-time validation: rejects zero, negatives, decimals, exponential notation, leading zeros
-  - Visual feedback: error messages, red borders, disabled save button
-  - Enter key support for adding tickers
-  - Automatic uppercase conversion for ticker symbols
-  - Duplicate ticker prevention
-- **Account Card Display** - Visual indicators for configured restrictions
-  - "Max X contracts" badge when limit is set
-  - "X blocked ticker(s)" badge when tickers are blacklisted
-  - Scaling percentage display for all follower accounts
-  - Only follower accounts can be configured (master accounts disabled)
-
-**Social Media Features:**
-- **Social Feed Tab** - Main community feed
-  - Post creation textarea with character input
-  - Real-time post updates and state management
-  - Like/unlike functionality with visual feedback (heart icon fills)
-  - Comment and share buttons
-  - Performance badges showing trader returns
-  - Verified trader badges
-  - Relative timestamps ("3h ago", "just now")
-  - **Automatic Picture Posting:**
-    - Smart keyword detection for trading-related posts (ES, NQ, SPX, trading, market, futures, etc.)
-    - Real-time visual feedback with sparkles icon when trading keywords detected
-    - Automatic stock market image generation for trading posts
-    - 3 pre-loaded high-quality stock trading images
-    - "Auto-generated" badge on images
-    - Posts without trading keywords post normally without images
-    - Loading state during image generation
-    - Toast notification confirms image was added
-- **Live Leaderboard Tab** - Real-time trader rankings
-  - Displays top 5 traders ranked by performance (return %)
-  - Real-time P&L updates driven by live market data
-  - WebSocket connection for streaming price updates
-  - Position badges showing symbol, direction (LONG/SHORT), quantity
-  - Color-coded returns and P&L (green for positive, red for negative)
-  - Live status indicator with pulsing icon
-  - Auto-reconnection on disconnect
-  - Rankings dynamically shift as market prices change
-  - Integrated with Finnhub API for real futures prices
-  - Fallback to simulated data when API unavailable
-- **Trending Tab** - Top performers showcase
-  - Leaderboard of top traders by performance
-  - Return percentages with time period
-  - Follower counts
-  - Follow buttons for each trader
-- **Following Tab** - User's followed traders
-  - Empty state with call-to-action
-  - "Discover Traders" button for exploration
-- Currently implemented with in-memory mock data for demonstration
+The frontend is built with **React 18** and **TypeScript**, using **Vite** for development and **Wouter** for routing. **TanStack Query** manages server state. The UI leverages **shadcn/ui** (built on Radix UI) and **Tailwind CSS** for styling, adhering to a "less is more" design philosophy inspired by modern fintech. Key features include a draggable dashboard, real-time activity feed, a dark mode toggle, enhanced position scaling controls, a social media community platform with an economic calendar, and market movers. Chart visualizations are handled by Recharts.
 
 ### Backend Architecture
-
-**Server Framework:**
-- **Express.js** Node.js web framework
-- **TypeScript** for type safety across the stack
-- Development server with hot module replacement via Vite middleware
-- Custom logging middleware for API request/response tracking
-
-**API Design:**
-- RESTful API endpoints under `/api` prefix
-- JSON request/response format
-- Raw body capture for webhook integrations
-- Centralized error handling
-
-**External Trading Platform Integration:**
-- Custom `TradovateAPI` class for Tradovate platform authentication and trading operations
-- Support for both demo and live trading environments
-- Token-based authentication with expiration management
-- Reusable API instance caching per user/account
-
-**Current Endpoints:**
-- `POST /api/tradovate/test-connection` - Validates credentials and tests Tradovate connectivity
-- `GET /api/auth/me` - Returns current user profile including bio and profilePicture
-- `PATCH /api/user/profile` - Updates user profile (bio and/or profilePicture)
-- `GET /api/leaderboard` - Returns top traders with real-time P&L calculations
-- `GET /api/market/prices` - Returns current market prices for all tracked symbols
-- `GET /api/economic-calendar` - Returns upcoming economic events with impact levels and data points (currently using mock data)
-- `WebSocket /ws/market` - Streams real-time market price updates
-
-**Market Data Integration:**
-- **Finnhub API** - Real-time futures market data via WebSocket
-  - Tracked symbols: ES, NQ, YM, RTY futures contracts
-  - Live price streaming with automatic reconnection
-  - Intelligent fallback to simulated data when API unavailable or stale (30s threshold)
-  - Simulated updates provide realistic market movement for development/demo
-- **Market Data Service** (`server/market-data.ts`)
-  - WebSocket connection management
-  - Pub/sub pattern for price subscriptions
-  - Real-time P&L calculations for trader positions
-  - Automatic data source switching (live API → simulated fallback)
+The backend uses **Express.js** with **TypeScript**. It provides RESTful API endpoints for managing trading accounts, user profiles, social features, and market data. A custom `TradovateAPI` class handles integration with the Tradovate platform, supporting both demo and live environments. Market data integration is powered by **Finnhub API** for real-time futures data, with an intelligent fallback to simulated data.
 
 ### Data Storage Solutions
-
-**Database:**
-- **PostgreSQL** via Neon serverless database
-- **Drizzle ORM** for type-safe database queries and migrations
-- Schema-first approach with TypeScript types generated from database schema
-
-**Database Schema:**
-
-1. **Users Table:**
-   - Primary authentication entity
-   - Stores username and hashed passwords
-   - UUID primary keys
-   - Profile fields: bio (text, up to 200 characters) and profilePicture (base64 encoded string)
-
-2. **Accounts Table:**
-   - Trading account configurations
-   - Fields: name, platform (NinjaTrader/Tradovate), account type (master/follower)
-   - API credentials (encrypted keys and secrets)
-   - Connection status and last sync timestamp
-   - Balance tracking and position scaling multipliers
-   - **Enhanced position control fields:**
-     - `positionScaling`: integer (default 100) - percentage scaling 10-200%
-     - `maxContracts`: integer (nullable) - maximum contracts per trade limit
-     - `blockedTickers`: text array - list of blocked ticker symbols
-
-3. **Trades Table:**
-   - Trade execution history
-   - Links to master account for trade origin
-   - Symbol, action (BUY/SELL), quantity, price
-   - Status tracking (success/failed/pending)
-   - Timestamp for chronological ordering
-
-4. **Posts Table:**
-   - Social media posts from traders
-   - Fields: userId, content, likes count, comments count, timestamp
-   - UUID primary keys
-   - Supports community engagement features
-
-5. **Follows Table:**
-   - Trader-to-trader following relationships
-   - Fields: followerId, followingId, timestamp
-   - Enables social networking features
-
-**Temporary Storage:**
-- In-memory storage implementation (`MemStorage` class) for development/testing
-- Interface-based design (`IStorage`) allows easy swapping between memory and database implementations
+The primary database is **PostgreSQL** (Neon serverless) managed by **Drizzle ORM** for type-safe queries. The schema includes tables for `Users`, `Accounts` (with enhanced position control fields), `Trades`, `Posts`, and `Follows`. An in-memory storage implementation is used for development.
 
 ### Authentication & Authorization
+The system uses session-based authentication with username/password login. User profiles include a bio and profile picture upload. Trading platform authentication is handled separately for each platform, with secure credential management and token refresh mechanisms.
 
-**Current Implementation:**
-- Session-based authentication with username/password login
-- User registration and login flows with protected routes
-- User context provider for accessing authenticated user data across the application
-- Profile management allowing users to add bio and profile picture
+## External Dependencies
 
-**User Profile Features:**
-- Bio field with 200 character limit and real-time character counter
-- Profile picture upload with client-side 2MB size validation
-- Profile pictures stored as base64 encoded strings
-- Sidebar displays user avatar (profile picture or initial) and bio
-- Settings page provides profile editing interface
+### Trading Platform APIs
+- **Tradovate API**: For futures trading operations, account data, and trade execution in demo and live environments.
 
-**Trading Platform Authentication:**
-- Separate credential management per trading platform
-- Tradovate: username, password, client ID, and secret
-- Token refresh and expiration handling
-- Environment-specific endpoints (demo vs. live)
+### Database Services
+- **Neon Serverless PostgreSQL**: Cloud-hosted PostgreSQL database for persistent data storage.
 
-### External Dependencies
+### Third-Party Libraries
+- **Recharts**: For data visualization and charting.
+- **date-fns**: For date manipulation and formatting.
+- **Zod**: For runtime schema validation.
+- **React Hook Form**: For form management and validation.
 
-**Trading Platform APIs:**
-- **Tradovate API** - Futures trading platform
-  - Demo environment: `https://demo.tradovateapi.com/v1`
-  - Live environment: `https://live.tradovateapi.com/v1`
-  - OAuth-style authentication with access tokens
-  - Account data retrieval and trade execution capabilities
+### Market Data APIs
+- **Finnhub API**: Provides real-time futures market data via WebSocket, with symbols like ES, NQ, YM, RTY.
 
-**Database Services:**
-- **Neon Serverless PostgreSQL** - Cloud-hosted database
-  - Connection via `@neondatabase/serverless` package
-  - DATABASE_URL environment variable for configuration
-
-**Third-Party Libraries:**
-- **Recharts** - Chart visualization library for performance metrics
-- **date-fns** - Date manipulation and formatting
-- **Zod** - Runtime type validation for API payloads and database schemas
-- **React Hook Form** - Form state management with validation
-- **@hookform/resolvers** - Zod integration for form validation
-
-**Development Tools:**
-- **Replit-specific plugins** for development environment integration
-- **Vite plugins** for error overlays, cartographer, and dev banners
-
-**Styling & UI:**
-- **Tailwind CSS** with PostCSS for processing
-- **class-variance-authority** for component variant management
-- **clsx** and **tailwind-merge** for conditional class handling
+### Styling & UI
+- **Tailwind CSS**: Utility-first CSS framework.
+- **class-variance-authority**, **clsx**, **tailwind-merge**: For advanced styling and class management.

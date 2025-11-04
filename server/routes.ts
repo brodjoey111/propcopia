@@ -547,6 +547,143 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // FMP API helper function
+  async function fetchFromFMP(endpoint: string) {
+    const apiKey = process.env.FMP_API_KEY;
+    if (!apiKey) {
+      throw new Error('FMP_API_KEY is not configured');
+    }
+    
+    const url = `https://financialmodelingprep.com/api/v3${endpoint}${endpoint.includes('?') ? '&' : '?'}apikey=${apiKey}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`FMP API error: ${response.statusText}`);
+    }
+    
+    return response.json();
+  }
+
+  // Market Movers - Top Gainers
+  app.get("/api/market-movers/gainers", async (req, res) => {
+    try {
+      const data = await fetchFromFMP('/stock_market/gainers');
+      return res.json({
+        success: true,
+        data: data.slice(0, 100),
+      });
+    } catch (error) {
+      console.error('Error fetching gainers:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch gainers',
+      });
+    }
+  });
+
+  // Market Movers - Top Losers
+  app.get("/api/market-movers/losers", async (req, res) => {
+    try {
+      const data = await fetchFromFMP('/stock_market/losers');
+      return res.json({
+        success: true,
+        data: data.slice(0, 100),
+      });
+    } catch (error) {
+      console.error('Error fetching losers:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch losers',
+      });
+    }
+  });
+
+  // Market Movers - Most Active
+  app.get("/api/market-movers/actives", async (req, res) => {
+    try {
+      const data = await fetchFromFMP('/stock_market/actives');
+      return res.json({
+        success: true,
+        data: data.slice(0, 100),
+      });
+    } catch (error) {
+      console.error('Error fetching most active:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch most active stocks',
+      });
+    }
+  });
+
+  // Index Constituents - S&P 500
+  app.get("/api/market-movers/sp500-constituents", async (req, res) => {
+    try {
+      const data = await fetchFromFMP('/sp500_constituent');
+      return res.json({
+        success: true,
+        data,
+      });
+    } catch (error) {
+      console.error('Error fetching S&P 500 constituents:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch S&P 500 constituents',
+      });
+    }
+  });
+
+  // Index Constituents - NASDAQ
+  app.get("/api/market-movers/nasdaq-constituents", async (req, res) => {
+    try {
+      const data = await fetchFromFMP('/nasdaq_constituent');
+      return res.json({
+        success: true,
+        data,
+      });
+    } catch (error) {
+      console.error('Error fetching NASDAQ constituents:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch NASDAQ constituents',
+      });
+    }
+  });
+
+  // Combined Market Movers with Index Information
+  app.get("/api/market-movers", async (req, res) => {
+    try {
+      const type = req.query.type as string || 'gainers';
+      
+      const [movers, sp500, nasdaq] = await Promise.all([
+        fetchFromFMP(`/stock_market/${type}`),
+        fetchFromFMP('/sp500_constituent'),
+        fetchFromFMP('/nasdaq_constituent'),
+      ]);
+
+      const sp500Symbols = new Set(sp500.map((s: any) => s.symbol));
+      const nasdaqSymbols = new Set(nasdaq.map((s: any) => s.symbol));
+
+      const enrichedData = movers.slice(0, 100).map((stock: any) => ({
+        ...stock,
+        indices: {
+          sp500: sp500Symbols.has(stock.symbol),
+          nasdaq: nasdaqSymbols.has(stock.symbol),
+        },
+      }));
+
+      return res.json({
+        success: true,
+        data: enrichedData,
+      });
+    } catch (error) {
+      console.error('Error fetching market movers:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch market movers',
+      });
+    }
+  });
+
   const wss = new WebSocketServer({ server, path: '/ws/market' });
 
   wss.on('connection', (ws) => {

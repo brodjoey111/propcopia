@@ -18,6 +18,7 @@ import Trades from "@/pages/trades";
 import Activity from "@/pages/activity";
 import Social from "@/pages/social";
 import EconomicCalendar from "@/pages/economic-calendar";
+import MarketMovers from "@/pages/market-movers";
 import Settings from "@/pages/settings";
 import TestConnection from "@/pages/test-connection";
 import Pricing from "@/pages/pricing";
@@ -31,6 +32,7 @@ function AppRouter() {
       <Route path="/activity" component={Activity} />
       <Route path="/social" component={Social} />
       <Route path="/economic-calendar" component={EconomicCalendar} />
+      <Route path="/market-movers" component={MarketMovers} />
       <Route path="/settings" component={Settings} />
       <Route path="/test-connection" component={TestConnection} />
       <Route component={NotFound} />
