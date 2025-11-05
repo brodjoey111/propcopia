@@ -762,6 +762,65 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Generate simulated market movers data as fallback
+  function generateSimulatedMarketMovers(type: 'gainers' | 'losers' | 'actives') {
+    const popularStocks = [
+      'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'NFLX',
+      'AMD', 'INTC', 'ORCL', 'ADBE', 'CRM', 'PYPL', 'COIN', 'SQ',
+      'UBER', 'LYFT', 'ABNB', 'DASH', 'SHOP', 'SPOT', 'ZM', 'DOCU',
+      'SNAP', 'TWTR', 'PINS', 'RBLX', 'U', 'DKNG', 'PLTR', 'SNOW',
+      'NET', 'CRWD', 'ZS', 'OKTA', 'DDOG', 'MDB', 'TEAM', 'NOW',
+      'WDAY', 'SPLK', 'PANW', 'FTNT', 'CHKP', 'CYBR', 'TENB', 'RPD',
+      'S', 'ESTC', 'BILL', 'ZI', 'SMAR', 'FROG', 'FSLY', 'VCYT',
+      'BL', 'ALRM', 'APPN', 'ASAN', 'DOCN', 'GTLB', 'PD', 'DT',
+      'MELI', 'SE', 'BABA', 'JD', 'PDD', 'BIDU', 'NIO', 'XPEV',
+      'LI', 'GRAB', 'DIDI', 'TAL', 'EDU', 'GSX', 'VIPS', 'BILI',
+      'IQ', 'HUYA', 'DOYU', 'YY', 'MOMO', 'WB', 'TIGR', 'FUTU',
+      'LKNCY', 'BEKE', 'TME', 'BZUN', 'VNET', 'KC', 'QD', 'LX',
+      'GOTU', 'DAO', 'NIU', 'CBAT', 'SOS'
+    ];
+
+    const movers = [];
+    const basePrice = 150;
+    
+    for (let i = 0; i < 100; i++) {
+      const symbol = popularStocks[i % popularStocks.length] + (i >= popularStocks.length ? Math.floor(i / popularStocks.length) : '');
+      const price = basePrice + (Math.random() * 200);
+      
+      let changePercent;
+      if (type === 'gainers') {
+        changePercent = 0.5 + (Math.random() * 15); // 0.5% to 15.5%
+      } else if (type === 'losers') {
+        changePercent = -(0.5 + (Math.random() * 15)); // -0.5% to -15.5%
+      } else {
+        changePercent = (Math.random() - 0.5) * 10; // -5% to +5%
+      }
+      
+      const changeAmount = price * (changePercent / 100);
+      const openPrice = price - changeAmount;
+      const volume = Math.floor(10000000 + Math.random() * 90000000);
+      
+      movers.push({
+        ticker: symbol,
+        price: price.toFixed(2),
+        change_amount: changeAmount.toFixed(2),
+        change_percentage: changePercent.toFixed(2) + '%',
+        volume: volume.toString(),
+      });
+    }
+    
+    // Sort by percentage change
+    if (type === 'gainers') {
+      movers.sort((a, b) => parseFloat(b.change_percentage) - parseFloat(a.change_percentage));
+    } else if (type === 'losers') {
+      movers.sort((a, b) => parseFloat(a.change_percentage) - parseFloat(b.change_percentage));
+    } else {
+      movers.sort((a, b) => parseInt(b.volume) - parseInt(a.volume));
+    }
+    
+    return movers;
+  }
+
   // Alpha Vantage API helper - Get top gainers/losers
   async function fetchMarketMovers(type: 'gainers' | 'losers' | 'actives') {
     const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
@@ -784,23 +843,40 @@ export function registerRoutes(app: Express): Server {
       throw new Error(data.Note || data['Error Message'] || 'API rate limit exceeded');
     }
     
+    let result;
     if (type === 'gainers') {
-      return data.top_gainers || [];
+      result = data.top_gainers || [];
     } else if (type === 'losers') {
-      return data.top_losers || [];
+      result = data.top_losers || [];
     } else {
-      return data.most_actively_traded || [];
+      result = data.most_actively_traded || [];
     }
+    
+    // If empty array returned, treat as API failure
+    if (!result || result.length === 0) {
+      throw new Error('Alpha Vantage returned no data (possibly rate limited)');
+    }
+    
+    return result;
   }
 
-  // Combined Market Movers endpoint using Alpha Vantage
+  // Combined Market Movers endpoint using Alpha Vantage with simulated fallback
   app.get("/api/market-movers", async (req, res) => {
     try {
       const type = (req.query.type as string || 'gainers') as 'gainers' | 'losers' | 'actives';
       
-      const movers = await fetchMarketMovers(type);
+      let movers;
+      let isSimulated = false;
+      
+      try {
+        movers = await fetchMarketMovers(type);
+      } catch (error) {
+        console.log(`Alpha Vantage API unavailable, using simulated data for ${type}:`, error instanceof Error ? error.message : 'Unknown error');
+        movers = generateSimulatedMarketMovers(type);
+        isSimulated = true;
+      }
 
-      // Transform Alpha Vantage data to match our frontend format
+      // Transform data to match our frontend format
       const transformedData = movers.slice(0, 100).map((stock: any) => {
         const currentPrice = parseFloat(stock.price);
         const changeAmount = parseFloat(stock.change_amount || '0');
@@ -816,12 +892,14 @@ export function registerRoutes(app: Express): Server {
           exchange: 'US', // Alpha Vantage data is US stocks
           open: !isNaN(openPrice) ? openPrice : undefined,
           close: !isNaN(currentPrice) ? currentPrice : undefined,
+          simulated: isSimulated,
         };
       });
 
       return res.json({
         success: true,
         data: transformedData,
+        simulated: isSimulated,
       });
     } catch (error) {
       console.error('Error fetching market movers:', error);

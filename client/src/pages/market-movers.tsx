@@ -124,7 +124,7 @@ function StockList({ type, title, icon: Icon }: { type: string; title: string; i
       }
       return response.json();
     },
-    refetchInterval: 60000,
+    refetchInterval: 15000, // Refresh every 15 seconds for real-time price updates
   });
 
   if (isLoading) {
