@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Trash2, Plus, TrendingUp, TrendingDown } from "lucide-react";
 import { CompanyDetailsDialog } from "@/components/company-details-dialog";
 import { TickerAutocomplete } from "@/components/ticker-autocomplete";
-import type { TickerInfo } from "@shared/ticker-database";
+import { searchTickers, getTickerBySymbol, getTickerByName, type TickerInfo } from "@shared/ticker-database";
 
 interface WatchlistItemWithQuote {
   id: string;
@@ -82,7 +82,29 @@ export default function Watchlist() {
       });
       return;
     }
-    addMutation.mutate(newTicker.trim());
+
+    // Try to resolve input to a ticker symbol
+    const input = newTicker.trim();
+    
+    // First try exact symbol match
+    let ticker = getTickerBySymbol(input);
+    
+    // If no symbol match, try exact name match
+    if (!ticker) {
+      ticker = getTickerByName(input);
+    }
+    
+    // If still no match, try searching and use first result
+    if (!ticker) {
+      const results = searchTickers(input);
+      if (results.length > 0) {
+        ticker = results[0];
+      }
+    }
+    
+    // If we found a ticker, use its symbol, otherwise use the raw input
+    const symbolToAdd = ticker ? ticker.symbol : input.toUpperCase();
+    addMutation.mutate(symbolToAdd);
   };
 
   const handleSelectTicker = (ticker: TickerInfo) => {
