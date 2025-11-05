@@ -56,7 +56,7 @@ function AppLayout() {
           <AppSidebar />
           <div className="flex flex-1 flex-col">
             <header className="flex items-center justify-between border-b p-3 md:p-4">
-              <SidebarTrigger data-testid="button-sidebar-toggle" />
+              <SidebarTrigger data-testid="button-sidebar-toggle" className="h-11 w-11 touch-manipulation" />
               <ThemeToggle />
             </header>
             <main className="flex-1 overflow-auto p-3 sm:p-4 md:p-6">

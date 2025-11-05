@@ -182,14 +182,16 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-4 md:space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex-1 min-w-0">
           <h1 className="text-2xl md:text-3xl font-semibold">Dashboard</h1>
-          <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
+          <p className="mt-1 text-xs sm:text-sm text-muted-foreground line-clamp-2">
             Monitor your trading accounts and activity • Drag sections to customize layout
           </p>
         </div>
-        <AddAccountDialog onAdd={(account) => console.log('Account added:', account)} />
+        <div className="flex-shrink-0">
+          <AddAccountDialog onAdd={(account) => console.log('Account added:', account)} />
+        </div>
       </div>
 
       <div>
