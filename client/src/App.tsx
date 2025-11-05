@@ -55,12 +55,12 @@ function AppLayout() {
         <div className="flex h-screen w-full">
           <AppSidebar />
           <div className="flex flex-1 flex-col">
-            <header className="flex items-center justify-between border-b p-4">
+            <header className="flex items-center justify-between border-b p-3 md:p-4">
               <SidebarTrigger data-testid="button-sidebar-toggle" />
               <ThemeToggle />
             </header>
-            <main className="flex-1 overflow-auto p-6">
-              <div className="mx-auto max-w-7xl">
+            <main className="flex-1 overflow-auto p-3 sm:p-4 md:p-6">
+              <div className="mx-auto max-w-7xl w-full">
                 <AppRouter />
               </div>
             </main>

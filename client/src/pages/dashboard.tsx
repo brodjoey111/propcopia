@@ -181,11 +181,11 @@ export default function Dashboard() {
   }));
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold">Dashboard</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className="text-2xl md:text-3xl font-semibold">Dashboard</h1>
+          <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
             Monitor your trading accounts and activity • Drag sections to customize layout
           </p>
         </div>
@@ -222,7 +222,7 @@ export default function Dashboard() {
       </div>
 
       <div>
-        <h2 className="mb-4 text-xl font-semibold">Connected Accounts</h2>
+        <h2 className="mb-3 md:mb-4 text-lg md:text-xl font-semibold">Connected Accounts</h2>
         <DraggableDashboardGrid
           sections={accountSections}
           gridClassName="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
@@ -231,8 +231,12 @@ export default function Dashboard() {
       </div>
 
       <div>
-        <h2 className="mb-4 text-xl font-semibold">Recent Trades</h2>
-        <TradeLogTable trades={mockTrades} />
+        <h2 className="mb-3 md:mb-4 text-lg md:text-xl font-semibold">Recent Trades</h2>
+        <div className="overflow-x-auto -mx-3 sm:mx-0">
+          <div className="inline-block min-w-full align-middle px-3 sm:px-0">
+            <TradeLogTable trades={mockTrades} />
+          </div>
+        </div>
       </div>
     </div>
   );

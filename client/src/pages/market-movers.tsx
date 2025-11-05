@@ -40,35 +40,35 @@ function StockRow({ stock, index }: { stock: Stock; index: number }) {
   
   return (
     <div 
-      className="grid grid-cols-[40px_1fr_auto_auto] gap-4 items-center p-4 hover-elevate active-elevate-2 border-b last:border-b-0"
+      className="grid grid-cols-[30px_1fr_auto] sm:grid-cols-[40px_1fr_auto_auto] gap-2 sm:gap-4 items-center p-3 sm:p-4 hover-elevate active-elevate-2 border-b last:border-b-0 touch-manipulation"
       data-testid={`stock-row-${stock.symbol}`}
     >
-      <div className="text-sm text-muted-foreground font-medium">
+      <div className="text-xs sm:text-sm text-muted-foreground font-medium">
         #{index + 1}
       </div>
       
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-semibold text-foreground" data-testid={`stock-symbol-${stock.symbol}`}>
+          <span className="font-semibold text-foreground text-sm sm:text-base" data-testid={`stock-symbol-${stock.symbol}`}>
             {stock.symbol}
           </span>
           {stock.indices?.sp500 && (
-            <Badge variant="secondary" className="text-xs no-default-hover-elevate" data-testid={`badge-sp500-${stock.symbol}`}>
+            <Badge variant="secondary" className="text-xs no-default-hover-elevate hidden sm:inline-flex" data-testid={`badge-sp500-${stock.symbol}`}>
               S&P 500
             </Badge>
           )}
           {stock.indices?.nasdaq && (
-            <Badge variant="secondary" className="text-xs no-default-hover-elevate" data-testid={`badge-nasdaq-${stock.symbol}`}>
+            <Badge variant="secondary" className="text-xs no-default-hover-elevate hidden sm:inline-flex" data-testid={`badge-nasdaq-${stock.symbol}`}>
               NASDAQ
             </Badge>
           )}
         </div>
-        <span className="text-sm text-muted-foreground truncate" data-testid={`stock-name-${stock.symbol}`}>
+        <span className="text-xs sm:text-sm text-muted-foreground truncate" data-testid={`stock-name-${stock.symbol}`}>
           {stock.name}
         </span>
       </div>
       
-      <div className="flex flex-col items-end gap-1">
+      <div className="hidden sm:flex flex-col items-end gap-1">
         <span className="font-semibold text-foreground" data-testid={`stock-price-${stock.symbol}`}>
           {formatNumber(stock.price)}
         </span>
@@ -79,14 +79,19 @@ function StockRow({ stock, index }: { stock: Stock; index: number }) {
         )}
       </div>
       
-      <div className="flex items-center gap-2">
-        <div className={`flex items-center gap-1 ${percentColor} font-semibold`} data-testid={`stock-change-${stock.symbol}`}>
+      <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-2">
+        <div className={`flex items-center gap-1 ${percentColor} font-semibold text-sm sm:text-base`} data-testid={`stock-change-${stock.symbol}`}>
           {isPositive ? (
-            <ArrowUpRight className="h-4 w-4" />
+            <ArrowUpRight className="h-3 w-3 sm:h-4 sm:w-4" />
           ) : (
-            <ArrowDownRight className="h-4 w-4" />
+            <ArrowDownRight className="h-3 w-3 sm:h-4 sm:w-4" />
           )}
           <span>{Math.abs(stock.changesPercentage).toFixed(2)}%</span>
+        </div>
+        <div className="flex sm:hidden flex-col items-end">
+          <span className="font-semibold text-foreground text-xs" data-testid={`stock-price-${stock.symbol}-mobile`}>
+            {formatNumber(stock.price)}
+          </span>
         </div>
       </div>
     </div>
