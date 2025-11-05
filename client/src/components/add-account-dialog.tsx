@@ -47,6 +47,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
   const [step, setStep] = useState<Step>('credentials');
   const [platform, setPlatform] = useState<"ninjatrader" | "tradovate">("tradovate");
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isAddingAccounts, setIsAddingAccounts] = useState(false);
   const [fetchedAccounts, setFetchedAccounts] = useState<TradovateAccount[]>([]);
   const [selectedAccounts, setSelectedAccounts] = useState<Set<number>>(new Set());
   const [accountRoles, setAccountRoles] = useState<Map<number, 'master' | 'follower'>>(new Map());
@@ -64,16 +65,15 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
     setIsAuthenticating(true);
 
     try {
-      const response = await apiRequest('/api/tradovate/test-connection', {
-        method: 'POST',
-        body: JSON.stringify({
-          username: formData.username,
-          password: formData.password,
-          cid: formData.cid || undefined,
-          secret: formData.secret || undefined,
-          environment: formData.environment,
-        }),
+      const res = await apiRequest('POST', '/api/tradovate/test-connection', {
+        username: formData.username,
+        password: formData.password,
+        cid: formData.cid || undefined,
+        secret: formData.secret || undefined,
+        environment: formData.environment,
       });
+
+      const response = await res.json();
 
       if (response.success) {
         setFetchedAccounts(response.accounts || []);
@@ -124,27 +124,40 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
     setAccountRoles(prev => new Map(prev).set(accountId, role));
   };
 
-  const handleAddSelectedAccounts = () => {
-    selectedAccounts.forEach(accountId => {
-      const account = fetchedAccounts.find(a => a.id === accountId);
-      if (account) {
-        onAdd?.({
-          name: account.name,
-          platform: 'Tradovate',
-          accountType: accountRoles.get(accountId) || 'follower',
-          tradovateAccountId: account.id,
-          username: formData.username,
-          environment: formData.environment,
-        });
-      }
-    });
+  const handleAddSelectedAccounts = async () => {
+    setIsAddingAccounts(true);
+    try {
+      const addPromises = Array.from(selectedAccounts).map(async accountId => {
+        const account = fetchedAccounts.find(a => a.id === accountId);
+        if (account && onAdd) {
+          await onAdd({
+            name: account.name,
+            platform: 'Tradovate',
+            accountType: accountRoles.get(accountId) || 'follower',
+            tradovateAccountId: account.id,
+            username: formData.username,
+            environment: formData.environment,
+          });
+        }
+      });
 
-    toast({
-      title: "Accounts Added",
-      description: `Successfully added ${selectedAccounts.size} account(s)`,
-    });
+      await Promise.all(addPromises);
 
-    resetDialog();
+      toast({
+        title: "Accounts Added",
+        description: `Successfully added ${selectedAccounts.size} account(s)`,
+      });
+
+      resetDialog();
+    } catch (error) {
+      toast({
+        title: "Error Adding Accounts",
+        description: error instanceof Error ? error.message : "Failed to add one or more accounts",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAddingAccounts(false);
+    }
   };
 
   const resetDialog = () => {
@@ -345,15 +358,22 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
                 </div>
 
                 <DialogFooter className="mt-4">
-                  <Button type="button" variant="outline" onClick={() => setStep('credentials')}>
+                  <Button type="button" variant="outline" onClick={() => setStep('credentials')} disabled={isAddingAccounts}>
                     Back
                   </Button>
                   <Button 
                     onClick={handleAddSelectedAccounts}
-                    disabled={selectedAccounts.size === 0}
+                    disabled={selectedAccounts.size === 0 || isAddingAccounts}
                     data-testid="button-add-selected"
                   >
-                    Add {selectedAccounts.size} Account{selectedAccounts.size !== 1 ? 's' : ''}
+                    {isAddingAccounts ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Adding...
+                      </>
+                    ) : (
+                      <>Add {selectedAccounts.size} Account{selectedAccounts.size !== 1 ? 's' : ''}</>
+                    )}
                   </Button>
                 </DialogFooter>
               </>

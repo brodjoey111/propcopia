@@ -57,6 +57,8 @@ export const accounts = pgTable("accounts", {
   apiSecret: text("api_secret"),
   isConnected: boolean("is_connected").default(false),
   balance: decimal("balance", { precision: 12, scale: 2 }),
+  openPositions: integer("open_positions").default(0),
+  pnl: decimal("pnl", { precision: 12, scale: 2 }).default('0'),
   riskMode: text("risk_mode").default("global"),
   positionScaling: integer("position_scaling").default(100),
   maxContracts: integer("max_contracts"),
