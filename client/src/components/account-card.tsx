@@ -127,11 +127,8 @@ export function AccountCard({
           </Button>
           <Button
             size="sm"
-            className={`flex-1 ${
-              isConnected 
-                ? 'bg-chart-2 text-white hover:bg-chart-2/90' 
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            }`}
+            variant="outline"
+            className="flex-1"
             onClick={onConnect}
             disabled={isConnected}
             data-testid={`button-connect-${id}`}
@@ -141,7 +138,7 @@ export function AccountCard({
           <Button
             size="sm"
             className={`flex-1 ${
-              !isConnected 
+              isConnected 
                 ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' 
                 : 'bg-muted text-muted-foreground hover:bg-muted/80'
             }`}
