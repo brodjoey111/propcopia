@@ -7,8 +7,11 @@ import bcrypt from "bcrypt";
 import { insertUserSchema, updateUserProfileSchema, insertWatchlistItemSchema } from "@shared/schema";
 import { marketDataService, type MarketPrice } from "./market-data";
 import OpenAI from "openai";
+import { TradeCopyEngine } from "./trade-copy-engine";
+import { tradeLogger } from "./trade-logger";
 
 const tradovateInstances = new Map<string, TradovateAPI>();
+const tradeCopyEngines = new Map<string, TradeCopyEngine>();
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -309,6 +312,214 @@ export function registerRoutes(app: Express): Server {
       });
     } catch (error) {
       console.error('Error fetching Tradovate positions:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  // Trade copying routes
+  app.post("/api/trade-copy/start", async (req, res) => {
+    try {
+      const { userId, masterAccountId, followerAccountIds, environment = 'demo' } = req.body;
+
+      if (!userId || !masterAccountId || !followerAccountIds || !Array.isArray(followerAccountIds)) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing required parameters: userId, masterAccountId, followerAccountIds",
+        });
+      }
+
+      // Initialize trade copy engine for this user
+      let engine = tradeCopyEngines.get(userId);
+      if (!engine) {
+        engine = new TradeCopyEngine(environment);
+        tradeCopyEngines.set(userId, engine);
+
+        // Connect trade logger to engine events
+        engine.on('tradeCopied', ({ trade, metrics, followerCount }) => {
+          // Async logging (non-blocking)
+          tradeLogger.logTrade({
+            masterAccountId: trade.accountId,
+            symbol: trade.symbol,
+            action: trade.action,
+            quantity: trade.quantity,
+            price: trade.price.toString(),
+            status: 'copied',
+          }).catch(err => {
+            console.error('[TradeCopy] Error logging trade:', err);
+          });
+
+          console.log(`[TradeCopy] Trade copied to ${followerCount} followers in ${metrics.totalLatency.toFixed(2)}ms`);
+        });
+      }
+
+      // Get master account Tradovate API instance (must be authenticated first)
+      const masterUsername = req.body.masterUsername;
+      const masterTradovate = tradovateInstances.get(masterUsername);
+      
+      if (!masterTradovate || !masterTradovate.isTokenValid()) {
+        return res.status(401).json({
+          success: false,
+          message: "Master account not authenticated or token expired",
+        });
+      }
+
+      // Connect to master account WebSocket
+      const masterToken = masterTradovate.getAccessToken();
+      if (!masterToken) {
+        return res.status(401).json({
+          success: false,
+          message: "No access token for master account",
+        });
+      }
+
+      await engine.connectMasterAccount(masterAccountId, masterToken);
+
+      return res.json({
+        success: true,
+        message: "Trade copying started successfully",
+        data: {
+          masterAccountId,
+          followerCount: followerAccountIds.length,
+        },
+      });
+    } catch (error) {
+      console.error('Error starting trade copying:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.post("/api/trade-copy/add-follower", async (req, res) => {
+    try {
+      const { userId, accountId, accountName, positionScaling = 100, maxContracts, blockedTickers = [] } = req.body;
+
+      if (!userId || !accountId) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing required parameters: userId, accountId",
+        });
+      }
+
+      const engine = tradeCopyEngines.get(userId);
+      if (!engine) {
+        return res.status(404).json({
+          success: false,
+          message: "No active trade copying session. Start trade copying first.",
+        });
+      }
+
+      // Get follower account Tradovate API instance
+      const followerUsername = req.body.followerUsername;
+      const followerTradovate = tradovateInstances.get(followerUsername);
+      
+      if (!followerTradovate || !followerTradovate.isTokenValid()) {
+        return res.status(401).json({
+          success: false,
+          message: "Follower account not authenticated or token expired",
+        });
+      }
+
+      const followerToken = followerTradovate.getAccessToken();
+      if (!followerToken) {
+        return res.status(401).json({
+          success: false,
+          message: "No access token for follower account",
+        });
+      }
+
+      // Add follower to engine
+      await engine.addFollowerAccount(
+        {
+          id: accountId,
+          name: accountName,
+          platform: 'Tradovate',
+          accountType: 'follower',
+          isConnected: true,
+          positionScaling,
+          maxContracts,
+          blockedTickers,
+          apiKey: null,
+          apiSecret: null,
+          balance: null,
+          riskMode: 'custom',
+          lastSync: null,
+        },
+        followerToken
+      );
+
+      return res.json({
+        success: true,
+        message: "Follower account added successfully",
+      });
+    } catch (error) {
+      console.error('Error adding follower account:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.post("/api/trade-copy/stop", async (req, res) => {
+    try {
+      const { userId } = req.body;
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing required parameter: userId",
+        });
+      }
+
+      const engine = tradeCopyEngines.get(userId);
+      if (!engine) {
+        return res.status(404).json({
+          success: false,
+          message: "No active trade copying session",
+        });
+      }
+
+      await engine.disconnect();
+      tradeCopyEngines.delete(userId);
+
+      return res.json({
+        success: true,
+        message: "Trade copying stopped successfully",
+      });
+    } catch (error) {
+      console.error('Error stopping trade copying:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.get("/api/trade-copy/stats/:userId", (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      const engine = tradeCopyEngines.get(userId);
+      if (!engine) {
+        return res.status(404).json({
+          success: false,
+          message: "No active trade copying session",
+        });
+      }
+
+      const stats = engine.getLatencyStats();
+
+      return res.json({
+        success: true,
+        data: stats,
+      });
+    } catch (error) {
+      console.error('Error fetching trade copy stats:', error);
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Unknown error occurred',
