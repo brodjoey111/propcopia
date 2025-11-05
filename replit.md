@@ -26,7 +26,15 @@ The backend uses **Express.js** with **TypeScript**. It provides RESTful API end
 The primary database is **PostgreSQL** (Neon serverless) managed by **Drizzle ORM** for type-safe queries. The schema includes tables for `Users`, `Accounts` (with enhanced position control fields), `Trades`, `Posts`, and `Follows`. An in-memory storage implementation is used for development.
 
 ### Authentication & Authorization
-The system uses session-based authentication with username/password login. Sessions are persisted in PostgreSQL using **connect-pg-simple**, ensuring users remain logged in across page refreshes and server restarts. Session cookies are set to expire after 30 days. User profiles include a bio and profile picture upload. Trading platform authentication is handled separately for each platform, with secure credential management and token refresh mechanisms.
+The system uses session-based authentication with username/password login. Sessions are persisted in PostgreSQL using **connect-pg-simple**, ensuring users remain logged in across page refreshes and server restarts. 
+
+**Session Configuration:**
+- Cookie expiration: 30 days
+- Proxy trust: Enabled (`trust proxy: 1`) for Replit's infrastructure
+- Cookie security: `secure: true`, `sameSite: 'none'` for cross-tab/cross-origin access
+- Session persistence: Automatic via PostgreSQL store
+
+This configuration enables the app to work both in Replit's embedded preview and when opened in separate browser tabs. User profiles include a bio and profile picture upload. Trading platform authentication is handled separately for each platform, with secure credential management and token refresh mechanisms.
 
 ## External Dependencies
 

@@ -92,11 +92,9 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // Set session
-      if (req.session) {
-        req.session.userId = user.id;
-        req.session.username = user.username;
-      }
+      // Set session (will be automatically saved)
+      req.session.userId = user.id;
+      req.session.username = user.username;
 
       return res.json({
         success: true,

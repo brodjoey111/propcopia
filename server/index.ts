@@ -7,6 +7,9 @@ import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
+// Trust Replit proxy for secure cookies
+app.set('trust proxy', 1);
+
 // Session type definitions
 declare module "express-session" {
   interface SessionData {
@@ -29,6 +32,16 @@ const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+// Session cookie configuration for Replit environment
+// Replit always uses HTTPS, so we can use secure cookies
+// Use 'none' sameSite for cross-origin access (required when opening in new tab)
+const cookieSettings = {
+  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  httpOnly: true,
+  secure: true, // Replit always uses HTTPS
+  sameSite: 'none' as const, // Required for cross-origin cookies (new tab access)
+};
+
 app.use(
   session({
     secret: sessionSecret,
@@ -39,12 +52,7 @@ app.use(
       createTableIfMissing: true,
       tableName: 'session',
     }),
-    cookie: {
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-    },
+    cookie: cookieSettings,
   })
 );
 
