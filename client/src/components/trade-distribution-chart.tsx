@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip, Bar, BarChart, XAxis, YAxis, CartesianGrid } from "recharts";
 import { PieChart as PieChartIcon, Donut, BarChart3, Maximize2, Minimize2 } from "lucide-react";
 
@@ -174,6 +174,10 @@ export function TradeDistributionChart({ data, title }: TradeDistributionChartPr
       {/* Fullscreen Dialog */}
       <Dialog open={isExpanded} onOpenChange={setIsExpanded}>
         <DialogContent className="max-w-[95vw] max-h-[90vh] p-6" data-testid="dialog-expanded-dist-chart">
+          <DialogTitle className="sr-only">{title} Expanded View</DialogTitle>
+          <DialogDescription className="sr-only">
+            Fullscreen view of trade distribution chart with multiple visualization options
+          </DialogDescription>
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <h2 className="text-2xl font-bold">{title}</h2>

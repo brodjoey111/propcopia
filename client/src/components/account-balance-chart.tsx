@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis, Line, LineChart, Area, AreaChart } from "recharts";
 import { BarChart3, TrendingUp, Activity, Maximize2, Minimize2 } from "lucide-react";
 
@@ -180,6 +180,10 @@ export function AccountBalanceChart({ data, title }: AccountBalanceChartProps) {
       {/* Fullscreen Dialog */}
       <Dialog open={isExpanded} onOpenChange={setIsExpanded}>
         <DialogContent className="max-w-[95vw] max-h-[90vh] p-6" data-testid="dialog-expanded-balance-chart">
+          <DialogTitle className="sr-only">{title} Expanded View</DialogTitle>
+          <DialogDescription className="sr-only">
+            Fullscreen view of account balance chart with multiple visualization options
+          </DialogDescription>
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <h2 className="text-2xl font-bold">{title}</h2>

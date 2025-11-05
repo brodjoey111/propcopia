@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ComposedChart, Bar, Brush, CartesianGrid } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { format } from "date-fns";
 import { TrendingUp, Candy, Maximize2, Minimize2 } from "lucide-react";
 
@@ -45,11 +45,18 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
 
   const chartData = data?.data?.candles || [];
 
-  // Calculate min and max for better chart scaling
-  const prices = chartData.map(d => d.close);
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
-  const padding = (maxPrice - minPrice) * 0.1;
+  // Calculate min and max for better chart scaling - use high/low for candlestick mode
+  const minPrice = chartType === "candlestick" && chartData.length > 0
+    ? Math.min(...chartData.map(d => d.low))
+    : chartData.length > 0
+    ? Math.min(...chartData.map(d => d.close))
+    : 0;
+  const maxPrice = chartType === "candlestick" && chartData.length > 0
+    ? Math.max(...chartData.map(d => d.high))
+    : chartData.length > 0
+    ? Math.max(...chartData.map(d => d.close))
+    : 0;
+  const padding = (maxPrice - minPrice) * 0.1 || 1;
 
   // Determine if price is going up or down
   const isPositive = chartData.length > 1 && chartData[chartData.length - 1].close >= chartData[0].close;
@@ -314,6 +321,10 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
     {/* Fullscreen Dialog */}
     <Dialog open={isExpanded} onOpenChange={setIsExpanded}>
       <DialogContent className="max-w-[95vw] max-h-[95vh] p-6" data-testid="dialog-expanded-stock-chart">
+        <DialogTitle className="sr-only">{symbol} Price Chart Expanded View</DialogTitle>
+        <DialogDescription className="sr-only">
+          Fullscreen view of {symbol} stock price chart with interactive controls and zoom capabilities
+        </DialogDescription>
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <h2 className="text-2xl font-bold">{symbol} Price Chart</h2>

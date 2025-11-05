@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Line, LineChart, Bar, BarChart } from "recharts";
 import { Activity, TrendingUp, BarChart3, Maximize2, Minimize2 } from "lucide-react";
 
@@ -175,6 +175,10 @@ export function PerformanceChart({ data, title }: PerformanceChartProps) {
       {/* Fullscreen Dialog */}
       <Dialog open={isExpanded} onOpenChange={setIsExpanded}>
         <DialogContent className="max-w-[95vw] max-h-[90vh] p-6" data-testid="dialog-expanded-perf-chart">
+          <DialogTitle className="sr-only">{title} Expanded View</DialogTitle>
+          <DialogDescription className="sr-only">
+            Fullscreen view of performance chart with multiple visualization options
+          </DialogDescription>
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <h2 className="text-2xl font-bold">{title}</h2>
