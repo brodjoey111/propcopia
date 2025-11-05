@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ComposedChart, Bar, Brush, CartesianGrid } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ComposedChart, Bar, Brush, CartesianGrid, ReferenceLine } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -45,6 +45,9 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
   });
 
   const chartData = data?.data?.candles || [];
+
+  // Get current price (latest close price)
+  const currentPrice = chartData.length > 0 ? chartData[chartData.length - 1].close : 0;
 
   // Calculate min and max for better chart scaling - use high/low for candlestick mode
   const minPrice = chartType === "candlestick" && chartData.length > 0
@@ -154,12 +157,24 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
                   interval="preserveStartEnd"
                 />
                 <YAxis
+                  yAxisId="left"
                   domain={[minPrice - padding, maxPrice + padding]}
                   stroke="hsl(var(--muted-foreground))"
                   fontSize={12}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(value) => `$${value.toFixed(2)}`}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  domain={[minPrice - padding, maxPrice + padding]}
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(value) => `$${value.toFixed(2)}`}
+                  ticks={[currentPrice]}
                 />
                 <Tooltip
                   contentStyle={{
@@ -177,8 +192,23 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
                   }}
                   wrapperStyle={{ zIndex: 1000 }}
                 />
+                <ReferenceLine
+                  yAxisId="left"
+                  y={currentPrice}
+                  stroke={isPositive ? "#00c805" : "#ff5000"}
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  label={{
+                    value: `$${currentPrice.toFixed(2)}`,
+                    position: 'right',
+                    fill: isPositive ? "#00c805" : "#ff5000",
+                    fontSize: 12,
+                    fontWeight: 'bold'
+                  }}
+                />
                 {showBrush && <Brush dataKey="timestamp" height={30} stroke="hsl(var(--primary))" onChange={(e: any) => setBrushIndexes(e)} />}
                 <Line
+                  yAxisId="left"
                   type="monotone"
                   dataKey="close"
                   stroke={isPositive ? "#00c805" : "#ff5000"}
@@ -200,12 +230,24 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
                   interval="preserveStartEnd"
                 />
                 <YAxis
+                  yAxisId="left"
                   domain={[minPrice - padding, maxPrice + padding]}
                   stroke="hsl(var(--muted-foreground))"
                   fontSize={12}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(value) => `$${value.toFixed(2)}`}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  domain={[minPrice - padding, maxPrice + padding]}
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(value) => `$${value.toFixed(2)}`}
+                  ticks={[currentPrice]}
                 />
                 <Tooltip
                   contentStyle={{
@@ -260,8 +302,23 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
                   }}
                   wrapperStyle={{ zIndex: 1000 }}
                 />
+                <ReferenceLine
+                  yAxisId="left"
+                  y={currentPrice}
+                  stroke={isPositive ? "#00c805" : "#ff5000"}
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  label={{
+                    value: `$${currentPrice.toFixed(2)}`,
+                    position: 'right',
+                    fill: isPositive ? "#00c805" : "#ff5000",
+                    fontSize: 12,
+                    fontWeight: 'bold'
+                  }}
+                />
                 {showBrush && <Brush dataKey="timestamp" height={30} stroke="hsl(var(--primary))" onChange={(e: any) => setBrushIndexes(e)} />}
                 <Bar
+                  yAxisId="left"
                   dataKey="high"
                   shape={CandlestickShape}
                   isAnimationActive={!isExpanded}
