@@ -127,8 +127,12 @@ export function AccountCard({
           </Button>
           <Button
             size="sm"
-            variant="outline"
-            className="flex-1"
+            variant={isConnected ? "default" : "outline"}
+            className={`flex-1 ${
+              isConnected 
+                ? 'bg-chart-2 text-white hover:bg-chart-2/90 border-chart-2' 
+                : ''
+            }`}
             onClick={onConnect}
             disabled={isConnected}
             data-testid={`button-connect-${id}`}
