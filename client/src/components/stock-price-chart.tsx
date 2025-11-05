@@ -82,7 +82,8 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
 
     const { open, close, high, low } = payload;
     const isPositive = close >= open;
-    const color = isPositive ? "#00c805" : "#ff5000";
+    // Darker, more saturated colors for better visibility in light mode
+    const color = isPositive ? "#00a804" : "#e63900";
     
     // Calculate positions
     const candleWidth = Math.max(width * 0.6, 2);
@@ -109,7 +110,7 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
           x2={x + width / 2}
           y2={lowY}
           stroke={color}
-          strokeWidth={1}
+          strokeWidth={2}
         />
         {/* Candle body */}
         <rect
@@ -119,7 +120,7 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
           height={bodyHeight}
           fill={color}
           stroke={color}
-          strokeWidth={1}
+          strokeWidth={2}
         />
       </g>
     );
