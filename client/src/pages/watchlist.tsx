@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Plus, TrendingUp, TrendingDown } from "lucide-react";
+import { CompanyDetailsDialog } from "@/components/company-details-dialog";
 
 interface WatchlistItemWithQuote {
   id: string;
@@ -23,6 +24,7 @@ interface WatchlistItemWithQuote {
 export default function Watchlist() {
   const { toast } = useToast();
   const [newTicker, setNewTicker] = useState("");
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
 
   const { data: watchlistData, isLoading } = useQuery<{ success: boolean; data: WatchlistItemWithQuote[] }>({
     queryKey: ["/api/watchlist"],
@@ -142,7 +144,12 @@ export default function Watchlist() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {watchlist.map((item) => (
-            <Card key={item.id} data-testid={`card-watchlist-${item.ticker}`}>
+            <Card 
+              key={item.id} 
+              className="cursor-pointer hover-elevate active-elevate-2"
+              onClick={() => setSelectedTicker(item.ticker)}
+              data-testid={`card-watchlist-${item.ticker}`}
+            >
               <CardContent className="p-6">
                 <div className="flex justify-between items-start mb-4">
                   <div>
@@ -158,7 +165,10 @@ export default function Watchlist() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => removeMutation.mutate(item.ticker)}
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevent card click
+                      removeMutation.mutate(item.ticker);
+                    }}
                     disabled={removeMutation.isPending}
                     data-testid={`button-remove-${item.ticker}`}
                   >
@@ -197,6 +207,15 @@ export default function Watchlist() {
             </Card>
           ))}
         </div>
+      )}
+
+      {/* Company Details Dialog */}
+      {selectedTicker && (
+        <CompanyDetailsDialog
+          ticker={selectedTicker}
+          open={!!selectedTicker}
+          onOpenChange={(open) => !open && setSelectedTicker(null)}
+        />
       )}
     </div>
   );
