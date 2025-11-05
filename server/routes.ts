@@ -688,6 +688,243 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Helper function to generate simulated chart data
+  function generateSimulatedChartData(symbol: string, timeframe: string, res: any) {
+    const basePrice = 250 + Math.random() * 50; // Random base price between 250-300
+    const now = Date.now();
+    const candles: any[] = [];
+    
+    let dataPoints = 30;
+    let interval = 24 * 60 * 60 * 1000; // 1 day
+    
+    switch (timeframe) {
+      case '1D':
+        dataPoints = 78; // Every 5 minutes for 1 day
+        interval = 5 * 60 * 1000;
+        break;
+      case '5D':
+        dataPoints = 120;
+        interval = 15 * 60 * 1000;
+        break;
+      case '1M':
+        dataPoints = 30;
+        interval = 24 * 60 * 60 * 1000;
+        break;
+      case '6M':
+        dataPoints = 180;
+        interval = 24 * 60 * 60 * 1000;
+        break;
+      case '1Y':
+        dataPoints = 365;
+        interval = 24 * 60 * 60 * 1000;
+        break;
+      case '5Y':
+        dataPoints = 260; // Weekly data
+        interval = 7 * 24 * 60 * 60 * 1000;
+        break;
+    }
+    
+    let price = basePrice;
+    const volatility = 0.02; // 2% volatility
+    
+    for (let i = dataPoints; i >= 0; i--) {
+      const timestamp = now - (i * interval);
+      const changePercent = (Math.random() - 0.5) * volatility * 2;
+      const open = price;
+      const change = open * changePercent;
+      const close = open + change;
+      const high = Math.max(open, close) + Math.abs(change) * Math.random();
+      const low = Math.min(open, close) - Math.abs(change) * Math.random();
+      
+      candles.push({
+        timestamp,
+        date: new Date(timestamp).toISOString(),
+        open,
+        high,
+        low,
+        close,
+        volume: Math.floor(10000000 + Math.random() * 50000000),
+      });
+      
+      price = close;
+    }
+    
+    return res.json({
+      success: true,
+      data: {
+        timeframe,
+        candles,
+        simulated: true, // Flag to indicate this is simulated data
+      },
+    });
+  }
+
+  // Historical price data endpoint for charting (using Alpha Vantage)
+  app.get("/api/stock/:symbol/chart", async (req, res) => {
+    try {
+      const { symbol } = req.params;
+      const { timeframe = '1M' } = req.query;
+      const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
+      
+      if (!apiKey) {
+        return res.status(500).json({
+          success: false,
+          message: "Alpha Vantage API key not configured",
+        });
+      }
+
+      let functionName: string;
+      let interval: string = '';
+      let outputsize: string = 'compact';
+
+      // Map timeframe to Alpha Vantage function and parameters
+      switch (timeframe) {
+        case '1D':
+          functionName = 'TIME_SERIES_INTRADAY';
+          interval = '5min';
+          outputsize = 'full';
+          break;
+        case '5D':
+          functionName = 'TIME_SERIES_INTRADAY';
+          interval = '15min';
+          outputsize = 'full';
+          break;
+        case '1M':
+        case '6M':
+        case '1Y':
+          functionName = 'TIME_SERIES_DAILY';
+          outputsize = timeframe === '1M' ? 'compact' : 'full';
+          break;
+        case '5Y':
+          functionName = 'TIME_SERIES_WEEKLY';
+          outputsize = 'full';
+          break;
+        default:
+          functionName = 'TIME_SERIES_DAILY';
+          outputsize = 'compact';
+      }
+
+      // Build URL
+      let url = `https://www.alphavantage.co/query?function=${functionName}&symbol=${symbol}&apikey=${apiKey}&outputsize=${outputsize}`;
+      if (interval) {
+        url += `&interval=${interval}`;
+      }
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      // Check for API errors - use fallback simulated data if rate limited
+      if (data.Note || data['Error Message'] || data.Information) {
+        console.log('Alpha Vantage rate limit hit, using simulated data');
+        return generateSimulatedChartData(symbol, timeframe as string, res);
+      }
+
+      // Extract time series data
+      const timeSeriesKey = Object.keys(data).find(key => key.includes('Time Series'));
+      if (!timeSeriesKey || !data[timeSeriesKey]) {
+        console.log('No time series data, using simulated data');
+        return generateSimulatedChartData(symbol, timeframe as string, res);
+      }
+
+      const timeSeries = data[timeSeriesKey];
+      
+      // Transform data for the chart
+      const chartData = Object.entries(timeSeries).map(([dateStr, values]: [string, any]) => ({
+        timestamp: new Date(dateStr).getTime(),
+        date: dateStr,
+        open: parseFloat(values['1. open']),
+        high: parseFloat(values['2. high']),
+        low: parseFloat(values['3. low']),
+        close: parseFloat(values['4. close']),
+        volume: parseInt(values['5. volume'] || '0'),
+      }));
+
+      // Sort by timestamp ascending
+      chartData.sort((a, b) => a.timestamp - b.timestamp);
+
+      // Filter based on timeframe
+      const now = Date.now();
+      const filtered = chartData.filter(d => {
+        switch (timeframe) {
+          case '1D':
+            return d.timestamp > now - 24 * 60 * 60 * 1000;
+          case '5D':
+            return d.timestamp > now - 5 * 24 * 60 * 60 * 1000;
+          case '1M':
+            return d.timestamp > now - 30 * 24 * 60 * 60 * 1000;
+          case '6M':
+            return d.timestamp > now - 180 * 24 * 60 * 60 * 1000;
+          case '1Y':
+            return d.timestamp > now - 365 * 24 * 60 * 60 * 1000;
+          case '5Y':
+            return d.timestamp > now - 5 * 365 * 24 * 60 * 60 * 1000;
+          default:
+            return true;
+        }
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          timeframe,
+          candles: filtered,
+        },
+      });
+    } catch (error) {
+      console.error('Error fetching chart data:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch chart data',
+      });
+    }
+  });
+
+  // Current stock quote endpoint
+  app.get("/api/stock/:symbol/quote", async (req, res) => {
+    try {
+      const { symbol } = req.params;
+      const finnhubKey = process.env.FINNHUB_API_KEY;
+      
+      if (!finnhubKey) {
+        return res.status(500).json({
+          success: false,
+          message: "Finnhub API key not configured",
+        });
+      }
+
+      const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubKey}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      // Check if quote is valid
+      if (!data || data.c === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'No quote data available',
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          current: data.c,
+          change: data.d,
+          percentChange: data.dp,
+          high: data.h,
+          low: data.l,
+          open: data.o,
+          previousClose: data.pc,
+        },
+      });
+    } catch (error) {
+      console.error('Error fetching quote:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch quote',
+      });
+    }
+  });
+
   // Watchlist endpoints
   app.get("/api/watchlist", async (req, res) => {
     try {
