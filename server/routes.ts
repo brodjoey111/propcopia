@@ -322,7 +322,7 @@ export function registerRoutes(app: Express): Server {
   // Accounts routes
   app.post("/api/accounts", async (req, res) => {
     try {
-      if (!req.isAuthenticated() || !req.user) {
+      if (!req.session.userId) {
         return res.status(401).json({
           success: false,
           message: "Not authenticated",
@@ -331,7 +331,7 @@ export function registerRoutes(app: Express): Server {
 
       const accountData = insertAccountSchema.parse({
         ...req.body,
-        userId: req.user.id,
+        userId: req.session.userId,
       });
 
       const [newAccount] = await db.insert(accounts).values(accountData).returning();
@@ -351,7 +351,7 @@ export function registerRoutes(app: Express): Server {
 
   app.get("/api/accounts", async (req, res) => {
     try {
-      if (!req.isAuthenticated() || !req.user) {
+      if (!req.session.userId) {
         return res.status(401).json({
           success: false,
           message: "Not authenticated",
@@ -361,7 +361,7 @@ export function registerRoutes(app: Express): Server {
       const userAccounts = await db
         .select()
         .from(accounts)
-        .where(eq(accounts.userId, req.user.id));
+        .where(eq(accounts.userId, req.session.userId));
 
       return res.json({
         success: true,

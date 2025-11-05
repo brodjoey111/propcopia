@@ -132,8 +132,8 @@ export default function Dashboard() {
 
   const balanceData = accounts.map(acc => ({
     name: acc.name.replace(' Account', ''),
-    balance: acc.balance,
-    pnl: acc.pnl,
+    balance: acc.balance ? parseFloat(acc.balance) : 0,
+    pnl: acc.pnl || 0,
   }));
 
   const distributionData = [
@@ -208,6 +208,11 @@ export default function Dashboard() {
       <AccountCard
         key={account.id}
         {...account}
+        accountType={account.accountType as 'master' | 'follower'}
+        isConnected={account.isConnected || false}
+        balance={account.balance ? parseFloat(account.balance) : 0}
+        openPositions={account.openPositions || 0}
+        pnl={account.pnl || 0}
         onConnect={() => handleConnect(account.id)}
         onDisconnect={() => handleDisconnectClick(account.id, account.name)}
         configureButton={
@@ -215,10 +220,10 @@ export default function Dashboard() {
             <ConfigureAccountDialog
               accountId={account.id}
               accountName={account.name}
-              riskMode={account.riskMode || 'custom'}
-              positionScaling={account.positionScaling}
-              maxContracts={account.maxContracts}
-              blockedTickers={account.blockedTickers}
+              riskMode={(account.riskMode as 'global' | 'custom') || 'global'}
+              positionScaling={account.positionScaling || 100}
+              maxContracts={account.maxContracts || undefined}
+              blockedTickers={account.blockedTickers || []}
               globalSettings={globalRiskSettings}
               onSave={(config) => handleConfigure(account.id, config)}
             >
@@ -248,7 +253,7 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="flex-shrink-0">
-          <AddAccountDialog onAdd={(account) => console.log('Account added:', account)} />
+          <AddAccountDialog onAdd={handleAddAccount} />
         </div>
       </div>
 
