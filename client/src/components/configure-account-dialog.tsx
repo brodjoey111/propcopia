@@ -122,17 +122,7 @@ export function ConfigureAccountDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        {children || (
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full"
-            data-testid={`button-configure-${accountId}`}
-          >
-            <Settings className="mr-2 h-3 w-3" />
-            Configure
-          </Button>
-        )}
+        {children}
       </DialogTrigger>
       <DialogContent className="sm:max-w-[500px]" data-testid={`dialog-configure-${accountId}`}>
         <DialogHeader>

@@ -9,8 +9,9 @@ import { TradeDistributionChart } from "@/components/trade-distribution-chart";
 import { DraggableDashboardGrid } from "@/components/draggable-dashboard-grid";
 import { ConfigureAccountDialog } from "@/components/configure-account-dialog";
 import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Wallet, TrendingUp, Activity, Users } from "lucide-react";
+import { Wallet, TrendingUp, Activity, Users, Settings } from "lucide-react";
 
 interface Account {
   id: string;
@@ -265,14 +266,13 @@ export default function Dashboard() {
   const accountSections = accounts.map((account) => ({
     id: `account-${account.id}`,
     component: (
-      <div key={account.id} className="relative">
-        <AccountCard
-          {...account}
-          onConnect={() => handleConnect(account.id)}
-          onDisconnect={() => handleDisconnectClick(account.id, account.name)}
-        />
-        {account.accountType === 'follower' && (
-          <div className="absolute top-4 right-4 z-10">
+      <AccountCard
+        key={account.id}
+        {...account}
+        onConnect={() => handleConnect(account.id)}
+        onDisconnect={() => handleDisconnectClick(account.id, account.name)}
+        configureButton={
+          account.accountType === 'follower' ? (
             <ConfigureAccountDialog
               accountId={account.id}
               accountName={account.name}
@@ -282,10 +282,20 @@ export default function Dashboard() {
               blockedTickers={account.blockedTickers}
               globalSettings={globalRiskSettings}
               onSave={(config) => handleConfigure(account.id, config)}
-            />
-          </div>
-        )}
-      </div>
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                data-testid={`button-configure-${account.id}`}
+              >
+                <Settings className="mr-2 h-3 w-3" />
+                Configure
+              </Button>
+            </ConfigureAccountDialog>
+          ) : undefined
+        }
+      />
     ),
   }));
 

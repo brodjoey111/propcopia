@@ -16,9 +16,9 @@ interface AccountCardProps {
   maxContracts?: number;
   blockedTickers?: string[];
   riskMode?: 'global' | 'custom';
-  onConfigure?: () => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
+  configureButton?: React.ReactNode;
 }
 
 export function AccountCard({
@@ -34,9 +34,9 @@ export function AccountCard({
   maxContracts,
   blockedTickers = [],
   riskMode,
-  onConfigure,
   onConnect,
   onDisconnect,
+  configureButton,
 }: AccountCardProps) {
   const isPnlPositive = pnl >= 0;
   const hasRestrictions = maxContracts !== undefined || blockedTickers.length > 0;
@@ -143,17 +143,7 @@ export function AccountCard({
           </Button>
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={onConfigure}
-          disabled={!onConfigure}
-          data-testid={`button-configure-${id}`}
-        >
-          <Settings className="mr-2 h-3 w-3" />
-          Configure
-        </Button>
+        {configureButton && configureButton}
       </div>
     </Card>
   );

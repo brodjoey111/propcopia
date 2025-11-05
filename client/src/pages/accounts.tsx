@@ -5,8 +5,9 @@ import { ConfigureAccountDialog } from "@/components/configure-account-dialog";
 import { GlobalRiskSettingsDialog } from "@/components/global-risk-settings-dialog";
 import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
 import { EmptyState } from "@/components/empty-state";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Wallet } from "lucide-react";
+import { Wallet, Settings } from "lucide-react";
 
 export default function Accounts() {
   // todo: remove mock functionality
@@ -206,15 +207,14 @@ export default function Accounts() {
           {accounts.map((account) => {
             const effectiveAccount = getEffectiveSettings(account);
             return (
-              <div key={account.id} className="relative">
-                <AccountCard
-                  {...effectiveAccount}
-                  riskMode={account.riskMode}
-                  onConnect={() => handleConnect(account.id)}
-                  onDisconnect={() => handleDisconnectClick(account.id, account.name)}
-                />
-                {account.accountType === 'follower' && (
-                  <div className="absolute top-4 right-4 z-10">
+              <AccountCard
+                key={account.id}
+                {...effectiveAccount}
+                riskMode={account.riskMode}
+                onConnect={() => handleConnect(account.id)}
+                onDisconnect={() => handleDisconnectClick(account.id, account.name)}
+                configureButton={
+                  account.accountType === 'follower' ? (
                     <ConfigureAccountDialog
                       accountId={account.id}
                       accountName={account.name}
@@ -224,10 +224,20 @@ export default function Accounts() {
                       blockedTickers={account.blockedTickers || []}
                       globalSettings={globalSettings}
                       onSave={(config) => handleConfigure(account.id, config)}
-                    />
-                  </div>
-                )}
-              </div>
+                    >
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        data-testid={`button-configure-${account.id}`}
+                      >
+                        <Settings className="mr-2 h-3 w-3" />
+                        Configure
+                      </Button>
+                    </ConfigureAccountDialog>
+                  ) : undefined
+                }
+              />
             );
           })}
         </div>
