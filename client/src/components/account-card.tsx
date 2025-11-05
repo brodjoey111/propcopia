@@ -16,7 +16,7 @@ interface AccountCardProps {
   maxContracts?: number;
   blockedTickers?: string[];
   riskMode?: 'global' | 'custom';
-  onConfigure?: React.ReactNode;
+  onConfigure?: () => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
 }
@@ -114,22 +114,17 @@ export function AccountCard({
         )}
 
         <div className="flex gap-2">
-          {onConfigure ? (
-            <div className="flex-1">
-              {onConfigure}
-            </div>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1"
-              disabled
-              data-testid={`button-configure-${id}`}
-            >
-              <Settings className="mr-2 h-3 w-3" />
-              Configure
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            onClick={onConfigure}
+            disabled={!onConfigure}
+            data-testid={`button-configure-${id}`}
+          >
+            <Settings className="mr-2 h-3 w-3" />
+            Configure
+          </Button>
           <Button
             size="sm"
             className={`flex-1 ${

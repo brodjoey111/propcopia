@@ -54,13 +54,13 @@ function AppLayout() {
       <SidebarProvider style={style as React.CSSProperties}>
         <div className="flex h-screen w-full">
           <AppSidebar />
-          <div className="flex flex-1 flex-col">
-            <header className="flex items-center justify-between border-b p-3 md:p-4">
+          <div className="flex flex-1 flex-col min-w-0">
+            <header className="flex items-center justify-between border-b p-3 md:p-4 flex-shrink-0">
               <SidebarTrigger data-testid="button-sidebar-toggle" className="h-11 w-11 touch-manipulation" />
               <ThemeToggle />
             </header>
-            <main className="flex-1 overflow-auto p-3 sm:p-4 md:p-6">
-              <div className="mx-auto max-w-7xl w-full">
+            <main className="flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4 md:p-6 min-w-0">
+              <div className="mx-auto max-w-7xl">
                 <AppRouter />
               </div>
             </main>
