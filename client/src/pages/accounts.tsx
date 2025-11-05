@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { AccountCard } from "@/components/account-card";
 import { AddAccountDialog } from "@/components/add-account-dialog";
 import { ConfigureAccountDialog } from "@/components/configure-account-dialog";
@@ -7,26 +8,17 @@ import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Wallet, Settings } from "lucide-react";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { Wallet, Settings, Loader2 } from "lucide-react";
+import type { Account as AccountType } from "@shared/schema";
 
-interface Account {
-  id: string;
-  name: string;
-  platform: string;
-  accountType: 'master' | 'follower';
-  isConnected: boolean;
-  balance: number;
-  openPositions: number;
-  pnl: number;
-  positionScaling?: number;
-  maxContracts?: number;
-  blockedTickers?: string[];
-  riskMode?: 'global' | 'custom';
+interface Account extends AccountType {
+  openPositions?: number;
+  pnl?: number;
 }
 
 export default function Accounts() {
   const { toast } = useToast();
-  const [accounts, setAccounts] = useState<Account[]>([]);
   const [globalSettings, setGlobalSettings] = useState({
     positionScaling: 100,
     maxContracts: undefined as number | undefined,
@@ -38,27 +30,57 @@ export default function Accounts() {
     accountName: string;
   }>({ open: false, accountId: '', accountName: '' });
 
-  const handleAddAccount = (newAccount: any) => {
-    const accountToAdd = {
-      id: `${accounts.length + 1}`,
-      name: newAccount.name,
-      platform: newAccount.platform,
-      accountType: newAccount.accountType as 'master' | 'follower',
-      isConnected: false,
-      balance: 0,
-      openPositions: 0,
-      pnl: 0,
-      ...(newAccount.accountType === 'follower' && { positionScaling: 100 }),
-    };
-    setAccounts([...accounts, accountToAdd] as any);
+  const { data: accountsData, isLoading } = useQuery<{ success: boolean; accounts: Account[] }>({
+    queryKey: ['/api/accounts'],
+  });
+
+  const accounts = accountsData?.accounts || [];
+
+  const addAccountMutation = useMutation({
+    mutationFn: async (accountData: any) => {
+      const response = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(accountData),
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to add account');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+    },
+  });
+
+  const handleAddAccount = async (newAccount: any) => {
+    try {
+      await addAccountMutation.mutateAsync({
+        name: newAccount.name,
+        platform: newAccount.platform,
+        accountType: newAccount.accountType,
+        tradovateUsername: newAccount.username,
+        tradovateAccountId: newAccount.tradovateAccountId,
+        tradovateEnvironment: newAccount.environment,
+        isConnected: false,
+        ...(newAccount.accountType === 'follower' && { positionScaling: 100 }),
+      });
+
+      toast({
+        title: "Account Added",
+        description: `${newAccount.name} has been added successfully`,
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to Add Account",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleConnect = (accountId: string) => {
-    setAccounts(accounts.map(account => 
-      account.id === accountId 
-        ? { ...account, isConnected: true }
-        : account
-    ));
     const account = accounts.find(a => a.id === accountId);
     toast({
       title: "Account Connected",
@@ -71,13 +93,7 @@ export default function Accounts() {
   };
 
   const handleDisconnectConfirm = () => {
-    const accountId = disconnectAlert.accountId;
-    setAccounts(accounts.map(account => 
-      account.id === accountId 
-        ? { ...account, isConnected: false }
-        : account
-    ));
-    const account = accounts.find(a => a.id === accountId);
+    const account = accounts.find(a => a.id === disconnectAlert.accountId);
     toast({
       title: "Account Disconnected",
       description: `${account?.name} has been disconnected`,
@@ -92,18 +108,6 @@ export default function Accounts() {
     maxContracts: number | null;
     blockedTickers: string[];
   }) => {
-    setAccounts(accounts.map(account => {
-      if (account.id !== accountId || account.accountType !== 'follower') {
-        return account;
-      }
-      return { 
-        ...account,
-        riskMode: config.riskMode as 'global' | 'custom',
-        positionScaling: config.positionScaling,
-        maxContracts: config.maxContracts || undefined,
-        blockedTickers: config.blockedTickers,
-      } as any;
-    }));
     const account = accounts.find(a => a.id === accountId);
     toast({
       title: "Settings Updated",
@@ -140,6 +144,14 @@ export default function Accounts() {
 
   const hasAccounts = accounts.length > 0;
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -170,6 +182,8 @@ export default function Accounts() {
               <AccountCard
                 key={account.id}
                 {...effectiveAccount}
+                openPositions={account.openPositions || 0}
+                pnl={account.pnl || 0}
                 riskMode={account.riskMode}
                 onConnect={() => handleConnect(account.id)}
                 onDisconnect={() => handleDisconnectClick(account.id, account.name)}
@@ -178,9 +192,9 @@ export default function Accounts() {
                     <ConfigureAccountDialog
                       accountId={account.id}
                       accountName={account.name}
-                      riskMode={account.riskMode || 'global'}
-                      positionScaling={account.positionScaling}
-                      maxContracts={account.maxContracts}
+                      riskMode={(account.riskMode as 'global' | 'custom') || 'global'}
+                      positionScaling={account.positionScaling || 100}
+                      maxContracts={account.maxContracts || undefined}
                       blockedTickers={account.blockedTickers || []}
                       globalSettings={globalSettings}
                       onSave={(config) => handleConfigure(account.id, config)}
@@ -202,13 +216,14 @@ export default function Accounts() {
           })}
         </div>
       ) : (
-        <EmptyState
-          icon={Wallet}
-          title="No accounts connected"
-          description="Connect your first trading account to start copying trades. You can add accounts from NinjaTrader, Tradovate, and more."
-          actionLabel="Add Account"
-          onAction={() => console.log('Add account clicked')}
-        />
+        <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+          <Wallet className="h-16 w-16 text-muted-foreground mb-4" />
+          <h3 className="text-xl font-semibold mb-2">No accounts connected</h3>
+          <p className="text-sm text-muted-foreground mb-6 max-w-md">
+            Connect your first trading account to start copying trades. You can add accounts from Tradovate and Tradify.
+          </p>
+          <AddAccountDialog onAdd={handleAddAccount} />
+        </div>
       )}
 
       {/* Disconnect Confirmation Alert */}

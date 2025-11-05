@@ -319,6 +319,63 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Accounts routes
+  app.post("/api/accounts", async (req, res) => {
+    try {
+      if (!req.isAuthenticated() || !req.user) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const accountData = insertAccountSchema.parse({
+        ...req.body,
+        userId: req.user.id,
+      });
+
+      const [newAccount] = await db.insert(accounts).values(accountData).returning();
+
+      return res.json({
+        success: true,
+        account: newAccount,
+      });
+    } catch (error) {
+      console.error('Error creating account:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.get("/api/accounts", async (req, res) => {
+    try {
+      if (!req.isAuthenticated() || !req.user) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const userAccounts = await db
+        .select()
+        .from(accounts)
+        .where(eq(accounts.userId, req.user.id));
+
+      return res.json({
+        success: true,
+        accounts: userAccounts,
+      });
+    } catch (error) {
+      console.error('Error fetching accounts:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
   // Trade copying routes
   app.post("/api/trade-copy/start", async (req, res) => {
     try {
