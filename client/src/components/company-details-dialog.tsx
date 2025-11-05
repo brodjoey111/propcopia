@@ -90,7 +90,7 @@ export function CompanyDetailsDialog({ ticker, open, onOpenChange }: CompanyDeta
   const { data: quoteData, isLoading: quoteLoading } = useQuery<{ success: boolean; data: QuoteData }>({
     queryKey: [`/api/stock/${ticker}/quote`],
     enabled: open && !!ticker,
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 15000, // Refresh every 15 seconds for real-time price updates
   });
 
   const company = companyData?.data;

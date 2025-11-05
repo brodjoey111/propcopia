@@ -28,7 +28,7 @@ export default function Watchlist() {
 
   const { data: watchlistData, isLoading } = useQuery<{ success: boolean; data: WatchlistItemWithQuote[] }>({
     queryKey: ["/api/watchlist"],
-    refetchInterval: 60000, // Refresh every 60 seconds
+    refetchInterval: 15000, // Refresh every 15 seconds for real-time price updates
   });
 
   const addMutation = useMutation({

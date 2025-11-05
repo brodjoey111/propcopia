@@ -42,6 +42,7 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
   const { data, isLoading } = useQuery<{ success: boolean; data: { timeframe: string; candles: ChartData[] } }>({
     queryKey: [`/api/stock/${symbol}/chart?timeframe=${selectedTimeframe}`],
     enabled: !!symbol,
+    refetchInterval: 15000, // Refresh chart data every 15 seconds for real-time updates
   });
 
   const chartData = data?.data?.candles || [];
