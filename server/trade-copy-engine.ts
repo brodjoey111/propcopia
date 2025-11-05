@@ -25,12 +25,16 @@ interface FollowerConnection {
 }
 
 // Latency metrics
+// IMPORTANT: These metrics measure "dispatch latency" (time to send order via WebSocket)
+// not "execution latency" (time until order is filled). True execution latency would require
+// acknowledgements from Tradovate's WebSocket API, which may not be available.
+// The metrics below represent the MINIMUM possible latency (lower bound).
 interface LatencyMetrics {
   tradeId: string;
   receivedAt: number;
   processedAt: number;
   copiedAt: number;
-  totalLatency: number;
+  totalLatency: number; // Time from receiving master fill to dispatching to all followers
   followerLatencies: Map<string, number>;
 }
 
@@ -43,6 +47,9 @@ export class TradeCopyEngine extends EventEmitter {
   private positionScalingCache: Map<string, number> = new Map(); // In-memory scaling cache
   private latencyMetrics: LatencyMetrics[] = [];
   private baseUrl: string;
+  private isActive: boolean = true; // Control flag for stop functionality
+  private reconnectTimeouts: Set<NodeJS.Timeout> = new Set(); // Track reconnect timers
+  private failedSends: number = 0; // Track send failures
 
   constructor(environment: 'demo' | 'live' = 'demo') {
     super();
@@ -110,8 +117,19 @@ export class TradeCopyEngine extends EventEmitter {
         });
         
         this.masterWebSocket.on('close', () => {
-          console.log('[TradeCopy] Master WebSocket closed, attempting reconnect...');
-          setTimeout(() => this.connectMasterAccount(accountId, accessToken), 5000);
+          console.log('[TradeCopy] Master WebSocket closed');
+          
+          // Only reconnect if engine is still active
+          if (this.isActive) {
+            console.log('[TradeCopy] Attempting reconnect in 5s...');
+            const timeout = setTimeout(() => {
+              this.reconnectTimeouts.delete(timeout);
+              if (this.isActive) {
+                this.connectMasterAccount(accountId, accessToken);
+              }
+            }, 5000);
+            this.reconnectTimeouts.add(timeout);
+          }
         });
       } catch (error) {
         reject(error);
@@ -175,8 +193,18 @@ export class TradeCopyEngine extends EventEmitter {
       
       connection.ws.on('close', () => {
         connection.isReady = false;
-        console.log(`[TradeCopy] Follower ${connection.accountId} WebSocket closed, reconnecting...`);
-        setTimeout(() => this.connectFollowerWebSocket(connection), 5000);
+        console.log(`[TradeCopy] Follower ${connection.accountId} WebSocket closed`);
+        
+        // Only reconnect if engine is still active
+        if (this.isActive) {
+          const timeout = setTimeout(() => {
+            this.reconnectTimeouts.delete(timeout);
+            if (this.isActive) {
+              this.connectFollowerWebSocket(connection);
+            }
+          }, 5000);
+          this.reconnectTimeouts.add(timeout);
+        }
       });
     });
   }
@@ -257,7 +285,7 @@ export class TradeCopyEngine extends EventEmitter {
         // Check if ticker is blocked
         if (follower.blockedTickers.includes(trade.symbol)) {
           console.log(`[TradeCopy] ${follower.accountId} blocks ${trade.symbol}`);
-          return;
+          return { success: false, reason: 'blocked' };
         }
         
         // Calculate scaled quantity
@@ -269,11 +297,18 @@ export class TradeCopyEngine extends EventEmitter {
         }
         
         if (scaledQuantity === 0) {
-          return; // Skip if quantity rounds down to zero
+          return { success: false, reason: 'zero_quantity' }; // Skip if quantity rounds down to zero
+        }
+        
+        // Validate WebSocket connection state
+        if (!follower.isReady || !follower.ws || follower.ws.readyState !== WebSocket.OPEN) {
+          console.error(`[TradeCopy] ${follower.accountId} WebSocket not ready (readyState: ${follower.ws?.readyState})`);
+          this.failedSends++;
+          return { success: false, reason: 'ws_not_ready' };
         }
         
         // Send order via WebSocket (fastest method)
-        if (follower.isReady && follower.ws) {
+        try {
           follower.ws.send(JSON.stringify({
             type: 'placeOrder',
             symbol: trade.symbol,
@@ -285,28 +320,45 @@ export class TradeCopyEngine extends EventEmitter {
           
           const followerLatency = performance.now() - followerStartTime;
           metrics.followerLatencies.set(follower.accountId, followerLatency);
+          return { success: true, latency: followerLatency };
+        } catch (sendError) {
+          console.error(`[TradeCopy] Failed to send to ${follower.accountId}:`, sendError);
+          this.failedSends++;
+          return { success: false, reason: 'send_error', error: sendError };
         }
       } catch (error) {
         console.error(`[TradeCopy] Error copying to ${follower.accountId}:`, error);
+        this.failedSends++;
+        return { success: false, reason: 'general_error', error };
       }
     });
     
     // Wait for all copies to complete
-    await Promise.all(copyPromises);
+    const results = await Promise.all(copyPromises);
     
     const completeTime = performance.now();
     metrics.copiedAt = completeTime;
     metrics.totalLatency = completeTime - receiveTime;
     
-    // Log latency
-    this.logLatency(metrics);
+    // Count successful and failed copies
+    const successCount = results.filter(r => r && r.success).length;
+    const failureCount = results.length - successCount;
     
-    // Emit event for async DB logging (non-blocking)
-    this.emit('tradeCopied', {
-      trade,
-      metrics,
-      followerCount: followers.length
-    });
+    // Only log latency if at least one copy succeeded
+    if (successCount > 0) {
+      this.logLatency(metrics);
+      
+      // Emit event for async DB logging (non-blocking)
+      this.emit('tradeCopied', {
+        trade,
+        metrics,
+        followerCount: followers.length,
+        successCount,
+        failureCount
+      });
+    } else {
+      console.warn(`[TradeCopy] Trade ${trade.fillId} failed to copy to all followers`);
+    }
   }
 
   // Log latency metrics
@@ -327,6 +379,9 @@ export class TradeCopyEngine extends EventEmitter {
   }
 
   // Get average latency statistics
+  // NOTE: These stats measure DISPATCH latency (time to send order), not full execution latency.
+  // Actual execution time includes network RTT + Tradovate processing + order fill time.
+  // True execution latency would require ACKs from Tradovate WebSocket API.
   getLatencyStats(): {
     avgLatency: number;
     minLatency: number;
@@ -335,6 +390,8 @@ export class TradeCopyEngine extends EventEmitter {
     p95: number;
     p99: number;
     sampleSize: number;
+    failedSends: number;
+    targetMet15ms: boolean; // True if p95 dispatch latency <= 15ms (aspirational)
   } {
     if (this.latencyMetrics.length === 0) {
       return {
@@ -344,38 +401,56 @@ export class TradeCopyEngine extends EventEmitter {
         p50: 0,
         p95: 0,
         p99: 0,
-        sampleSize: 0
+        sampleSize: 0,
+        failedSends: this.failedSends,
+        targetMet15ms: false
       };
     }
     
     const latencies = this.latencyMetrics.map(m => m.totalLatency).sort((a, b) => a - b);
     const sum = latencies.reduce((a, b) => a + b, 0);
+    const p95 = latencies[Math.floor(latencies.length * 0.95)];
     
     return {
       avgLatency: sum / latencies.length,
       minLatency: latencies[0],
       maxLatency: latencies[latencies.length - 1],
       p50: latencies[Math.floor(latencies.length * 0.5)],
-      p95: latencies[Math.floor(latencies.length * 0.95)],
+      p95,
       p99: latencies[Math.floor(latencies.length * 0.99)],
-      sampleSize: latencies.length
+      sampleSize: latencies.length,
+      failedSends: this.failedSends,
+      targetMet15ms: p95 <= 15 // Target met if p95 latency is under 15ms
     };
   }
 
   // Disconnect all WebSocket connections
   async disconnect(): Promise<void> {
+    // Set inactive flag to prevent reconnections
+    this.isActive = false;
+    
+    // Clear all reconnect timeouts
+    for (const timeout of this.reconnectTimeouts) {
+      clearTimeout(timeout);
+    }
+    this.reconnectTimeouts.clear();
+    
+    // Close master WebSocket
     if (this.masterWebSocket) {
       this.masterWebSocket.close();
+      this.masterWebSocket = null;
     }
     
+    // Close all follower WebSockets
     const connections = Array.from(this.followerConnections.values());
     for (const connection of connections) {
       if (connection.ws) {
         connection.ws.close();
+        connection.ws = null;
       }
     }
     
     this.followerConnections.clear();
-    console.log('[TradeCopy] All connections closed');
+    console.log('[TradeCopy] All connections closed, engine stopped');
   }
 }
