@@ -3,10 +3,11 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Plus, TrendingUp, TrendingDown } from "lucide-react";
 import { CompanyDetailsDialog } from "@/components/company-details-dialog";
+import { TickerAutocomplete } from "@/components/ticker-autocomplete";
+import type { TickerInfo } from "@shared/ticker-database";
 
 interface WatchlistItemWithQuote {
   id: string;
@@ -84,6 +85,10 @@ export default function Watchlist() {
     addMutation.mutate(newTicker.trim());
   };
 
+  const handleSelectTicker = (ticker: TickerInfo) => {
+    addMutation.mutate(ticker.symbol);
+  };
+
   const watchlist = watchlistData?.data || [];
 
   return (
@@ -99,23 +104,25 @@ export default function Watchlist() {
         </CardHeader>
         <CardContent>
           <div className="flex gap-2">
-            <Input
-              placeholder="Enter ticker symbol (e.g., AAPL)"
+            <TickerAutocomplete
               value={newTicker}
-              onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
-              onKeyDown={(e) => e.key === "Enter" && handleAddTicker()}
-              data-testid="input-ticker"
-              className="flex-1"
+              onChange={setNewTicker}
+              onSelect={handleSelectTicker}
+              disabled={addMutation.isPending}
+              placeholder="Search by symbol or name (e.g., AAPL or Apple)"
             />
             <Button
               onClick={handleAddTicker}
-              disabled={addMutation.isPending}
+              disabled={addMutation.isPending || !newTicker.trim()}
               data-testid="button-add-ticker"
             >
               <Plus className="w-4 h-4 mr-2" />
               Add
             </Button>
           </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            Type a ticker symbol (ES, AAPL) or full name (E-mini S&P 500, Apple) to search
+          </p>
         </CardContent>
       </Card>
 
