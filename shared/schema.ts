@@ -46,9 +46,13 @@ export type User = typeof users.$inferSelect;
 
 export const accounts = pgTable("accounts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
   name: text("name").notNull(),
   platform: text("platform").notNull(),
   accountType: text("account_type").notNull(),
+  tradovateUsername: text("tradovate_username"),
+  tradovateAccountId: text("tradovate_account_id"),
+  tradovateEnvironment: text("tradovate_environment"),
   apiKey: text("api_key"),
   apiSecret: text("api_secret"),
   isConnected: boolean("is_connected").default(false),

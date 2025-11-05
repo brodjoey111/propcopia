@@ -19,117 +19,347 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { useToast } from "@/hooks/use-toast";
+import { Plus, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 
 interface AddAccountDialogProps {
   onAdd?: (account: any) => void;
 }
 
+interface TradovateAccount {
+  id: number;
+  name: string;
+  accountType: string;
+  active: boolean;
+  balance?: number;
+}
+
+type Step = 'credentials' | 'select-accounts';
+
 export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
-  const [platform, setPlatform] = useState<"ninjatrader" | "tradovate">("ninjatrader");
+  const [step, setStep] = useState<Step>('credentials');
+  const [platform, setPlatform] = useState<"ninjatrader" | "tradovate">("tradovate");
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [fetchedAccounts, setFetchedAccounts] = useState<TradovateAccount[]>([]);
+  const [selectedAccounts, setSelectedAccounts] = useState<Set<number>>(new Set());
+  const [accountRoles, setAccountRoles] = useState<Map<number, 'master' | 'follower'>>(new Map());
+  
   const [formData, setFormData] = useState({
-    name: "",
-    accountType: "follower",
     username: "",
     password: "",
+    cid: "",
+    secret: "",
+    environment: "demo" as 'demo' | 'live',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Adding account:", { ...formData, platform });
-    onAdd?.({ ...formData, platform });
+    setIsAuthenticating(true);
+
+    try {
+      const response = await apiRequest('/api/tradovate/test-connection', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: formData.username,
+          password: formData.password,
+          cid: formData.cid || undefined,
+          secret: formData.secret || undefined,
+          environment: formData.environment,
+        }),
+      });
+
+      if (response.success) {
+        setFetchedAccounts(response.accounts || []);
+        setStep('select-accounts');
+        toast({
+          title: "Connected Successfully",
+          description: `Found ${response.accounts?.length || 0} accounts`,
+        });
+      } else {
+        toast({
+          title: "Connection Failed",
+          description: response.message || "Unable to connect to Tradovate",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Connection Error",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  const handleAccountToggle = (accountId: number) => {
+    setSelectedAccounts(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(accountId)) {
+        newSet.delete(accountId);
+        setAccountRoles(roles => {
+          const newRoles = new Map(roles);
+          newRoles.delete(accountId);
+          return newRoles;
+        });
+      } else {
+        newSet.add(accountId);
+        if (!accountRoles.has(accountId)) {
+          setAccountRoles(roles => new Map(roles).set(accountId, 'follower'));
+        }
+      }
+      return newSet;
+    });
+  };
+
+  const handleRoleChange = (accountId: number, role: 'master' | 'follower') => {
+    setAccountRoles(prev => new Map(prev).set(accountId, role));
+  };
+
+  const handleAddSelectedAccounts = () => {
+    selectedAccounts.forEach(accountId => {
+      const account = fetchedAccounts.find(a => a.id === accountId);
+      if (account) {
+        onAdd?.({
+          name: account.name,
+          platform: 'Tradovate',
+          accountType: accountRoles.get(accountId) || 'follower',
+          tradovateAccountId: account.id,
+          username: formData.username,
+          environment: formData.environment,
+        });
+      }
+    });
+
+    toast({
+      title: "Accounts Added",
+      description: `Successfully added ${selectedAccounts.size} account(s)`,
+    });
+
+    resetDialog();
+  };
+
+  const resetDialog = () => {
     setOpen(false);
-    setFormData({ name: "", accountType: "follower", username: "", password: "" });
+    setStep('credentials');
+    setFetchedAccounts([]);
+    setSelectedAccounts(new Set());
+    setAccountRoles(new Map());
+    setFormData({
+      username: "",
+      password: "",
+      cid: "",
+      secret: "",
+      environment: "demo",
+    });
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(isOpen) => { 
+      setOpen(isOpen);
+      if (!isOpen) resetDialog();
+    }}>
       <DialogTrigger asChild>
         <Button data-testid="button-add-account">
           <Plus className="mr-2 h-4 w-4" />
           Add Account
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add Trading Account</DialogTitle>
+          <DialogTitle>
+            {step === 'credentials' ? 'Connect to Tradify/Tradovate' : 'Select Accounts'}
+          </DialogTitle>
           <DialogDescription>
-            Add a simulated account or connect to your live trading platform
+            {step === 'credentials' 
+              ? 'Enter your Tradify/Tradovate credentials to fetch your trading accounts' 
+              : 'Choose which accounts to add and set their role'
+            }
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={platform} onValueChange={(v) => setPlatform(v as any)}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="ninjatrader" data-testid="tab-ninjatrader">NinjaTrader</TabsTrigger>
-            <TabsTrigger value="tradovate" data-testid="tab-tradovate">Tradovate</TabsTrigger>
-          </TabsList>
+        {step === 'credentials' ? (
+          <form onSubmit={handleAuthSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="username">Username</Label>
+              <Input
+                id="username"
+                type="text"
+                placeholder="Your Tradify/Tradovate username"
+                value={formData.username}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                data-testid="input-username"
+                required
+              />
+            </div>
 
-          <TabsContent value={platform} className="mt-4">
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Account Name</Label>
-                <Input
-                  id="name"
-                  placeholder="My Trading Account"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  data-testid="input-account-name"
-                  required
-                />
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Your password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                data-testid="input-password"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="cid">CID (Client ID) <span className="text-xs text-muted-foreground">(Optional - for live trading)</span></Label>
+              <Input
+                id="cid"
+                type="text"
+                placeholder="Optional - API Client ID"
+                value={formData.cid}
+                onChange={(e) => setFormData({ ...formData, cid: e.target.value })}
+                data-testid="input-cid"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="secret">API Secret <span className="text-xs text-muted-foreground">(Optional - for live trading)</span></Label>
+              <Input
+                id="secret"
+                type="password"
+                placeholder="Optional - API Secret"
+                value={formData.secret}
+                onChange={(e) => setFormData({ ...formData, secret: e.target.value })}
+                data-testid="input-secret"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="environment">Environment</Label>
+              <Select
+                value={formData.environment}
+                onValueChange={(value: 'demo' | 'live') => setFormData({ ...formData, environment: value })}
+              >
+                <SelectTrigger id="environment" data-testid="select-environment">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="demo">Demo</SelectItem>
+                  <SelectItem value="live">Live</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => resetDialog()}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isAuthenticating} data-testid="button-connect">
+                {isAuthenticating ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    Connect & Fetch Accounts
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : (
+          <div className="space-y-4">
+            {fetchedAccounts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <AlertCircle className="h-12 w-12 text-muted-foreground mb-3" />
+                <h3 className="font-semibold mb-1">No Accounts Found</h3>
+                <p className="text-sm text-muted-foreground">
+                  No trading accounts were found for this username
+                </p>
               </div>
+            ) : (
+              <>
+                <div className="text-sm text-muted-foreground mb-2">
+                  Found {fetchedAccounts.length} account(s). Select the ones you want to add:
+                </div>
+                
+                <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                  {fetchedAccounts.map((account) => (
+                    <Card
+                      key={account.id}
+                      className={`p-4 cursor-pointer hover-elevate ${
+                        selectedAccounts.has(account.id) ? 'border-primary' : ''
+                      }`}
+                      onClick={() => handleAccountToggle(account.id)}
+                    >
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          checked={selectedAccounts.has(account.id)}
+                          onCheckedChange={() => handleAccountToggle(account.id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-semibold">{account.name}</h4>
+                            {account.active && (
+                              <Badge variant="outline" className="text-xs">Active</Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            ID: {account.id} • Type: {account.accountType}
+                          </p>
+                          
+                          {selectedAccounts.has(account.id) && (
+                            <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                              <Label className="text-xs mb-2">Account Role:</Label>
+                              <RadioGroup
+                                value={accountRoles.get(account.id) || 'follower'}
+                                onValueChange={(value: 'master' | 'follower') => handleRoleChange(account.id, value)}
+                                className="flex gap-4 mt-1"
+                              >
+                                <div className="flex items-center space-x-2">
+                                  <RadioGroupItem value="master" id={`${account.id}-master`} />
+                                  <Label htmlFor={`${account.id}-master`} className="text-xs cursor-pointer">
+                                    Master
+                                  </Label>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <RadioGroupItem value="follower" id={`${account.id}-follower`} />
+                                  <Label htmlFor={`${account.id}-follower`} className="text-xs cursor-pointer">
+                                    Follower
+                                  </Label>
+                                </div>
+                              </RadioGroup>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="accountType">Account Type</Label>
-                <Select
-                  value={formData.accountType}
-                  onValueChange={(value) => setFormData({ ...formData, accountType: value })}
-                >
-                  <SelectTrigger id="accountType" data-testid="select-account-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="master">Master Account</SelectItem>
-                    <SelectItem value="follower">Follower Account</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="username">Username <span className="text-xs text-muted-foreground">(Optional - for live trading)</span></Label>
-                <Input
-                  id="username"
-                  type="text"
-                  placeholder="Optional - your platform username"
-                  value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  data-testid="input-username"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password">Password <span className="text-xs text-muted-foreground">(Optional - for live trading)</span></Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Optional - your platform password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  data-testid="input-password"
-                />
-              </div>
-
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" data-testid="button-save-account">
-                  Add Account
-                </Button>
-              </DialogFooter>
-            </form>
-          </TabsContent>
-        </Tabs>
+                <DialogFooter className="mt-4">
+                  <Button type="button" variant="outline" onClick={() => setStep('credentials')}>
+                    Back
+                  </Button>
+                  <Button 
+                    onClick={handleAddSelectedAccounts}
+                    disabled={selectedAccounts.size === 0}
+                    data-testid="button-add-selected"
+                  >
+                    Add {selectedAccounts.size} Account{selectedAccounts.size !== 1 ? 's' : ''}
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
