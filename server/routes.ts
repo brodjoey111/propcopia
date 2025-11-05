@@ -621,59 +621,62 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Company Overview endpoint
+  // Company Overview endpoint (using Finnhub)
   app.get("/api/company/:symbol", async (req, res) => {
     try {
       const { symbol } = req.params;
-      const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
+      const finnhubKey = process.env.FINNHUB_API_KEY;
       
-      if (!apiKey) {
+      if (!finnhubKey) {
         return res.status(500).json({
           success: false,
-          message: "Alpha Vantage API key not configured",
+          message: "Finnhub API key not configured",
         });
       }
 
-      const url = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${symbol}&apikey=${apiKey}`;
-      const response = await fetch(url);
-      const data = await response.json();
+      // Fetch both company profile and basic financials from Finnhub
+      const [profileResponse, metricsResponse] = await Promise.all([
+        fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${finnhubKey}`),
+        fetch(`https://finnhub.io/api/v1/stock/metric?symbol=${symbol}&metric=all&token=${finnhubKey}`)
+      ]);
 
-      // Check if API returned an error
-      if (data.Note || data['Error Message']) {
-        return res.status(429).json({
-          success: false,
-          message: data.Note || data['Error Message'] || 'API rate limit exceeded',
-        });
-      }
+      const profile = await profileResponse.json();
+      const metrics = await metricsResponse.json();
 
-      // Check if symbol was found
-      if (!data.Symbol) {
+      // Check if company was found (Finnhub returns empty object for not found)
+      if (!profile || !profile.ticker || Object.keys(profile).length === 0) {
         return res.status(404).json({
           success: false,
           message: 'Company not found',
         });
       }
 
+      // Extract metrics
+      const metric = metrics?.metric || {};
+
       return res.json({
         success: true,
         data: {
-          symbol: data.Symbol,
-          name: data.Name,
-          description: data.Description,
-          sector: data.Sector,
-          industry: data.Industry,
-          exchange: data.Exchange,
-          marketCap: data.MarketCapitalization,
-          peRatio: data.PERatio,
-          eps: data.EPS,
-          dividendYield: data.DividendYield,
-          week52High: data['52WeekHigh'],
-          week52Low: data['52WeekLow'],
-          beta: data.Beta,
-          revenue: data.RevenueTTM,
-          profitMargin: data.ProfitMargin,
-          address: data.Address,
-          country: data.Country,
+          symbol: profile.ticker,
+          name: profile.name || symbol,
+          description: `${profile.name} is a company in the ${profile.finnhubIndustry || 'N/A'} industry, trading on the ${profile.exchange || 'N/A'} exchange.`,
+          sector: profile.finnhubIndustry || 'N/A',
+          industry: profile.finnhubIndustry || 'N/A',
+          exchange: profile.exchange || 'N/A',
+          marketCap: profile.marketCapitalization ? (profile.marketCapitalization * 1000000).toString() : 'N/A',
+          peRatio: metric.peNormalizedAnnual || metric.peBasicExclExtraTTM || 'N/A',
+          eps: metric.epsNormalizedAnnual || metric.epsExclExtraItemsAnnual || 'N/A',
+          dividendYield: metric.dividendYieldIndicatedAnnual ? (metric.dividendYieldIndicatedAnnual / 100).toString() : 'N/A',
+          week52High: metric['52WeekHigh'] || 'N/A',
+          week52Low: metric['52WeekLow'] || 'N/A',
+          beta: metric.beta || 'N/A',
+          revenue: metric.revenueTTM ? (metric.revenueTTM * 1000000).toString() : 'N/A',
+          profitMargin: metric.netProfitMarginTTM ? (metric.netProfitMarginTTM / 100).toString() : 'N/A',
+          address: `${profile.country || 'N/A'}`,
+          country: profile.country || 'N/A',
+          logo: profile.logo,
+          website: profile.weburl,
+          phone: profile.phone,
         },
       });
     } catch (error) {

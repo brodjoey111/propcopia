@@ -68,7 +68,7 @@ function formatNumber(value: string | undefined): string {
 
 export function CompanyDetailsDialog({ ticker, open, onOpenChange }: CompanyDetailsDialogProps) {
   const { data, isLoading, error } = useQuery<{ success: boolean; data: CompanyData }>({
-    queryKey: ['/api/company', ticker],
+    queryKey: [`/api/company/${ticker}`],
     enabled: open && !!ticker,
   });
 
