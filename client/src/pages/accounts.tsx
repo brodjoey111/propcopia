@@ -181,10 +181,18 @@ export default function Accounts() {
             return (
               <AccountCard
                 key={account.id}
-                {...effectiveAccount}
+                id={account.id}
+                name={account.name}
+                platform={account.platform}
+                accountType={account.accountType as 'master' | 'follower'}
+                isConnected={account.isConnected || false}
+                balance={account.balance ? parseFloat(account.balance) : 0}
                 openPositions={account.openPositions || 0}
-                pnl={account.pnl || 0}
-                riskMode={account.riskMode}
+                pnl={account.pnl ? parseFloat(account.pnl) : 0}
+                positionScaling={effectiveAccount.positionScaling || undefined}
+                maxContracts={effectiveAccount.maxContracts || undefined}
+                blockedTickers={effectiveAccount.blockedTickers || []}
+                riskMode={(account.riskMode as 'global' | 'custom') || undefined}
                 onConnect={() => handleConnect(account.id)}
                 onDisconnect={() => handleDisconnectClick(account.id, account.name)}
                 configureButton={

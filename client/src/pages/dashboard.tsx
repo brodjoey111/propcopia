@@ -207,12 +207,18 @@ export default function Dashboard() {
     component: (
       <AccountCard
         key={account.id}
-        {...account}
+        id={account.id}
+        name={account.name}
+        platform={account.platform}
         accountType={account.accountType as 'master' | 'follower'}
         isConnected={account.isConnected || false}
         balance={account.balance ? parseFloat(account.balance) : 0}
         openPositions={account.openPositions || 0}
-        pnl={account.pnl || 0}
+        pnl={account.pnl ? parseFloat(account.pnl) : 0}
+        positionScaling={account.positionScaling || undefined}
+        maxContracts={account.maxContracts || undefined}
+        blockedTickers={account.blockedTickers || []}
+        riskMode={(account.riskMode as 'global' | 'custom') || undefined}
         onConnect={() => handleConnect(account.id)}
         onDisconnect={() => handleDisconnectClick(account.id, account.name)}
         configureButton={
