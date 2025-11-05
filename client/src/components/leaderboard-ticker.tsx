@@ -29,6 +29,11 @@ export function LeaderboardTicker() {
     return `${sign}${value.toFixed(2)}%`;
   };
 
+  const formatCurrency = (value: number) => {
+    const sign = value >= 0 ? '+' : '';
+    return `${sign}$${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  };
+
   if (allTraders.length === 0) {
     return null;
   }
@@ -66,7 +71,7 @@ export function LeaderboardTicker() {
                     <TrendingDown className="h-3 w-3 text-destructive" />
                   )}
                   <span className={`text-sm font-semibold ${trader.returnPercent >= 0 ? 'text-chart-2' : 'text-destructive'}`}>
-                    {formatPercent(trader.returnPercent)}
+                    {formatPercent(trader.returnPercent)} ({formatCurrency(trader.totalPnl)})
                   </span>
                 </div>
               </div>
@@ -92,7 +97,7 @@ export function LeaderboardTicker() {
                     <TrendingDown className="h-3 w-3 text-destructive" />
                   )}
                   <span className={`text-sm font-semibold ${trader.returnPercent >= 0 ? 'text-chart-2' : 'text-destructive'}`}>
-                    {formatPercent(trader.returnPercent)}
+                    {formatPercent(trader.returnPercent)} ({formatCurrency(trader.totalPnl)})
                   </span>
                 </div>
               </div>
