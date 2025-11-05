@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { TrendingUp, TrendingDown, Trophy } from "lucide-react";
+import { TrendingUp, TrendingDown, Trophy, Flame } from "lucide-react";
 
 interface Trader {
   id: string;
@@ -16,16 +16,28 @@ export function LeaderboardTicker() {
     refetchInterval: 10000,
   });
 
-  const topTraders = leaderboardData?.data?.slice(0, 10) || [];
+  const allTraders = leaderboardData?.data || [];
+  
+  // Get top 10 performers (highest positive returns)
+  const topTraders = allTraders.slice(0, 10);
+  
+  // Get bottom 10 performers (worst returns/biggest losers)
+  const bottomTraders = allTraders.slice(-10).reverse();
 
   const formatPercent = (value: number) => {
     const sign = value >= 0 ? '+' : '';
     return `${sign}${value.toFixed(2)}%`;
   };
 
-  if (topTraders.length === 0) {
+  if (allTraders.length === 0) {
     return null;
   }
+
+  // Combine top and bottom traders for display
+  const displayItems = [
+    ...topTraders.map((trader, index) => ({ trader, index, type: 'top' as const })),
+    ...bottomTraders.map((trader, index) => ({ trader, index, type: 'bottom' as const })),
+  ];
 
   return (
     <div className="relative overflow-hidden bg-card border-b" data-testid="leaderboard-ticker">
@@ -34,10 +46,15 @@ export function LeaderboardTicker() {
         <div className="overflow-hidden flex-1">
           <div className="ticker-animate flex gap-8">
             {/* First set */}
-            {topTraders.map((trader, index) => (
-              <div key={`${trader.id}-1`} className="flex items-center gap-3 whitespace-nowrap" data-testid={`ticker-item-${index}`}>
+            {displayItems.map(({ trader, index, type }, idx) => (
+              <div key={`${trader.id}-1-${idx}`} className="flex items-center gap-3 whitespace-nowrap" data-testid={`ticker-item-${idx}`}>
+                {type === 'top' ? (
+                  <Trophy className="h-3 w-3 text-primary flex-shrink-0" />
+                ) : (
+                  <Flame className="h-3 w-3 text-destructive flex-shrink-0" />
+                )}
                 <span className="text-sm font-semibold text-muted-foreground">
-                  #{index + 1}
+                  {type === 'top' ? `#${index + 1}` : `Bottom #${index + 1}`}
                 </span>
                 <span className="text-sm font-medium">
                   {trader.name}
@@ -55,10 +72,15 @@ export function LeaderboardTicker() {
               </div>
             ))}
             {/* Duplicate set for seamless loop */}
-            {topTraders.map((trader, index) => (
-              <div key={`${trader.id}-2`} className="flex items-center gap-3 whitespace-nowrap">
+            {displayItems.map(({ trader, index, type }, idx) => (
+              <div key={`${trader.id}-2-${idx}`} className="flex items-center gap-3 whitespace-nowrap">
+                {type === 'top' ? (
+                  <Trophy className="h-3 w-3 text-primary flex-shrink-0" />
+                ) : (
+                  <Flame className="h-3 w-3 text-destructive flex-shrink-0" />
+                )}
                 <span className="text-sm font-semibold text-muted-foreground">
-                  #{index + 1}
+                  {type === 'top' ? `#${index + 1}` : `Bottom #${index + 1}`}
                 </span>
                 <span className="text-sm font-medium">
                   {trader.name}
