@@ -104,6 +104,42 @@ export function DraggableDashboardGrid({
     })
   );
 
+  // Sync with parent when initialSections changes (e.g., account state updates)
+  useEffect(() => {
+    const currentIds = new Set(sections.map(s => s.id));
+    const newIds = new Set(initialSections.map(s => s.id));
+    
+    // Check if sections have changed (different IDs or different content)
+    const idsChanged = sections.length !== initialSections.length ||
+                      sections.some(s => !newIds.has(s.id)) ||
+                      initialSections.some(s => !currentIds.has(s.id));
+    
+    if (idsChanged) {
+      // IDs changed, use new sections with saved order if available
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        try {
+          const savedOrder = JSON.parse(saved) as string[];
+          const sectionsMap = new Map(initialSections.map(s => [s.id, s]));
+          const orderedSections = savedOrder
+            .map(id => sectionsMap.get(id))
+            .filter((s): s is DashboardSection => s !== undefined);
+          const savedIds = new Set(savedOrder);
+          const newSections = initialSections.filter(s => !savedIds.has(s.id));
+          setSections([...orderedSections, ...newSections]);
+          return;
+        } catch {
+          // Fall through to default
+        }
+      }
+      setSections(initialSections);
+    } else {
+      // Same IDs, just update the components to get fresh data
+      const sectionsMap = new Map(initialSections.map(s => [s.id, s]));
+      setSections(prev => prev.map(s => sectionsMap.get(s.id) || s));
+    }
+  }, [initialSections, storageKey]);
+
   useEffect(() => {
     const order = sections.map(s => s.id);
     localStorage.setItem(storageKey, JSON.stringify(order));

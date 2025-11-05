@@ -3,7 +3,9 @@ import { AccountCard } from "@/components/account-card";
 import { AddAccountDialog } from "@/components/add-account-dialog";
 import { ConfigureAccountDialog } from "@/components/configure-account-dialog";
 import { GlobalRiskSettingsDialog } from "@/components/global-risk-settings-dialog";
+import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
 import { EmptyState } from "@/components/empty-state";
+import { useToast } from "@/hooks/use-toast";
 import { Wallet } from "lucide-react";
 
 export default function Accounts() {
@@ -62,12 +64,18 @@ export default function Accounts() {
     },
   ];
 
+  const { toast } = useToast();
   const [accounts, setAccounts] = useState(initialMockAccounts);
   const [globalSettings, setGlobalSettings] = useState({
     positionScaling: 100,
     maxContracts: undefined as number | undefined,
     blockedTickers: [] as string[],
   });
+  const [disconnectAlert, setDisconnectAlert] = useState<{
+    open: boolean;
+    accountId: string;
+    accountName: string;
+  }>({ open: false, accountId: '', accountName: '' });
 
   const handleAddAccount = (newAccount: any) => {
     const accountToAdd = {
@@ -90,14 +98,31 @@ export default function Accounts() {
         ? { ...account, isConnected: true }
         : account
     ));
+    const account = accounts.find(a => a.id === accountId);
+    toast({
+      title: "Account Connected",
+      description: `${account?.name} is now connected and will copy trades`,
+    });
   };
 
-  const handleDisconnect = (accountId: string) => {
+  const handleDisconnectClick = (accountId: string, accountName: string) => {
+    setDisconnectAlert({ open: true, accountId, accountName });
+  };
+
+  const handleDisconnectConfirm = () => {
+    const accountId = disconnectAlert.accountId;
     setAccounts(accounts.map(account => 
       account.id === accountId 
         ? { ...account, isConnected: false }
         : account
     ));
+    const account = accounts.find(a => a.id === accountId);
+    toast({
+      title: "Account Disconnected",
+      description: `${account?.name} has been disconnected`,
+      variant: "destructive",
+    });
+    setDisconnectAlert({ open: false, accountId: '', accountName: '' });
   };
 
   const handleConfigure = (accountId: string, config: {
@@ -118,6 +143,11 @@ export default function Accounts() {
         blockedTickers: config.blockedTickers,
       } as any;
     }));
+    const account = accounts.find(a => a.id === accountId);
+    toast({
+      title: "Settings Updated",
+      description: `Configuration saved for ${account?.name}`,
+    });
   };
 
   const handleGlobalSettingsUpdate = (config: {
@@ -176,29 +206,28 @@ export default function Accounts() {
           {accounts.map((account) => {
             const effectiveAccount = getEffectiveSettings(account);
             return (
-              <AccountCard
-                key={account.id}
-                {...effectiveAccount}
-                riskMode={account.riskMode}
-                onConfigure={
-                  account.accountType === 'follower'
-                    ? (
-                        <ConfigureAccountDialog
-                          accountId={account.id}
-                          accountName={account.name}
-                          riskMode={account.riskMode || 'global'}
-                          positionScaling={account.positionScaling}
-                          maxContracts={account.maxContracts}
-                          blockedTickers={account.blockedTickers || []}
-                          globalSettings={globalSettings}
-                          onSave={(config) => handleConfigure(account.id, config)}
-                        />
-                      )
-                    : undefined
-                }
-                onConnect={() => handleConnect(account.id)}
-                onDisconnect={() => handleDisconnect(account.id)}
-              />
+              <div key={account.id} className="relative">
+                <AccountCard
+                  {...effectiveAccount}
+                  riskMode={account.riskMode}
+                  onConnect={() => handleConnect(account.id)}
+                  onDisconnect={() => handleDisconnectClick(account.id, account.name)}
+                />
+                {account.accountType === 'follower' && (
+                  <div className="absolute top-4 right-4 z-10">
+                    <ConfigureAccountDialog
+                      accountId={account.id}
+                      accountName={account.name}
+                      riskMode={account.riskMode || 'global'}
+                      positionScaling={account.positionScaling}
+                      maxContracts={account.maxContracts}
+                      blockedTickers={account.blockedTickers || []}
+                      globalSettings={globalSettings}
+                      onSave={(config) => handleConfigure(account.id, config)}
+                    />
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -211,6 +240,14 @@ export default function Accounts() {
           onAction={() => console.log('Add account clicked')}
         />
       )}
+
+      {/* Disconnect Confirmation Alert */}
+      <DisconnectAccountAlert
+        open={disconnectAlert.open}
+        onOpenChange={(open) => setDisconnectAlert(prev => ({ ...prev, open }))}
+        accountName={disconnectAlert.accountName}
+        onConfirm={handleDisconnectConfirm}
+      />
     </div>
   );
 }
