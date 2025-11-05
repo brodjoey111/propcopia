@@ -762,144 +762,73 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Generate simulated market movers data as fallback
-  function generateSimulatedMarketMovers(type: 'gainers' | 'losers' | 'actives') {
-    const popularStocks = [
-      'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'NFLX',
-      'AMD', 'INTC', 'ORCL', 'ADBE', 'CRM', 'PYPL', 'COIN', 'SQ',
-      'UBER', 'LYFT', 'ABNB', 'DASH', 'SHOP', 'SPOT', 'ZM', 'DOCU',
-      'SNAP', 'TWTR', 'PINS', 'RBLX', 'U', 'DKNG', 'PLTR', 'SNOW',
-      'NET', 'CRWD', 'ZS', 'OKTA', 'DDOG', 'MDB', 'TEAM', 'NOW',
-      'WDAY', 'SPLK', 'PANW', 'FTNT', 'CHKP', 'CYBR', 'TENB', 'RPD',
-      'S', 'ESTC', 'BILL', 'ZI', 'SMAR', 'FROG', 'FSLY', 'VCYT',
-      'BL', 'ALRM', 'APPN', 'ASAN', 'DOCN', 'GTLB', 'PD', 'DT',
-      'MELI', 'SE', 'BABA', 'JD', 'PDD', 'BIDU', 'NIO', 'XPEV',
-      'LI', 'GRAB', 'DIDI', 'TAL', 'EDU', 'GSX', 'VIPS', 'BILI',
-      'IQ', 'HUYA', 'DOYU', 'YY', 'MOMO', 'WB', 'TIGR', 'FUTU',
-      'LKNCY', 'BEKE', 'TME', 'BZUN', 'VNET', 'KC', 'QD', 'LX',
-      'GOTU', 'DAO', 'NIU', 'CBAT', 'SOS'
-    ];
 
-    const movers = [];
-    const basePrice = 150;
-    
-    for (let i = 0; i < 100; i++) {
-      const symbol = popularStocks[i % popularStocks.length] + (i >= popularStocks.length ? Math.floor(i / popularStocks.length) : '');
-      const price = basePrice + (Math.random() * 200);
-      
-      let changePercent;
-      if (type === 'gainers') {
-        changePercent = 0.5 + (Math.random() * 15); // 0.5% to 15.5%
-      } else if (type === 'losers') {
-        changePercent = -(0.5 + (Math.random() * 15)); // -0.5% to -15.5%
-      } else {
-        changePercent = (Math.random() - 0.5) * 10; // -5% to +5%
-      }
-      
-      const changeAmount = price * (changePercent / 100);
-      const openPrice = price - changeAmount;
-      const volume = Math.floor(10000000 + Math.random() * 90000000);
-      
-      movers.push({
-        ticker: symbol,
-        price: price.toFixed(2),
-        change_amount: changeAmount.toFixed(2),
-        change_percentage: changePercent.toFixed(2) + '%',
-        volume: volume.toString(),
-      });
-    }
-    
-    // Sort by percentage change
-    if (type === 'gainers') {
-      movers.sort((a, b) => parseFloat(b.change_percentage) - parseFloat(a.change_percentage));
-    } else if (type === 'losers') {
-      movers.sort((a, b) => parseFloat(a.change_percentage) - parseFloat(b.change_percentage));
-    } else {
-      movers.sort((a, b) => parseInt(b.volume) - parseInt(a.volume));
-    }
-    
-    return movers;
-  }
-
-  // Alpha Vantage API helper - Get top gainers/losers
+  // FMP API helper - Get top gainers/losers (LIVE DATA ONLY)
   async function fetchMarketMovers(type: 'gainers' | 'losers' | 'actives') {
-    const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
+    const apiKey = process.env.FMP_API_KEY;
     if (!apiKey) {
-      throw new Error('ALPHA_VANTAGE_API_KEY is not configured');
+      throw new Error('FMP_API_KEY is not configured');
     }
     
-    // Alpha Vantage has a TOP_GAINERS_LOSERS function
-    const url = `https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=${apiKey}`;
+    // FMP gainers/losers endpoints (correct URLs for free tier)
+    let url: string;
+    if (type === 'gainers') {
+      url = `https://financialmodelingprep.com/api/v3/gainers?apikey=${apiKey}`;
+    } else if (type === 'losers') {
+      url = `https://financialmodelingprep.com/api/v3/losers?apikey=${apiKey}`;
+    } else {
+      url = `https://financialmodelingprep.com/api/v3/actives?apikey=${apiKey}`;
+    }
+    
     const response = await fetch(url);
     
     if (!response.ok) {
-      throw new Error(`Alpha Vantage API error: ${response.statusText}`);
+      throw new Error(`FMP API error: ${response.statusText}`);
     }
     
     const data = await response.json();
     
-    // Alpha Vantage returns: { top_gainers: [], top_losers: [], most_actively_traded: [] }
-    if (data.Note || data['Error Message']) {
-      throw new Error(data.Note || data['Error Message'] || 'API rate limit exceeded');
+    // FMP returns an array directly or an error object
+    if (data.Error || data['Error Message']) {
+      throw new Error(data.Error || data['Error Message'] || 'FMP API error');
     }
     
-    let result;
-    if (type === 'gainers') {
-      result = data.top_gainers || [];
-    } else if (type === 'losers') {
-      result = data.top_losers || [];
-    } else {
-      result = data.most_actively_traded || [];
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error('FMP returned no data');
     }
     
-    // If empty array returned, treat as API failure
-    if (!result || result.length === 0) {
-      throw new Error('Alpha Vantage returned no data (possibly rate limited)');
-    }
-    
-    return result;
+    return data;
   }
 
-  // Combined Market Movers endpoint using Alpha Vantage with simulated fallback
+  // Market Movers endpoint using FMP API (LIVE DATA ONLY - NO SIMULATED FALLBACK)
   app.get("/api/market-movers", async (req, res) => {
     try {
       const type = (req.query.type as string || 'gainers') as 'gainers' | 'losers' | 'actives';
       
-      let movers;
-      let isSimulated = false;
-      
-      try {
-        movers = await fetchMarketMovers(type);
-      } catch (error) {
-        console.log(`Alpha Vantage API unavailable, using simulated data for ${type}:`, error instanceof Error ? error.message : 'Unknown error');
-        movers = generateSimulatedMarketMovers(type);
-        isSimulated = true;
-      }
+      // Fetch LIVE data from FMP - no fallback
+      const movers = await fetchMarketMovers(type);
 
       // Transform data to match our frontend format
+      // FMP returns: { symbol, name, change, price, changesPercentage }
       const transformedData = movers.slice(0, 100).map((stock: any) => {
-        const currentPrice = parseFloat(stock.price);
-        const changeAmount = parseFloat(stock.change_amount || '0');
-        const openPrice = currentPrice - changeAmount; // Calculate opening price
-        
         return {
-          symbol: stock.ticker,
-          name: stock.ticker, // Alpha Vantage doesn't provide company name in this endpoint
-          price: currentPrice,
-          changesPercentage: parseFloat(stock.change_percentage?.replace('%', '') || '0'),
-          change: changeAmount,
-          volume: parseInt(stock.volume || '0'),
-          exchange: 'US', // Alpha Vantage data is US stocks
-          open: !isNaN(openPrice) ? openPrice : undefined,
-          close: !isNaN(currentPrice) ? currentPrice : undefined,
-          simulated: isSimulated,
+          symbol: stock.symbol,
+          name: stock.name || stock.symbol,
+          price: stock.price,
+          changesPercentage: stock.changesPercentage,
+          change: stock.change,
+          volume: stock.volume || 0,
+          exchange: 'US',
+          open: undefined,
+          close: stock.price,
+          simulated: false, // Always false - live data only
         };
       });
 
       return res.json({
         success: true,
         data: transformedData,
-        simulated: isSimulated,
+        simulated: false, // Always false - live data only
       });
     } catch (error) {
       console.error('Error fetching market movers:', error);
