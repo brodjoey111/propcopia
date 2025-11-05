@@ -161,7 +161,12 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
                   }}
                   labelFormatter={(timestamp) => format(new Date(timestamp), 'PPpp')}
                   formatter={(value: number) => [`$${value.toFixed(2)}`, 'Price']}
-                  cursor={{ stroke: isPositive ? "#00c805" : "#ff5000", strokeWidth: 1, strokeDasharray: "5 5" }}
+                  cursor={{
+                    stroke: isPositive ? "#00c805" : "#ff5000",
+                    strokeWidth: 2,
+                    strokeDasharray: "3 3"
+                  }}
+                  wrapperStyle={{ zIndex: 1000 }}
                 />
                 {showBrush && <Brush dataKey="timestamp" height={30} stroke="hsl(var(--primary))" onChange={(e: any) => setBrushIndexes(e)} />}
                 <Line
@@ -220,16 +225,17 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
                             backgroundColor: "hsl(var(--background))",
                             border: "1px solid hsl(var(--border))",
                             borderRadius: "6px",
-                            padding: "8px",
+                            padding: "12px",
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
                           }}
                         >
-                          <p className="text-xs mb-2 font-medium">{format(new Date(data.timestamp), 'PPpp')}</p>
+                          <p className="text-xs mb-2 font-medium text-muted-foreground">{format(new Date(data.timestamp), 'PPpp')}</p>
                           <div className="space-y-1">
-                            <p className="text-xs">Open: <span className="font-semibold">${data.open.toFixed(2)}</span></p>
-                            <p className="text-xs text-[#00c805]">High: <span className="font-semibold">${data.high.toFixed(2)}</span></p>
-                            <p className="text-xs text-[#ff5000]">Low: <span className="font-semibold">${data.low.toFixed(2)}</span></p>
-                            <p className={`text-xs font-bold ${isPositiveCandle ? 'text-[#00c805]' : 'text-[#ff5000]'}`}>
-                              Close: ${data.close.toFixed(2)}
+                            <p className="text-sm">O: <span className="font-semibold">${data.open.toFixed(2)}</span></p>
+                            <p className="text-sm text-[#00c805]">H: <span className="font-semibold">${data.high.toFixed(2)}</span></p>
+                            <p className="text-sm text-[#ff5000]">L: <span className="font-semibold">${data.low.toFixed(2)}</span></p>
+                            <p className={`text-sm font-bold ${isPositiveCandle ? 'text-[#00c805]' : 'text-[#ff5000]'}`}>
+                              C: ${data.close.toFixed(2)}
                             </p>
                           </div>
                         </div>
@@ -237,7 +243,13 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
                     }
                     return null;
                   }}
-                  cursor={{ stroke: "hsl(var(--muted-foreground))", strokeWidth: 1, strokeDasharray: "5 5" }}
+                  cursor={{
+                    stroke: "hsl(var(--foreground))",
+                    strokeWidth: 1,
+                    strokeDasharray: "3 3",
+                    strokeOpacity: 0.5
+                  }}
+                  wrapperStyle={{ zIndex: 1000 }}
                 />
                 {showBrush && <Brush dataKey="timestamp" height={30} stroke="hsl(var(--primary))" onChange={(e: any) => setBrushIndexes(e)} />}
                 <Bar
