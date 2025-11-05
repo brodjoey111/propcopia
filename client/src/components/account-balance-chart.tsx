@@ -20,13 +20,13 @@ export function AccountBalanceChart({ data, title }: AccountBalanceChartProps) {
       const pnl = payload[0].payload.pnl;
       const isPositive = pnl >= 0;
       return (
-        <div className="rounded-md border bg-card p-3 shadow-md">
-          <p className="text-sm font-medium">{payload[0].payload.name}</p>
-          <p className="text-xs text-muted-foreground">
-            Balance: <span className="font-semibold tabular-nums">${payload[0].value.toLocaleString()}</span>
+        <div className="rounded-md border bg-card p-3 shadow-lg">
+          <p className="text-sm font-semibold mb-1">{payload[0].payload.name}</p>
+          <p className="text-sm text-muted-foreground">
+            Balance: <span className="font-bold tabular-nums">${payload[0].value.toLocaleString()}</span>
           </p>
-          <p className={`text-xs ${isPositive ? 'text-chart-2' : 'text-destructive'}`}>
-            P&L: <span className="font-semibold tabular-nums">{isPositive ? '+' : ''}${pnl.toLocaleString()}</span>
+          <p className={`text-sm font-semibold ${isPositive ? 'text-[#00c805]' : 'text-[#ff5000]'}`}>
+            P&L: {isPositive ? '+' : ''}${pnl.toLocaleString()}
           </p>
         </div>
       );
@@ -53,7 +53,11 @@ export function AccountBalanceChart({ data, title }: AccountBalanceChartProps) {
             axisLine={false}
             tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
           />
-          <Tooltip content={<CustomTooltip />} cursor={{ fill: 'hsl(var(--muted))', opacity: 0.2 }} />
+          <Tooltip 
+            content={<CustomTooltip />} 
+            cursor={{ fill: 'hsl(var(--muted))', opacity: 0.3 }} 
+            wrapperStyle={{ zIndex: 1000 }}
+          />
           <Bar dataKey="balance" radius={[8, 8, 0, 0]} isAnimationActive={!isExpanded}>
             {data.map((entry, index) => (
               <Cell
@@ -80,7 +84,11 @@ export function AccountBalanceChart({ data, title }: AccountBalanceChartProps) {
             axisLine={false}
             tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
           />
-          <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'hsl(var(--primary))', strokeWidth: 2 }} />
+          <Tooltip 
+            content={<CustomTooltip />} 
+            cursor={{ stroke: 'hsl(var(--foreground))', strokeWidth: 2, strokeDasharray: '3 3', strokeOpacity: 0.5 }}
+            wrapperStyle={{ zIndex: 1000 }}
+          />
           <Line
             type="monotone"
             dataKey="balance"
@@ -113,7 +121,11 @@ export function AccountBalanceChart({ data, title }: AccountBalanceChartProps) {
             axisLine={false}
             tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
           />
-          <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'hsl(var(--primary))', strokeWidth: 2 }} />
+          <Tooltip 
+            content={<CustomTooltip />} 
+            cursor={{ stroke: 'hsl(var(--foreground))', strokeWidth: 2, strokeDasharray: '3 3', strokeOpacity: 0.5 }}
+            wrapperStyle={{ zIndex: 1000 }}
+          />
           <Area
             type="monotone"
             dataKey="balance"
