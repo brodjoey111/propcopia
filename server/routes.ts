@@ -621,6 +621,70 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Company Overview endpoint
+  app.get("/api/company/:symbol", async (req, res) => {
+    try {
+      const { symbol } = req.params;
+      const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
+      
+      if (!apiKey) {
+        return res.status(500).json({
+          success: false,
+          message: "Alpha Vantage API key not configured",
+        });
+      }
+
+      const url = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${symbol}&apikey=${apiKey}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      // Check if API returned an error
+      if (data.Note || data['Error Message']) {
+        return res.status(429).json({
+          success: false,
+          message: data.Note || data['Error Message'] || 'API rate limit exceeded',
+        });
+      }
+
+      // Check if symbol was found
+      if (!data.Symbol) {
+        return res.status(404).json({
+          success: false,
+          message: 'Company not found',
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          symbol: data.Symbol,
+          name: data.Name,
+          description: data.Description,
+          sector: data.Sector,
+          industry: data.Industry,
+          exchange: data.Exchange,
+          marketCap: data.MarketCapitalization,
+          peRatio: data.PERatio,
+          eps: data.EPS,
+          dividendYield: data.DividendYield,
+          week52High: data['52WeekHigh'],
+          week52Low: data['52WeekLow'],
+          beta: data.Beta,
+          revenue: data.RevenueTTM,
+          profitMargin: data.ProfitMargin,
+          address: data.Address,
+          country: data.Country,
+        },
+      });
+    } catch (error) {
+      console.error('Error fetching company overview:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch company overview',
+      });
+    }
+  });
+
   // Watchlist endpoints
   app.get("/api/watchlist", async (req, res) => {
     try {
