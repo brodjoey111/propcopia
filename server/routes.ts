@@ -592,15 +592,23 @@ export function registerRoutes(app: Express): Server {
       const movers = await fetchMarketMovers(type);
 
       // Transform Alpha Vantage data to match our frontend format
-      const transformedData = movers.slice(0, 100).map((stock: any) => ({
-        symbol: stock.ticker,
-        name: stock.ticker, // Alpha Vantage doesn't provide company name in this endpoint
-        price: parseFloat(stock.price),
-        changesPercentage: parseFloat(stock.change_percentage?.replace('%', '') || '0'),
-        change: parseFloat(stock.change_amount || '0'),
-        volume: parseInt(stock.volume || '0'),
-        exchange: 'US', // Alpha Vantage data is US stocks
-      }));
+      const transformedData = movers.slice(0, 100).map((stock: any) => {
+        const currentPrice = parseFloat(stock.price);
+        const changeAmount = parseFloat(stock.change_amount || '0');
+        const openPrice = currentPrice - changeAmount; // Calculate opening price
+        
+        return {
+          symbol: stock.ticker,
+          name: stock.ticker, // Alpha Vantage doesn't provide company name in this endpoint
+          price: currentPrice,
+          changesPercentage: parseFloat(stock.change_percentage?.replace('%', '') || '0'),
+          change: changeAmount,
+          volume: parseInt(stock.volume || '0'),
+          exchange: 'US', // Alpha Vantage data is US stocks
+          open: !isNaN(openPrice) ? openPrice : undefined,
+          close: !isNaN(currentPrice) ? currentPrice : undefined,
+        };
+      });
 
       return res.json({
         success: true,

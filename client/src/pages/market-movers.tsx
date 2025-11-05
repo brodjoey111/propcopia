@@ -13,6 +13,8 @@ interface Stock {
   changesPercentage: number;
   volume?: number;
   marketCap?: number;
+  open?: number;
+  close?: number;
   indices?: {
     sp500: boolean;
     nasdaq: boolean;
@@ -63,9 +65,23 @@ function StockRow({ stock, index }: { stock: Stock; index: number }) {
             </Badge>
           )}
         </div>
-        <span className="text-xs sm:text-sm text-muted-foreground truncate" data-testid={`stock-name-${stock.symbol}`}>
-          {stock.name}
-        </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs sm:text-sm text-muted-foreground truncate" data-testid={`stock-name-${stock.symbol}`}>
+            {stock.name}
+          </span>
+        </div>
+        {stock.open !== undefined && (
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span data-testid={`stock-open-${stock.symbol}`}>
+              Open: ${stock.open.toFixed(2)}
+            </span>
+            {stock.close !== undefined && (
+              <span data-testid={`stock-close-${stock.symbol}`}>
+                Close: ${stock.close.toFixed(2)}
+              </span>
+            )}
+          </div>
+        )}
       </div>
       
       <div className="hidden sm:flex flex-col items-end gap-1">
