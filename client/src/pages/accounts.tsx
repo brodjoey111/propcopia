@@ -9,64 +9,24 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Wallet, Settings } from "lucide-react";
 
-export default function Accounts() {
-  // todo: remove mock functionality
-  const initialMockAccounts = [
-    {
-      id: '1',
-      name: 'Main Trading',
-      platform: 'NinjaTrader',
-      accountType: 'master' as const,
-      isConnected: true,
-      balance: 52340,
-      openPositions: 3,
-      pnl: 1240,
-    },
-    {
-      id: '2',
-      name: 'Follower Account 1',
-      platform: 'Tradovate',
-      accountType: 'follower' as const,
-      isConnected: true,
-      balance: 28900,
-      openPositions: 3,
-      pnl: 620,
-      riskMode: 'custom' as const,
-      positionScaling: 50,
-      maxContracts: 10,
-      blockedTickers: ['ES', 'NQ'],
-    },
-    {
-      id: '3',
-      name: 'Follower Account 2',
-      platform: 'NinjaTrader',
-      accountType: 'follower' as const,
-      isConnected: true,
-      balance: 44100,
-      openPositions: 3,
-      pnl: 1240,
-      riskMode: 'global' as const,
-      positionScaling: 100,
-      blockedTickers: [] as string[],
-    },
-    {
-      id: '4',
-      name: 'Backup Account',
-      platform: 'Tradovate',
-      accountType: 'follower' as const,
-      isConnected: false,
-      balance: 15000,
-      openPositions: 0,
-      pnl: -230,
-      riskMode: 'global' as const,
-      positionScaling: 75,
-      maxContracts: 5,
-      blockedTickers: ['YM'],
-    },
-  ];
+interface Account {
+  id: string;
+  name: string;
+  platform: string;
+  accountType: 'master' | 'follower';
+  isConnected: boolean;
+  balance: number;
+  openPositions: number;
+  pnl: number;
+  positionScaling?: number;
+  maxContracts?: number;
+  blockedTickers?: string[];
+  riskMode?: 'global' | 'custom';
+}
 
+export default function Accounts() {
   const { toast } = useToast();
-  const [accounts, setAccounts] = useState(initialMockAccounts);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [globalSettings, setGlobalSettings] = useState({
     positionScaling: 100,
     maxContracts: undefined as number | undefined,

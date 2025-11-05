@@ -44,45 +44,8 @@ export default function Dashboard() {
     blockedTickers: [] as string[],
   };
 
-  // Account state management
-  const [accounts, setAccounts] = useState<Account[]>([
-    {
-      id: '1',
-      name: 'Main Trading',
-      platform: 'NinjaTrader',
-      accountType: 'master' as const,
-      isConnected: true,
-      balance: 52340,
-      openPositions: 3,
-      pnl: 1240,
-    },
-    {
-      id: '2',
-      name: 'Follower Account 1',
-      platform: 'Tradovate',
-      accountType: 'follower' as const,
-      isConnected: true,
-      balance: 28900,
-      openPositions: 3,
-      pnl: 620,
-      positionScaling: 50,
-      riskMode: 'custom' as const,
-      maxContracts: 10,
-      blockedTickers: ['YM'],
-    },
-    {
-      id: '3',
-      name: 'Follower Account 2',
-      platform: 'NinjaTrader',
-      accountType: 'follower' as const,
-      isConnected: true,
-      balance: 44100,
-      openPositions: 3,
-      pnl: 1240,
-      positionScaling: 100,
-      riskMode: 'global' as const,
-    },
-  ]);
+  // Account state management - fetch from database
+  const [accounts, setAccounts] = useState<Account[]>([]);
 
   // Handler for configuring accounts
   const handleConfigure = (accountId: string, config: any) => {
@@ -140,44 +103,7 @@ export default function Dashboard() {
     setDisconnectAlert({ open: false, accountId: '', accountName: '' });
   };
 
-  const mockTrades = [
-    {
-      id: '1',
-      timestamp: '11:23:45 AM',
-      masterAccount: 'Main Trading',
-      symbol: 'ES',
-      action: 'BUY' as const,
-      quantity: 5,
-      price: 4523.25,
-      followersExecuted: 2,
-      followersTotal: 2,
-      status: 'success' as const,
-    },
-    {
-      id: '2',
-      timestamp: '11:18:32 AM',
-      masterAccount: 'Main Trading',
-      symbol: 'NQ',
-      action: 'SELL' as const,
-      quantity: 3,
-      price: 15234.50,
-      followersExecuted: 2,
-      followersTotal: 2,
-      status: 'success' as const,
-    },
-    {
-      id: '3',
-      timestamp: '10:45:12 AM',
-      masterAccount: 'Main Trading',
-      symbol: 'ES',
-      action: 'CLOSE' as const,
-      quantity: 5,
-      price: 4528.75,
-      followersExecuted: 2,
-      followersTotal: 2,
-      status: 'success' as const,
-    },
-  ];
+  const mockTrades: any[] = [];
 
   const performanceData = [
     { time: '9:00', pnl: 0 },
