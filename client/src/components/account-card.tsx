@@ -115,17 +115,6 @@ export function AccountCard({
 
         <div className="flex gap-2">
           <Button
-            variant="outline"
-            size="sm"
-            className="flex-1"
-            onClick={onConfigure}
-            disabled={!onConfigure}
-            data-testid={`button-configure-${id}`}
-          >
-            <Settings className="mr-2 h-3 w-3" />
-            Configure
-          </Button>
-          <Button
             size="sm"
             variant={isConnected ? "default" : "outline"}
             className={`flex-1 ${
@@ -153,6 +142,18 @@ export function AccountCard({
             Disconnect
           </Button>
         </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={onConfigure}
+          disabled={!onConfigure}
+          data-testid={`button-configure-${id}`}
+        >
+          <Settings className="mr-2 h-3 w-3" />
+          Configure
+        </Button>
       </div>
     </Card>
   );
