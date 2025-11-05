@@ -49,59 +49,8 @@ const shouldAutoGenerateImage = (content: string): boolean => {
 
 export default function Social() {
   const { toast } = useToast();
-  const mockPosts: Post[] = [
-    {
-      id: '1',
-      author: {
-        name: 'Sarah Martinez',
-        username: '@sarahtrader',
-        isVerified: true,
-      },
-      content: 'Just closed a great ES position with +15 points! The key was patience and waiting for the right setup. Market volatility is your friend when you have a solid strategy.',
-      imageUrl: stockImage1,
-      timestamp: new Date(Date.now() - 3600000),
-      likes: 42,
-      comments: 8,
-      isLiked: false,
-      performance: {
-        return: 15.2,
-        period: 'This Week',
-      },
-    },
-    {
-      id: '2',
-      author: {
-        name: 'Mike Chen',
-        username: '@mikethetrader',
-        isVerified: true,
-      },
-      content: 'Market update: Seeing strong support at 4500 on SPX. Could be a good entry point for long positions. Always use proper risk management! #futures #trading',
-      imageUrl: stockImage2,
-      timestamp: new Date(Date.now() - 7200000),
-      likes: 67,
-      comments: 12,
-      isLiked: true,
-      performance: {
-        return: 28.5,
-        period: 'This Month',
-      },
-    },
-    {
-      id: '3',
-      author: {
-        name: 'Alex Thompson',
-        username: '@alexfutures',
-        isVerified: false,
-      },
-      content: 'Been trading NQ for 3 months now using the copier. My follower account is up 12%! Thanks to everyone sharing strategies here.',
-      timestamp: new Date(Date.now() - 10800000),
-      likes: 28,
-      comments: 5,
-      isLiked: false,
-    },
-  ];
 
-  const [posts, setPosts] = useState(mockPosts);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [newPost, setNewPost] = useState('');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
@@ -346,31 +295,8 @@ export default function Social() {
         <TabsContent value="trending" className="space-y-4">
           <Card className="p-6">
             <h3 className="text-lg font-semibold mb-4">Top Traders This Week</h3>
-            <div className="space-y-4">
-              {[
-                { name: 'Sarah Martinez', username: '@sarahtrader', return: 28.5, followers: 1234 },
-                { name: 'Mike Chen', username: '@mikethetrader', return: 24.2, followers: 982 },
-                { name: 'Jordan Lee', username: '@jordanfx', return: 19.8, followers: 756 },
-              ].map((trader, index) => (
-                <div key={trader.username} className="flex items-center justify-between" data-testid={`trader-${index}`}>
-                  <div className="flex items-center gap-3">
-                    <Avatar>
-                      <AvatarFallback>{trader.name[0]}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <div className="font-semibold">{trader.name}</div>
-                      <div className="text-sm text-muted-foreground">{trader.username}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <div className="text-sm font-semibold text-chart-2">+{trader.return}%</div>
-                      <div className="text-xs text-muted-foreground">{trader.followers} followers</div>
-                    </div>
-                    <Button size="sm" data-testid={`button-follow-${index}`}>Follow</Button>
-                  </div>
-                </div>
-              ))}
+            <div className="flex items-center justify-center py-12">
+              <p className="text-muted-foreground">No trending traders yet. Be the first to share your trades!</p>
             </div>
           </Card>
         </TabsContent>

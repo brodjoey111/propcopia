@@ -206,19 +206,11 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // If no CID/secret provided, simulate successful connection for demo purposes
+      // CID and secret are required for real API authentication
       if (!cid || !secret) {
-        return res.json({
-          success: true,
-          message: "Simulated connection successful (no live credentials provided)",
-          authData: {
-            userId: `sim-${username}`,
-            tokenExpiration: new Date(Date.now() + 3600000).toISOString(),
-          },
-          accounts: [
-            { id: '1', name: `${username} - Simulated Account 1` },
-            { id: '2', name: `${username} - Simulated Account 2` },
-          ],
+        return res.status(400).json({
+          success: false,
+          message: "Missing required API credentials: Client ID (CID) and Secret are required to connect to Tradovate"
         });
       }
 
@@ -716,101 +708,10 @@ export function registerRoutes(app: Express): Server {
 
   app.get("/api/leaderboard", (req, res) => {
     try {
-      const mockTraders = [
-        {
-          id: '1',
-          username: 'sarahtrader',
-          name: 'Sarah Martinez',
-          positions: [
-            { symbol: 'ES', quantity: 5, entryPrice: 5825.50, currentPrice: 0 },
-            { symbol: 'NQ', quantity: 2, entryPrice: 20450.00, currentPrice: 0 },
-          ],
-          totalPnl: 0,
-          returnPercent: 0,
-          isVerified: true,
-        },
-        {
-          id: '2',
-          username: 'mikethetrader',
-          name: 'Mike Chen',
-          positions: [
-            { symbol: 'ES', quantity: 3, entryPrice: 5810.00, currentPrice: 0 },
-            { symbol: 'YM', quantity: 1, entryPrice: 42950.00, currentPrice: 0 },
-          ],
-          totalPnl: 0,
-          returnPercent: 0,
-          isVerified: true,
-        },
-        {
-          id: '3',
-          username: 'jordanfx',
-          name: 'Jordan Lee',
-          positions: [
-            { symbol: 'NQ', quantity: 4, entryPrice: 20480.00, currentPrice: 0 },
-          ],
-          totalPnl: 0,
-          returnPercent: 0,
-          isVerified: false,
-        },
-        {
-          id: '4',
-          username: 'alexfutures',
-          name: 'Alex Thompson',
-          positions: [
-            { symbol: 'RTY', quantity: 8, entryPrice: 2095.50, currentPrice: 0 },
-            { symbol: 'ES', quantity: 2, entryPrice: 5830.00, currentPrice: 0 },
-          ],
-          totalPnl: 0,
-          returnPercent: 0,
-          isVerified: false,
-        },
-        {
-          id: '5',
-          username: 'emilytrades',
-          name: 'Emily Rodriguez',
-          positions: [
-            { symbol: 'NQ', quantity: 3, entryPrice: 20490.00, currentPrice: 0 },
-            { symbol: 'YM', quantity: 2, entryPrice: 42980.00, currentPrice: 0 },
-          ],
-          totalPnl: 0,
-          returnPercent: 0,
-          isVerified: true,
-        },
-      ];
-
-      const prices = marketDataService.getAllPrices();
-      
-      const tradersWithPnl = mockTraders.map(trader => {
-        let totalPnl = 0;
-        const startingCapital = 50000;
-
-        const updatedPositions = trader.positions.map(position => {
-          const currentPrice = prices.get(position.symbol)?.price || position.entryPrice;
-          const pnl = (currentPrice - position.entryPrice) * position.quantity * 50;
-          totalPnl += pnl;
-
-          return {
-            ...position,
-            currentPrice,
-            pnl,
-          };
-        });
-
-        const returnPercent = (totalPnl / startingCapital) * 100;
-
-        return {
-          ...trader,
-          positions: updatedPositions,
-          totalPnl,
-          returnPercent,
-        };
-      });
-
-      const sortedTraders = tradersWithPnl.sort((a, b) => b.returnPercent - a.returnPercent);
-
+      // Return empty leaderboard - real data will come from actual user accounts
       return res.json({
         success: true,
-        data: sortedTraders,
+        data: [],
       });
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
