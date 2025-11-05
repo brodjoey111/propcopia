@@ -20,9 +20,9 @@ export function PerformanceChart({ data, title }: PerformanceChartProps) {
       const value = payload[0].value;
       const isPositive = value >= 0;
       return (
-        <div className="rounded-md border bg-card p-3 shadow-md">
-          <p className="text-xs text-muted-foreground">{payload[0].payload.time}</p>
-          <p className={`text-sm font-semibold tabular-nums ${isPositive ? 'text-chart-2' : 'text-destructive'}`}>
+        <div className="rounded-md border bg-card p-3 shadow-lg">
+          <p className="text-xs text-muted-foreground mb-1">{payload[0].payload.time}</p>
+          <p className={`text-sm font-bold tabular-nums ${isPositive ? 'text-[#00c805]' : 'text-[#ff5000]'}`}>
             {isPositive ? '+' : ''}${value.toLocaleString()}
           </p>
         </div>
@@ -56,7 +56,11 @@ export function PerformanceChart({ data, title }: PerformanceChartProps) {
             axisLine={false}
             tickFormatter={(value) => `$${value}`}
           />
-          <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'hsl(var(--primary))', strokeWidth: 2 }} />
+          <Tooltip 
+            content={<CustomTooltip />} 
+            cursor={{ stroke: 'hsl(var(--foreground))', strokeWidth: 2, strokeDasharray: '3 3', strokeOpacity: 0.5 }}
+            wrapperStyle={{ zIndex: 1000 }}
+          />
           <Area
             type="monotone"
             dataKey="pnl"
@@ -83,7 +87,11 @@ export function PerformanceChart({ data, title }: PerformanceChartProps) {
             axisLine={false}
             tickFormatter={(value) => `$${value}`}
           />
-          <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'hsl(var(--primary))', strokeWidth: 2 }} />
+          <Tooltip 
+            content={<CustomTooltip />} 
+            cursor={{ stroke: 'hsl(var(--foreground))', strokeWidth: 2, strokeDasharray: '3 3', strokeOpacity: 0.5 }}
+            wrapperStyle={{ zIndex: 1000 }}
+          />
           <Line
             type="monotone"
             dataKey="pnl"
@@ -110,7 +118,11 @@ export function PerformanceChart({ data, title }: PerformanceChartProps) {
             axisLine={false}
             tickFormatter={(value) => `$${value}`}
           />
-          <Tooltip content={<CustomTooltip />} cursor={{ fill: 'hsl(var(--muted))', opacity: 0.2 }} />
+          <Tooltip 
+            content={<CustomTooltip />} 
+            cursor={{ fill: 'hsl(var(--muted))', opacity: 0.3 }} 
+            wrapperStyle={{ zIndex: 1000 }}
+          />
           <Bar
             dataKey="pnl"
             fill="hsl(var(--chart-2))"
