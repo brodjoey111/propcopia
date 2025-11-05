@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { StatsCard } from "@/components/stats-card";
 import { AccountCard } from "@/components/account-card";
 import { TradeLogTable } from "@/components/trade-log-table";
@@ -6,11 +7,44 @@ import { PerformanceChart } from "@/components/performance-chart";
 import { AccountBalanceChart } from "@/components/account-balance-chart";
 import { TradeDistributionChart } from "@/components/trade-distribution-chart";
 import { DraggableDashboardGrid } from "@/components/draggable-dashboard-grid";
+import { ConfigureAccountDialog } from "@/components/configure-account-dialog";
+import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
+import { useToast } from "@/hooks/use-toast";
 import { Wallet, TrendingUp, Activity, Users } from "lucide-react";
 
+interface Account {
+  id: string;
+  name: string;
+  platform: string;
+  accountType: 'master' | 'follower';
+  isConnected: boolean;
+  balance: number;
+  openPositions: number;
+  pnl: number;
+  positionScaling?: number;
+  maxContracts?: number;
+  blockedTickers?: string[];
+  riskMode?: 'global' | 'custom';
+}
+
 export default function Dashboard() {
-  // todo: remove mock functionality
-  const mockAccounts = [
+  const { toast } = useToast();
+  // State for disconnect confirmation
+  const [disconnectAlert, setDisconnectAlert] = useState<{
+    open: boolean;
+    accountId: string;
+    accountName: string;
+  }>({ open: false, accountId: '', accountName: '' });
+
+  // Global risk settings (for demo purposes)
+  const globalRiskSettings = {
+    positionScaling: 100,
+    maxContracts: undefined,
+    blockedTickers: [] as string[],
+  };
+
+  // Account state management
+  const [accounts, setAccounts] = useState<Account[]>([
     {
       id: '1',
       name: 'Main Trading',
@@ -31,6 +65,9 @@ export default function Dashboard() {
       openPositions: 3,
       pnl: 620,
       positionScaling: 50,
+      riskMode: 'custom' as const,
+      maxContracts: 10,
+      blockedTickers: ['YM'],
     },
     {
       id: '3',
@@ -42,8 +79,65 @@ export default function Dashboard() {
       openPositions: 3,
       pnl: 1240,
       positionScaling: 100,
+      riskMode: 'global' as const,
     },
-  ];
+  ]);
+
+  // Handler for configuring accounts
+  const handleConfigure = (accountId: string, config: any) => {
+    setAccounts(prev => prev.map(acc => 
+      acc.id === accountId 
+        ? {
+            ...acc,
+            riskMode: config.riskMode,
+            positionScaling: config.positionScaling,
+            maxContracts: config.maxContracts,
+            blockedTickers: config.blockedTickers,
+          }
+        : acc
+    ));
+    
+    const account = accounts.find(a => a.id === accountId);
+    toast({
+      title: "Settings Updated",
+      description: `Configuration saved for ${account?.name}`,
+    });
+  };
+
+  // Handler for connecting accounts
+  const handleConnect = (accountId: string) => {
+    setAccounts(prev => prev.map(acc => 
+      acc.id === accountId ? { ...acc, isConnected: true } : acc
+    ));
+    
+    const account = accounts.find(a => a.id === accountId);
+    toast({
+      title: "Account Connected",
+      description: `${account?.name} is now connected and will copy trades`,
+    });
+  };
+
+  // Handler for initiating disconnect
+  const handleDisconnectClick = (accountId: string, accountName: string) => {
+    setDisconnectAlert({ open: true, accountId, accountName });
+  };
+
+  // Handler for confirming disconnect
+  const handleDisconnectConfirm = () => {
+    const accountId = disconnectAlert.accountId;
+    setAccounts(prev => prev.map(acc => 
+      acc.id === accountId ? { ...acc, isConnected: false } : acc
+    ));
+    
+    const account = accounts.find(a => a.id === accountId);
+    toast({
+      title: "Account Disconnected",
+      description: `${account?.name} has been disconnected`,
+      variant: "destructive",
+    });
+    
+    setDisconnectAlert({ open: false, accountId: '', accountName: '' });
+  };
 
   const mockTrades = [
     {
@@ -96,7 +190,7 @@ export default function Dashboard() {
     { time: '13:00', pnl: 3100 },
   ];
 
-  const balanceData = mockAccounts.map(acc => ({
+  const balanceData = accounts.map(acc => ({
     name: acc.name.replace(' Account', ''),
     balance: acc.balance,
     pnl: acc.pnl,
@@ -168,15 +262,30 @@ export default function Dashboard() {
   ];
 
   // Account card sections
-  const accountSections = mockAccounts.map((account) => ({
+  const accountSections = accounts.map((account) => ({
     id: `account-${account.id}`,
     component: (
-      <AccountCard
-        key={account.id}
-        {...account}
-        onConfigure={() => console.log(`Configure ${account.name}`)}
-        onDisconnect={() => console.log(`Disconnect ${account.name}`)}
-      />
+      <div key={account.id} className="relative">
+        <AccountCard
+          {...account}
+          onConnect={() => handleConnect(account.id)}
+          onDisconnect={() => handleDisconnectClick(account.id, account.name)}
+        />
+        {account.accountType === 'follower' && (
+          <div className="absolute top-4 right-4 z-10">
+            <ConfigureAccountDialog
+              accountId={account.id}
+              accountName={account.name}
+              riskMode={account.riskMode || 'custom'}
+              positionScaling={account.positionScaling}
+              maxContracts={account.maxContracts}
+              blockedTickers={account.blockedTickers}
+              globalSettings={globalRiskSettings}
+              onSave={(config) => handleConfigure(account.id, config)}
+            />
+          </div>
+        )}
+      </div>
     ),
   }));
 
@@ -240,6 +349,14 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Disconnect Confirmation Alert */}
+      <DisconnectAccountAlert
+        open={disconnectAlert.open}
+        onOpenChange={(open) => setDisconnectAlert(prev => ({ ...prev, open }))}
+        accountName={disconnectAlert.accountName}
+        onConfirm={handleDisconnectConfirm}
+      />
     </div>
   );
 }
