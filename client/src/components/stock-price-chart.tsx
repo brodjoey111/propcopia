@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { format } from "date-fns";
-import { TrendingUp, Candy, Maximize2, Minimize2 } from "lucide-react";
+import { TrendingUp, Candy, Maximize2, Minimize2, ZoomIn, ZoomOut } from "lucide-react";
 
 interface ChartData {
   timestamp: number;
@@ -37,6 +37,7 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
   const [chartType, setChartType] = useState<ChartType>("line");
   const [isExpanded, setIsExpanded] = useState(false);
   const [brushIndexes, setBrushIndexes] = useState<{ startIndex?: number; endIndex?: number }>({});
+  const [yZoom, setYZoom] = useState(1); // 1 is default, <1 zooms out, >1 zooms in
 
   const { data, isLoading } = useQuery<{ success: boolean; data: { timeframe: string; candles: ChartData[] } }>({
     queryKey: [`/api/stock/${symbol}/chart?timeframe=${selectedTimeframe}`],
@@ -56,7 +57,12 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
     : chartData.length > 0
     ? Math.max(...chartData.map(d => d.close))
     : 0;
-  const padding = (maxPrice - minPrice) * 0.1 || 1;
+  const basePadding = (maxPrice - minPrice) * 0.1 || 1;
+  const padding = basePadding / yZoom; // Adjust padding based on zoom level
+  
+  const handleZoomIn = () => setYZoom(prev => Math.min(prev * 1.5, 10));
+  const handleZoomOut = () => setYZoom(prev => Math.max(prev / 1.5, 0.25));
+  const handleResetZoom = () => setYZoom(1);
 
   // Determine if price is going up or down
   const isPositive = chartData.length > 1 && chartData[chartData.length - 1].close >= chartData[0].close;
@@ -301,16 +307,45 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
           </Button>
         </div>
         
-        {/* Expand Button */}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setIsExpanded(true)}
-          data-testid="button-expand-stock-chart"
-        >
-          <Maximize2 className="w-4 h-4 mr-1" />
-          Expand
-        </Button>
+        {/* Zoom and Expand Controls */}
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleZoomOut}
+            disabled={yZoom <= 0.25}
+            data-testid="button-zoom-out"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleResetZoom}
+            disabled={yZoom === 1}
+            data-testid="button-zoom-reset"
+          >
+            1:1
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleZoomIn}
+            disabled={yZoom >= 10}
+            data-testid="button-zoom-in"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsExpanded(true)}
+            data-testid="button-expand-stock-chart"
+          >
+            <Maximize2 className="w-4 h-4 mr-1" />
+            Expand
+          </Button>
+        </div>
       </div>
 
       {/* Timeframe buttons */}
@@ -365,6 +400,36 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
                 >
                   <Candy className="w-4 h-4 mr-1" />
                   Candles
+                </Button>
+              </div>
+              {/* Zoom Controls */}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleZoomOut}
+                  disabled={yZoom <= 0.25}
+                  data-testid="button-zoom-out-expanded"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetZoom}
+                  disabled={yZoom === 1}
+                  data-testid="button-zoom-reset-expanded"
+                >
+                  1:1
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleZoomIn}
+                  disabled={yZoom >= 10}
+                  data-testid="button-zoom-in-expanded"
+                >
+                  <ZoomIn className="w-4 h-4" />
                 </Button>
               </div>
               <Button
