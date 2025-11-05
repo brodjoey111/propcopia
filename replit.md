@@ -17,7 +17,7 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Frontend Architecture
-The frontend is built with **React 18** and **TypeScript**, using **Vite** for development and **Wouter** for routing. **TanStack Query** manages server state. The UI leverages **shadcn/ui** (built on Radix UI) and **Tailwind CSS** for styling, adhering to a "less is more" design philosophy inspired by modern fintech. Key features include a draggable dashboard, real-time activity feed, a dark mode toggle, enhanced position scaling controls, a social media community platform with an economic calendar, and market movers. Chart visualizations are handled by Recharts.
+The frontend is built with **React 18** and **TypeScript**, using **Vite** for development and **Wouter** for routing. **TanStack Query** manages server state. The UI leverages **shadcn/ui** (built on Radix UI) and **Tailwind CSS** for styling, adhering to a "less is more" design philosophy inspired by modern fintech. Key features include a draggable dashboard, real-time activity feed, a dark mode toggle, enhanced position scaling controls, a social media community platform with an economic calendar, market movers, and an interactive watchlist with dual chart modes (line and candlestick). Chart visualizations are handled by Recharts.
 
 ### Backend Architecture
 The backend uses **Express.js** with **TypeScript**. It provides RESTful API endpoints for managing trading accounts, user profiles, social features, and market data. A custom `TradovateAPI` class handles integration with the Tradovate platform, supporting both demo and live environments. Market data integration is powered by **Finnhub API** for real-time futures data, with an intelligent fallback to simulated data.
