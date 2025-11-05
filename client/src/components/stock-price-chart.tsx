@@ -85,8 +85,8 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
     // Darker, more saturated colors for better visibility in light mode
     const color = isPositive ? "#00a804" : "#e63900";
     
-    // Calculate positions
-    const candleWidth = Math.max(width * 0.6, 2);
+    // Calculate positions - larger candles
+    const candleWidth = Math.max(width * 0.8, 4);
     const candleX = x + (width - candleWidth) / 2;
     
     // Map prices to y coordinates (higher price = lower y)
@@ -99,20 +99,20 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
     const closeY = getY(close);
     
     const bodyTop = Math.min(openY, closeY);
-    const bodyHeight = Math.abs(closeY - openY) || 1;
+    const bodyHeight = Math.abs(closeY - openY) || 2;
 
     return (
       <g>
-        {/* Wick line (high-low) */}
+        {/* Wick line (high-low) - thicker wick */}
         <line
           x1={x + width / 2}
           y1={highY}
           x2={x + width / 2}
           y2={lowY}
           stroke={color}
-          strokeWidth={2}
+          strokeWidth={3}
         />
-        {/* Candle body */}
+        {/* Candle body - larger and thicker */}
         <rect
           x={candleX}
           y={bodyTop}
@@ -120,7 +120,9 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
           height={bodyHeight}
           fill={color}
           stroke={color}
-          strokeWidth={2}
+          strokeWidth={3}
+          rx={1}
+          ry={1}
         />
       </g>
     );
