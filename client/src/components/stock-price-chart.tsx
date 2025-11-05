@@ -32,25 +32,29 @@ const timeframes = [
 
 type ChartType = "line" | "candlestick";
 
+// TradingView-inspired colors
+const BULLISH_COLOR = "#089981"; // TradingView green
+const BEARISH_COLOR = "#F23645"; // TradingView red
+const WICK_COLOR_BULL = "#089981";
+const WICK_COLOR_BEAR = "#F23645";
+
 export function StockPriceChart({ symbol }: StockPriceChartProps) {
   const [selectedTimeframe, setSelectedTimeframe] = useState("1M");
   const [chartType, setChartType] = useState<ChartType>("line");
   const [isExpanded, setIsExpanded] = useState(false);
   const [brushIndexes, setBrushIndexes] = useState<{ startIndex?: number; endIndex?: number }>({});
-  const [yZoom, setYZoom] = useState(1); // 1 is default, <1 zooms out, >1 zooms in
+  const [yZoom, setYZoom] = useState(1);
 
   const { data, isLoading } = useQuery<{ success: boolean; data: { timeframe: string; candles: ChartData[] } }>({
     queryKey: [`/api/stock/${symbol}/chart?timeframe=${selectedTimeframe}`],
     enabled: !!symbol,
-    refetchInterval: 15000, // Refresh chart data every 15 seconds for real-time updates
+    refetchInterval: 15000,
   });
 
   const chartData = data?.data?.candles || [];
 
-  // Get current price (latest close price)
   const currentPrice = chartData.length > 0 ? chartData[chartData.length - 1].close : 0;
 
-  // Calculate min and max for better chart scaling - use high/low for candlestick mode
   const minPrice = chartType === "candlestick" && chartData.length > 0
     ? Math.min(...chartData.map(d => d.low))
     : chartData.length > 0
@@ -62,16 +66,14 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
     ? Math.max(...chartData.map(d => d.close))
     : 0;
   const basePadding = (maxPrice - minPrice) * 0.1 || 1;
-  const padding = basePadding / yZoom; // Adjust padding based on zoom level
+  const padding = basePadding / yZoom;
   
   const handleZoomIn = () => setYZoom(prev => Math.min(prev * 1.5, 10));
   const handleZoomOut = () => setYZoom(prev => Math.max(prev / 1.5, 0.25));
   const handleResetZoom = () => setYZoom(1);
 
-  // Determine if price is going up or down
   const isPositive = chartData.length > 1 && chartData[chartData.length - 1].close >= chartData[0].close;
 
-  // Format date based on timeframe
   const formatXAxis = (timestamp: number) => {
     const date = new Date(timestamp);
     if (selectedTimeframe === '1D') {
@@ -85,21 +87,21 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
     }
   };
 
-  // Custom candlestick shape
+  // TradingView-style candlestick shape
   const CandlestickShape = (props: any) => {
     const { x, y, width, height, payload } = props;
     if (!payload) return <g />;
 
     const { open, close, high, low } = payload;
-    const isPositive = close >= open;
-    // Darker, more saturated colors for better visibility in light mode
-    const color = isPositive ? "#00a804" : "#e63900";
+    const isBullish = close >= open;
+    const bodyColor = isBullish ? BULLISH_COLOR : BEARISH_COLOR;
+    const wickColor = isBullish ? WICK_COLOR_BULL : WICK_COLOR_BEAR;
     
-    // Calculate positions - larger candles
-    const candleWidth = Math.max(width * 0.8, 4);
+    // TradingView-style: larger candles with proper spacing
+    const candleWidth = Math.max(width * 0.7, 3);
     const candleX = x + (width - candleWidth) / 2;
     
-    // Map prices to y coordinates (higher price = lower y)
+    // Map prices to y coordinates
     const yScale = height / (maxPrice + padding - (minPrice - padding));
     const getY = (price: number) => y + height - (price - (minPrice - padding)) * yScale;
     
@@ -109,30 +111,30 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
     const closeY = getY(close);
     
     const bodyTop = Math.min(openY, closeY);
-    const bodyHeight = Math.abs(closeY - openY) || 2;
+    const bodyHeight = Math.max(Math.abs(closeY - openY), 1);
 
     return (
       <g>
-        {/* Wick line (high-low) - thicker wick */}
+        {/* Thin wick line (TradingView style: 1px) */}
         <line
           x1={x + width / 2}
           y1={highY}
           x2={x + width / 2}
           y2={lowY}
-          stroke={color}
-          strokeWidth={3}
+          stroke={wickColor}
+          strokeWidth={1}
+          opacity={0.9}
         />
-        {/* Candle body - larger and thicker */}
+        {/* Candle body - no border, just fill (TradingView style) */}
         <rect
           x={candleX}
           y={bodyTop}
           width={candleWidth}
           height={bodyHeight}
-          fill={color}
-          stroke={color}
-          strokeWidth={3}
-          rx={1}
-          ry={1}
+          fill={bodyColor}
+          stroke="none"
+          rx={0}
+          ry={0}
         />
       </g>
     );
@@ -147,63 +149,74 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
           <ResponsiveContainer width="100%" height="100%">
             {chartType === "line" ? (
               <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+                <CartesianGrid 
+                  strokeDasharray="0" 
+                  stroke="hsl(var(--border))" 
+                  opacity={0.15}
+                  horizontal={true}
+                  vertical={false}
+                />
                 <XAxis
                   dataKey="timestamp"
                   tickFormatter={formatXAxis}
                   stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
+                  fontSize={11}
                   tickLine={false}
-                  axisLine={false}
+                  axisLine={{ stroke: "hsl(var(--border))", strokeWidth: 1 }}
                   interval="preserveStartEnd"
                 />
                 <YAxis
                   yAxisId="left"
                   domain={[minPrice - padding, maxPrice + padding]}
                   stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
+                  fontSize={11}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(value) => `$${value.toFixed(2)}`}
+                  width={60}
                 />
                 <YAxis
                   yAxisId="right"
                   orientation="right"
                   domain={[minPrice - padding, maxPrice + padding]}
                   stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
+                  fontSize={11}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(value) => `$${value.toFixed(2)}`}
                   ticks={[currentPrice]}
+                  width={60}
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "hsl(var(--background))",
+                    backgroundColor: "hsl(var(--popover))",
                     border: "1px solid hsl(var(--border))",
-                    borderRadius: "6px",
-                    padding: "8px",
+                    borderRadius: "4px",
+                    padding: "8px 12px",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
                   }}
                   labelFormatter={(timestamp) => format(new Date(timestamp), 'PPpp')}
                   formatter={(value: number) => [`$${value.toFixed(2)}`, 'Price']}
                   cursor={{
-                    stroke: isPositive ? "#00c805" : "#ff5000",
-                    strokeWidth: 2,
-                    strokeDasharray: "3 3"
+                    stroke: isPositive ? BULLISH_COLOR : BEARISH_COLOR,
+                    strokeWidth: 1,
+                    strokeDasharray: "3 3",
+                    strokeOpacity: 0.5
                   }}
                   wrapperStyle={{ zIndex: 1000 }}
                 />
                 <ReferenceLine
                   yAxisId="left"
                   y={currentPrice}
-                  stroke={isPositive ? "#00c805" : "#ff5000"}
-                  strokeWidth={2}
-                  strokeDasharray="5 5"
+                  stroke={isPositive ? BULLISH_COLOR : BEARISH_COLOR}
+                  strokeWidth={1}
+                  strokeDasharray="3 3"
+                  strokeOpacity={0.6}
                   label={{
                     value: `$${currentPrice.toFixed(2)}`,
                     position: 'right',
-                    fill: isPositive ? "#00c805" : "#ff5000",
-                    fontSize: 12,
+                    fill: isPositive ? BULLISH_COLOR : BEARISH_COLOR,
+                    fontSize: 11,
                     fontWeight: 'bold'
                   }}
                 />
@@ -212,7 +225,7 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
                   yAxisId="left"
                   type="monotone"
                   dataKey="close"
-                  stroke={isPositive ? "#00c805" : "#ff5000"}
+                  stroke={isPositive ? BULLISH_COLOR : BEARISH_COLOR}
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={!isExpanded}
@@ -220,75 +233,91 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
               </LineChart>
             ) : (
               <ComposedChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+                <CartesianGrid 
+                  strokeDasharray="0" 
+                  stroke="hsl(var(--border))" 
+                  opacity={0.15}
+                  horizontal={true}
+                  vertical={false}
+                />
                 <XAxis
                   dataKey="timestamp"
                   tickFormatter={formatXAxis}
                   stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
+                  fontSize={11}
                   tickLine={false}
-                  axisLine={false}
+                  axisLine={{ stroke: "hsl(var(--border))", strokeWidth: 1 }}
                   interval="preserveStartEnd"
                 />
                 <YAxis
                   yAxisId="left"
                   domain={[minPrice - padding, maxPrice + padding]}
                   stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
+                  fontSize={11}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(value) => `$${value.toFixed(2)}`}
+                  width={60}
                 />
                 <YAxis
                   yAxisId="right"
                   orientation="right"
                   domain={[minPrice - padding, maxPrice + padding]}
                   stroke="hsl(var(--muted-foreground))"
-                  fontSize={12}
+                  fontSize={11}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(value) => `$${value.toFixed(2)}`}
                   ticks={[currentPrice]}
+                  width={60}
                 />
                 <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--background))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "6px",
-                    padding: "8px",
-                  }}
-                  labelFormatter={(timestamp) => format(new Date(timestamp), 'PPpp')}
-                  formatter={(value: number, name: string) => {
-                    const labels: Record<string, string> = {
-                      open: 'Open',
-                      high: 'High',
-                      low: 'Low',
-                      close: 'Close'
-                    };
-                    return [`$${value.toFixed(2)}`, labels[name] || name];
-                  }}
                   content={({ active, payload }) => {
                     if (active && payload && payload.length > 0) {
                       const data = payload[0].payload;
-                      const isPositiveCandle = data.close >= data.open;
+                      const isBullish = data.close >= data.open;
+                      const change = data.close - data.open;
+                      const changePercent = ((change / data.open) * 100);
+                      
                       return (
                         <div
                           style={{
-                            backgroundColor: "hsl(var(--background))",
+                            backgroundColor: "hsl(var(--popover))",
                             border: "1px solid hsl(var(--border))",
-                            borderRadius: "6px",
-                            padding: "12px",
+                            borderRadius: "4px",
+                            padding: "10px 14px",
                             boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                            minWidth: "180px"
                           }}
                         >
-                          <p className="text-xs mb-2 font-medium text-muted-foreground">{format(new Date(data.timestamp), 'PPpp')}</p>
-                          <div className="space-y-1">
-                            <p className="text-sm">O: <span className="font-semibold">${data.open.toFixed(2)}</span></p>
-                            <p className="text-sm text-[#00c805]">H: <span className="font-semibold">${data.high.toFixed(2)}</span></p>
-                            <p className="text-sm text-[#ff5000]">L: <span className="font-semibold">${data.low.toFixed(2)}</span></p>
-                            <p className={`text-sm font-bold ${isPositiveCandle ? 'text-[#00c805]' : 'text-[#ff5000]'}`}>
-                              C: ${data.close.toFixed(2)}
-                            </p>
+                          <p className="text-xs mb-2 font-medium text-muted-foreground">
+                            {format(new Date(data.timestamp), 'MMM dd, yyyy HH:mm')}
+                          </p>
+                          <div className="space-y-1.5 text-sm">
+                            <div className="flex justify-between gap-4">
+                              <span className="text-muted-foreground">O</span>
+                              <span className="font-semibold">${data.open.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                              <span className="text-muted-foreground">H</span>
+                              <span className="font-semibold" style={{ color: BULLISH_COLOR }}>${data.high.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                              <span className="text-muted-foreground">L</span>
+                              <span className="font-semibold" style={{ color: BEARISH_COLOR }}>${data.low.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between gap-4 pt-1 border-t border-border">
+                              <span className="text-muted-foreground">C</span>
+                              <span className="font-bold" style={{ color: isBullish ? BULLISH_COLOR : BEARISH_COLOR }}>
+                                ${data.close.toFixed(2)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between gap-4 text-xs">
+                              <span className="text-muted-foreground">Change</span>
+                              <span className="font-semibold" style={{ color: isBullish ? BULLISH_COLOR : BEARISH_COLOR }}>
+                                {isBullish ? '+' : ''}{change.toFixed(2)} ({isBullish ? '+' : ''}{changePercent.toFixed(2)}%)
+                              </span>
+                            </div>
                           </div>
                         </div>
                       );
@@ -299,21 +328,22 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
                     stroke: "hsl(var(--foreground))",
                     strokeWidth: 1,
                     strokeDasharray: "3 3",
-                    strokeOpacity: 0.5
+                    strokeOpacity: 0.3
                   }}
                   wrapperStyle={{ zIndex: 1000 }}
                 />
                 <ReferenceLine
                   yAxisId="left"
                   y={currentPrice}
-                  stroke={isPositive ? "#00c805" : "#ff5000"}
-                  strokeWidth={2}
-                  strokeDasharray="5 5"
+                  stroke={isPositive ? BULLISH_COLOR : BEARISH_COLOR}
+                  strokeWidth={1}
+                  strokeDasharray="3 3"
+                  strokeOpacity={0.6}
                   label={{
                     value: `$${currentPrice.toFixed(2)}`,
                     position: 'right',
-                    fill: isPositive ? "#00c805" : "#ff5000",
-                    fontSize: 12,
+                    fill: isPositive ? BULLISH_COLOR : BEARISH_COLOR,
+                    fontSize: 11,
                     fontWeight: 'bold'
                   }}
                 />
