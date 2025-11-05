@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { StatsCard } from "@/components/stats-card";
 import { AccountCard } from "@/components/account-card";
 import { TradeLogTable } from "@/components/trade-log-table";
@@ -11,56 +12,81 @@ import { ConfigureAccountDialog } from "@/components/configure-account-dialog";
 import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { queryClient } from "@/lib/queryClient";
 import { Wallet, TrendingUp, Activity, Users, Settings } from "lucide-react";
+import type { Account as AccountType } from "@shared/schema";
 
-interface Account {
-  id: string;
-  name: string;
-  platform: string;
-  accountType: 'master' | 'follower';
-  isConnected: boolean;
-  balance: number;
-  openPositions: number;
-  pnl: number;
-  positionScaling?: number;
-  maxContracts?: number;
-  blockedTickers?: string[];
-  riskMode?: 'global' | 'custom';
+interface Account extends AccountType {
+  openPositions?: number;
+  pnl?: number;
 }
 
 export default function Dashboard() {
   const { toast } = useToast();
-  // State for disconnect confirmation
+  
   const [disconnectAlert, setDisconnectAlert] = useState<{
     open: boolean;
     accountId: string;
     accountName: string;
   }>({ open: false, accountId: '', accountName: '' });
 
-  // Global risk settings (for demo purposes)
   const globalRiskSettings = {
     positionScaling: 100,
     maxContracts: undefined,
     blockedTickers: [] as string[],
   };
 
-  // Account state management - fetch from database
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const { data: accountsData } = useQuery<{ success: boolean; accounts: Account[] }>({
+    queryKey: ['/api/accounts'],
+  });
 
-  // Handler for configuring accounts
+  const accounts = accountsData?.accounts || [];
+
+  const addAccountMutation = useMutation({
+    mutationFn: async (accountData: any) => {
+      const response = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(accountData),
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to add account');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+    },
+  });
+
+  const handleAddAccount = async (newAccount: any) => {
+    try {
+      await addAccountMutation.mutateAsync({
+        name: newAccount.name,
+        platform: newAccount.platform,
+        accountType: newAccount.accountType,
+        tradovateUsername: newAccount.username,
+        tradovateAccountId: newAccount.tradovateAccountId,
+        tradovateEnvironment: newAccount.environment,
+        isConnected: false,
+        ...(newAccount.accountType === 'follower' && { positionScaling: 100 }),
+      });
+
+      toast({
+        title: "Account Added",
+        description: `${newAccount.name} has been added successfully`,
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to Add Account",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleConfigure = (accountId: string, config: any) => {
-    setAccounts(prev => prev.map(acc => 
-      acc.id === accountId 
-        ? {
-            ...acc,
-            riskMode: config.riskMode,
-            positionScaling: config.positionScaling,
-            maxContracts: config.maxContracts,
-            blockedTickers: config.blockedTickers,
-          }
-        : acc
-    ));
-    
     const account = accounts.find(a => a.id === accountId);
     toast({
       title: "Settings Updated",
@@ -68,12 +94,7 @@ export default function Dashboard() {
     });
   };
 
-  // Handler for connecting accounts
   const handleConnect = (accountId: string) => {
-    setAccounts(prev => prev.map(acc => 
-      acc.id === accountId ? { ...acc, isConnected: true } : acc
-    ));
-    
     const account = accounts.find(a => a.id === accountId);
     toast({
       title: "Account Connected",
@@ -81,25 +102,17 @@ export default function Dashboard() {
     });
   };
 
-  // Handler for initiating disconnect
   const handleDisconnectClick = (accountId: string, accountName: string) => {
     setDisconnectAlert({ open: true, accountId, accountName });
   };
 
-  // Handler for confirming disconnect
   const handleDisconnectConfirm = () => {
-    const accountId = disconnectAlert.accountId;
-    setAccounts(prev => prev.map(acc => 
-      acc.id === accountId ? { ...acc, isConnected: false } : acc
-    ));
-    
-    const account = accounts.find(a => a.id === accountId);
+    const account = accounts.find(a => a.id === disconnectAlert.accountId);
     toast({
       title: "Account Disconnected",
       description: `${account?.name} has been disconnected`,
       variant: "destructive",
     });
-    
     setDisconnectAlert({ open: false, accountId: '', accountName: '' });
   };
 
