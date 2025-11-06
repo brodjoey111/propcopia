@@ -1,7 +1,15 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, TrendingUp, TrendingDown, AlertCircle } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Calendar, TrendingUp, TrendingDown, AlertCircle, Clock, Globe, BarChart3 } from "lucide-react";
 import { format, parseISO, isToday, isTomorrow, isPast } from "date-fns";
 
 interface EconomicEvent {
@@ -17,6 +25,8 @@ interface EconomicEvent {
 }
 
 export default function EconomicCalendar() {
+  const [selectedEvent, setSelectedEvent] = useState<EconomicEvent | null>(null);
+  
   const { data: events, isLoading } = useQuery<EconomicEvent[]>({
     queryKey: ["/api/economic-calendar"],
   });
@@ -151,8 +161,9 @@ export default function EconomicCalendar() {
                 {dateEvents.map((event) => (
                   <Card
                     key={event.id}
-                    className={`hover-elevate ${isPastDate ? "opacity-60" : ""}`}
+                    className={`hover-elevate active-elevate-2 cursor-pointer ${isPastDate ? "opacity-60" : ""}`}
                     data-testid={`card-event-${event.id}`}
+                    onClick={() => setSelectedEvent(event)}
                   >
                     <CardContent className="flex items-center gap-4 p-4">
                       {/* Time */}
@@ -220,6 +231,165 @@ export default function EconomicCalendar() {
           </CardContent>
         </Card>
       )}
+
+      {/* Event Details Dialog */}
+      <Dialog open={!!selectedEvent} onOpenChange={() => setSelectedEvent(null)}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-event-details">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              <Badge className={getImpactColor(selectedEvent?.impact || "low")}>
+                {getImpactIcon(selectedEvent?.impact || "low")}
+                <span className="ml-1 capitalize">{selectedEvent?.impact}</span>
+              </Badge>
+              {selectedEvent?.event}
+            </DialogTitle>
+            <DialogDescription>
+              Detailed information about this economic event
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedEvent && (
+            <div className="space-y-6">
+              {/* Event Metadata */}
+              <div className="grid grid-cols-2 gap-4">
+                <Card>
+                  <CardContent className="flex items-center gap-3 p-4">
+                    <Clock className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <div className="text-xs text-muted-foreground">Date & Time</div>
+                      <div className="font-semibold">
+                        {formatEventDate(selectedEvent.date)} at {selectedEvent.time}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="flex items-center gap-3 p-4">
+                    <Globe className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <div className="text-xs text-muted-foreground">Country</div>
+                      <div className="font-semibold">{selectedEvent.country}</div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Data Comparison */}
+              {(selectedEvent.actual || selectedEvent.forecast || selectedEvent.previous) && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <BarChart3 className="h-4 w-4" />
+                      Economic Data
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-3 gap-4">
+                      {selectedEvent.previous && (
+                        <div className="text-center space-y-2">
+                          <div className="text-sm text-muted-foreground">Previous</div>
+                          <div className="text-2xl font-bold tabular-nums">
+                            {selectedEvent.previous}
+                          </div>
+                          <div className="text-xs text-muted-foreground">Last release</div>
+                        </div>
+                      )}
+                      
+                      {selectedEvent.forecast && (
+                        <div className="text-center space-y-2">
+                          <div className="text-sm text-muted-foreground">Forecast</div>
+                          <div className="text-2xl font-bold tabular-nums text-chart-4">
+                            {selectedEvent.forecast}
+                          </div>
+                          <div className="text-xs text-muted-foreground">Market expectation</div>
+                        </div>
+                      )}
+                      
+                      {selectedEvent.actual && (
+                        <div className="text-center space-y-2">
+                          <div className="text-sm text-muted-foreground">Actual</div>
+                          <div className="text-2xl font-bold tabular-nums text-primary">
+                            {selectedEvent.actual}
+                          </div>
+                          <div className="text-xs text-muted-foreground">Released value</div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Impact Information */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Market Impact</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-muted-foreground mt-0.5" />
+                    <div className="flex-1">
+                      <div className="font-medium mb-1">Impact Level: {selectedEvent.impact === 'high' ? 'High' : selectedEvent.impact === 'medium' ? 'Medium' : 'Low'}</div>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedEvent.impact === 'high' && 
+                          'This event is expected to cause significant market volatility. Major price movements are likely across related futures contracts. Consider adjusting position sizes and stop losses accordingly.'}
+                        {selectedEvent.impact === 'medium' && 
+                          'This event may cause moderate market volatility. Price movements are possible in related futures contracts. Monitor positions closely during the release.'}
+                        {selectedEvent.impact === 'low' && 
+                          'This event typically has minimal market impact. Minor price fluctuations may occur but significant moves are unlikely.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedEvent.impact === 'high' && (
+                    <div className="flex items-start gap-3 p-3 bg-destructive/10 rounded-lg border border-destructive/20">
+                      <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
+                      <div className="flex-1">
+                        <div className="font-medium text-destructive mb-1">Trading Caution</div>
+                        <p className="text-sm text-muted-foreground">
+                          High-impact events can lead to rapid price swings and increased slippage. Consider reducing leverage and widening stop losses during this period.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Related Markets */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Potentially Affected Markets</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedEvent.country === 'US' && (
+                      <>
+                        <Badge variant="outline" data-testid="badge-market-es">ES (S&P 500)</Badge>
+                        <Badge variant="outline" data-testid="badge-market-nq">NQ (Nasdaq)</Badge>
+                        <Badge variant="outline" data-testid="badge-market-ym">YM (Dow Jones)</Badge>
+                        <Badge variant="outline" data-testid="badge-market-rty">RTY (Russell 2000)</Badge>
+                      </>
+                    )}
+                    {selectedEvent.event.toLowerCase().includes('oil') && (
+                      <Badge variant="outline" data-testid="badge-market-cl">CL (Crude Oil)</Badge>
+                    )}
+                    {selectedEvent.event.toLowerCase().includes('gold') && (
+                      <Badge variant="outline" data-testid="badge-market-gc">GC (Gold)</Badge>
+                    )}
+                    {(selectedEvent.event.toLowerCase().includes('cpi') || 
+                      selectedEvent.event.toLowerCase().includes('inflation')) && (
+                      <>
+                        <Badge variant="outline" data-testid="badge-market-zt">ZT (2-Year Treasury)</Badge>
+                        <Badge variant="outline" data-testid="badge-market-zn">ZN (10-Year Treasury)</Badge>
+                      </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
