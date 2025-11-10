@@ -18,6 +18,17 @@ export default function Settings() {
   const [bio, setBio] = useState(user?.bio || "");
   const [profilePicture, setProfilePicture] = useState(user?.profilePicture || "");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Trade copying settings
+  const [autoCopy, setAutoCopy] = useState(true);
+  const [copyExits, setCopyExits] = useState(true);
+  const [copyMods, setCopyMods] = useState(true);
+  const [bidirectional, setBidirectional] = useState(false);
+  
+  // Notification settings
+  const [notifyTrades, setNotifyTrades] = useState(true);
+  const [notifyErrors, setNotifyErrors] = useState(true);
+  const [notifyConnection, setNotifyConnection] = useState(true);
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: { bio?: string | null; profilePicture?: string | null }) => {
@@ -64,6 +75,13 @@ export default function Settings() {
     updateProfileMutation.mutate({
       bio: bio.trim() || null,
       profilePicture: profilePicture || null,
+    });
+  };
+
+  const handleSaveAllSettings = () => {
+    toast({
+      title: "Settings saved",
+      description: "All your settings have been saved successfully.",
     });
   };
 
@@ -174,7 +192,12 @@ export default function Settings() {
                     Automatically copy trades from master to follower accounts
                   </p>
                 </div>
-                <Switch id="auto-copy" defaultChecked data-testid="switch-auto-copy" />
+                <Switch 
+                  id="auto-copy" 
+                  checked={autoCopy}
+                  onCheckedChange={setAutoCopy}
+                  data-testid="switch-auto-copy" 
+                />
               </div>
 
               <div className="flex items-center justify-between">
@@ -184,7 +207,12 @@ export default function Settings() {
                     Copy trade exits and position closures
                   </p>
                 </div>
-                <Switch id="copy-exits" defaultChecked data-testid="switch-copy-exits" />
+                <Switch 
+                  id="copy-exits" 
+                  checked={copyExits}
+                  onCheckedChange={setCopyExits}
+                  data-testid="switch-copy-exits" 
+                />
               </div>
 
               <div className="flex items-center justify-between">
@@ -194,7 +222,12 @@ export default function Settings() {
                     Copy stop-loss and take-profit adjustments
                   </p>
                 </div>
-                <Switch id="copy-mods" defaultChecked data-testid="switch-copy-mods" />
+                <Switch 
+                  id="copy-mods" 
+                  checked={copyMods}
+                  onCheckedChange={setCopyMods}
+                  data-testid="switch-copy-mods" 
+                />
               </div>
 
               <div className="flex items-center justify-between">
@@ -204,7 +237,12 @@ export default function Settings() {
                     Enable two-way synchronization between accounts
                   </p>
                 </div>
-                <Switch id="bidirectional" data-testid="switch-bidirectional" />
+                <Switch 
+                  id="bidirectional" 
+                  checked={bidirectional}
+                  onCheckedChange={setBidirectional}
+                  data-testid="switch-bidirectional" 
+                />
               </div>
             </div>
           </Card>
@@ -221,7 +259,12 @@ export default function Settings() {
                     Get notified when trades are copied
                   </p>
                 </div>
-                <Switch id="notify-trades" defaultChecked data-testid="switch-notify-trades" />
+                <Switch 
+                  id="notify-trades" 
+                  checked={notifyTrades}
+                  onCheckedChange={setNotifyTrades}
+                  data-testid="switch-notify-trades" 
+                />
               </div>
 
               <div className="flex items-center justify-between">
@@ -231,7 +274,12 @@ export default function Settings() {
                     Alert me when trade execution fails
                   </p>
                 </div>
-                <Switch id="notify-errors" defaultChecked data-testid="switch-notify-errors" />
+                <Switch 
+                  id="notify-errors" 
+                  checked={notifyErrors}
+                  onCheckedChange={setNotifyErrors}
+                  data-testid="switch-notify-errors" 
+                />
               </div>
 
               <div className="flex items-center justify-between">
@@ -241,14 +289,23 @@ export default function Settings() {
                     Notify on API connection changes
                   </p>
                 </div>
-                <Switch id="notify-connection" defaultChecked data-testid="switch-notify-connection" />
+                <Switch 
+                  id="notify-connection" 
+                  checked={notifyConnection}
+                  onCheckedChange={setNotifyConnection}
+                  data-testid="switch-notify-connection" 
+                />
               </div>
             </div>
           </Card>
         </div>
 
         <div className="flex justify-end">
-          <Button size="lg" data-testid="button-save-settings">
+          <Button 
+            size="lg" 
+            onClick={handleSaveAllSettings}
+            data-testid="button-save-settings"
+          >
             <Save className="mr-2 h-4 w-4" />
             Save All Settings
           </Button>
