@@ -54,6 +54,7 @@ export function registerRoutes(app: Express): Server {
       const user = await storage.createUser({
         username,
         password: hashedPassword,
+        bio: "Novice Trader",
       });
 
       return res.json({
