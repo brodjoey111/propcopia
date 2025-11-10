@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
 import { TradovateAPI } from "./tradovate-api";
+import { TradeifyAPI } from "./tradeify-api";
 import { storage } from "./storage";
 import { db } from "./db";
 import bcrypt from "bcrypt";
@@ -13,6 +14,7 @@ import { TradeCopyEngine } from "./trade-copy-engine";
 import { tradeLogger } from "./trade-logger";
 
 const tradovateInstances = new Map<string, TradovateAPI>();
+const tradeifyInstances = new Map<string, TradeifyAPI>();
 const tradeCopyEngines = new Map<string, TradeCopyEngine>();
 
 const openai = new OpenAI({
@@ -240,6 +242,61 @@ export function registerRoutes(app: Express): Server {
       });
     } catch (error) {
       console.error('Tradovate connection error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.post("/api/tradeify/test-connection", async (req, res) => {
+    try {
+      const { username, apiKey } = req.body;
+
+      if (!username || !apiKey) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing required credentials: username and API key are required to connect to Tradeify"
+        });
+      }
+
+      const tradeifyAPI = new TradeifyAPI();
+      
+      const authResult = await tradeifyAPI.authenticate({
+        username,
+        apiKey,
+      });
+
+      const connectionTest = await tradeifyAPI.testConnection();
+
+      if (connectionTest.success) {
+        tradeifyInstances.set(username, tradeifyAPI);
+        
+        const normalizedAccounts = connectionTest.data?.map((account: any) => ({
+          id: String(account.id || account.accountId),
+          name: account.name || account.accountName || `Account ${account.id}`,
+          accountType: account.accountType || account.type || 'live',
+          balance: account.balance || account.netLiquidation || 0,
+          active: Boolean(account.active ?? (account.status && account.status.toLowerCase() === 'active')),
+        })) || [];
+
+        return res.json({
+          success: true,
+          message: connectionTest.message,
+          accounts: normalizedAccounts,
+          authData: {
+            userId: authResult.userId,
+            tokenExpiration: authResult.expirationTime,
+          },
+        });
+      }
+
+      return res.json({
+        success: false,
+        message: connectionTest.message || 'Connection test failed',
+      });
+    } catch (error) {
+      console.error('Tradeify connection error:', error);
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Unknown error occurred',
@@ -487,6 +544,7 @@ export function registerRoutes(app: Express): Server {
       await engine.addFollowerAccount(
         {
           id: accountId,
+          userId: userId,
           name: accountName,
           platform: 'Tradovate',
           accountType: 'follower',
@@ -494,9 +552,17 @@ export function registerRoutes(app: Express): Server {
           positionScaling,
           maxContracts,
           blockedTickers,
+          tradovateUsername: followerUsername,
+          tradovateAccountId: accountId,
+          tradovateEnvironment: null,
+          tradeifyUsername: null,
+          tradeifyAccountId: null,
+          tradeifyApiKey: null,
           apiKey: null,
           apiSecret: null,
           balance: null,
+          openPositions: 0,
+          pnl: null,
           riskMode: 'custom',
           lastSync: null,
         },

@@ -1,7 +1,7 @@
 # Futures Trade Copier Dashboard
 
 ## Overview
-The Futures Trade Copier Dashboard is a comprehensive application designed to automate futures trading by replicating trades from master accounts to multiple follower accounts. It supports NinjaTrader and Tradovate platforms, offering features like real-time trade synchronization, performance monitoring, and customizable position scaling. The system provides a visual dashboard for tracking account balances, P&L, and trade execution, aiming to deliver a professional financial app experience.
+The Futures Trade Copier Dashboard is a comprehensive application designed to automate futures trading by replicating trades from master accounts to multiple follower accounts. It supports **Tradovate**, **Tradeify** (via ProjectX Gateway API), and **NinjaTrader** platforms, offering features like real-time trade synchronization, performance monitoring, and customizable position scaling. The system provides a visual dashboard for tracking account balances, P&L, and trade execution, aiming to deliver a professional financial app experience.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -20,13 +20,26 @@ Preferred communication style: Simple, everyday language.
 The frontend is built with **React 18** and **TypeScript**, using **Vite** for development and **Wouter** for routing. **TanStack Query** manages server state. The UI leverages **shadcn/ui** (built on Radix UI) and **Tailwind CSS** for styling, adhering to a "less is more" design philosophy inspired by modern fintech. Key features include a draggable dashboard, real-time activity feed, a dark mode toggle, enhanced position scaling controls, a social media community platform with an economic calendar, market movers, and an interactive watchlist with dual chart modes (line and candlestick). Chart visualizations are handled by Recharts.
 
 ### Backend Architecture
-The backend uses **Express.js** with **TypeScript**. It provides RESTful API endpoints for managing trading accounts, user profiles, social features, and market data. A custom `TradovateAPI` class handles integration with the Tradovate platform, supporting both demo and live environments. Market data integration is powered by **Finnhub API** for real-time futures data.
+The backend uses **Express.js** with **TypeScript**. It provides RESTful API endpoints for managing trading accounts, user profiles, social features, and market data. Custom API integration classes handle platform connections:
+
+- **TradovateAPI** (`server/tradovate-api.ts`): Integrates with Tradovate platform supporting both demo and live environments
+  - Authentication: username, password, CID (Client ID), and Secret
+  - Endpoints: `/api/tradovate/test-connection`, `/api/tradovate/accounts/:username`
+
+- **TradeifyAPI** (`server/tradeify-api.ts`): Integrates with Tradeify via ProjectX Gateway API
+  - Authentication: username and API key (requires $29/month ProjectX subscription)
+  - Base URL: `https://gateway-api.projectx.com/api`
+  - Endpoints: `/api/tradeify/test-connection`
+  - Features: account management, order placement, position tracking, trade history, instrument search
+  - Get API key from: https://dashboard.projectx.com
+
+Market data integration is powered by **Finnhub API** for real-time futures data.
 
 **Important:** All placeholder/simulated data has been removed from the application:
 - Dashboard statistics are calculated from real account data only
 - Leaderboard returns empty until real user accounts are added
 - Social feed starts empty (no fake posts)
-- Test connection endpoint requires valid Tradovate CID and Secret (no fallback simulated accounts)
+- Test connection endpoints require valid platform credentials (no fallback simulated accounts)
 - Database has been cleared of all test accounts
 
 ### Ultra-Fast Trade Copying Engine

@@ -31,11 +31,11 @@ interface AddAccountDialogProps {
   onAdd?: (account: any) => void;
 }
 
-interface TradovateAccount {
-  id: number;
+interface TradingAccount {
+  id: number | string;
   name: string;
   accountType: string;
-  active: boolean;
+  active?: boolean;
   balance?: number;
 }
 
@@ -45,18 +45,19 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>('credentials');
-  const [platform, setPlatform] = useState<"ninjatrader" | "tradovate">("tradovate");
+  const [platform, setPlatform] = useState<"tradovate" | "tradeify">("tradovate");
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isAddingAccounts, setIsAddingAccounts] = useState(false);
-  const [fetchedAccounts, setFetchedAccounts] = useState<TradovateAccount[]>([]);
-  const [selectedAccounts, setSelectedAccounts] = useState<Set<number>>(new Set());
-  const [accountRoles, setAccountRoles] = useState<Map<number, 'master' | 'follower'>>(new Map());
+  const [fetchedAccounts, setFetchedAccounts] = useState<TradingAccount[]>([]);
+  const [selectedAccounts, setSelectedAccounts] = useState<Set<number | string>>(new Set());
+  const [accountRoles, setAccountRoles] = useState<Map<number | string, 'master' | 'follower'>>(new Map());
   
   const [formData, setFormData] = useState({
     username: "",
     password: "",
     cid: "",
     secret: "",
+    apiKey: "",
     environment: "demo" as 'demo' | 'live',
   });
 
@@ -65,14 +66,18 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
     setIsAuthenticating(true);
 
     try {
-      const res = await apiRequest('POST', '/api/tradovate/test-connection', {
-        username: formData.username,
-        password: formData.password,
-        cid: formData.cid || undefined,
-        secret: formData.secret || undefined,
-        environment: formData.environment,
-      });
+      const endpoint = platform === 'tradeify' ? '/api/tradeify/test-connection' : '/api/tradovate/test-connection';
+      const payload = platform === 'tradeify' 
+        ? { username: formData.username, apiKey: formData.apiKey }
+        : {
+            username: formData.username,
+            password: formData.password,
+            cid: formData.cid || undefined,
+            secret: formData.secret || undefined,
+            environment: formData.environment,
+          };
 
+      const res = await apiRequest('POST', endpoint, payload);
       const response = await res.json();
 
       if (response.success) {
@@ -85,7 +90,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
       } else {
         toast({
           title: "Connection Failed",
-          description: response.message || "Unable to connect to Tradovate",
+          description: response.message || `Unable to connect to ${platform === 'tradeify' ? 'Tradeify' : 'Tradovate'}`,
           variant: "destructive",
         });
       }
@@ -100,7 +105,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
     }
   };
 
-  const handleAccountToggle = (accountId: number) => {
+  const handleAccountToggle = (accountId: number | string) => {
     setSelectedAccounts(prev => {
       const newSet = new Set(prev);
       if (newSet.has(accountId)) {
@@ -120,7 +125,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
     });
   };
 
-  const handleRoleChange = (accountId: number, role: 'master' | 'follower') => {
+  const handleRoleChange = (accountId: number | string, role: 'master' | 'follower') => {
     setAccountRoles(prev => new Map(prev).set(accountId, role));
   };
 
@@ -130,14 +135,27 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
       const addPromises = Array.from(selectedAccounts).map(async accountId => {
         const account = fetchedAccounts.find(a => a.id === accountId);
         if (account && onAdd) {
-          await onAdd({
+          const baseData = {
             name: account.name,
-            platform: 'Tradovate',
+            platform: platform === 'tradeify' ? 'Tradeify' : 'Tradovate',
             accountType: accountRoles.get(accountId) || 'follower',
-            tradovateAccountId: account.id,
-            username: formData.username,
-            environment: formData.environment,
-          });
+          };
+          
+          const platformData = platform === 'tradeify'
+            ? {
+                ...baseData,
+                tradeifyUsername: formData.username,
+                tradeifyAccountId: String(account.id),
+                tradeifyApiKey: formData.apiKey,
+              }
+            : {
+                ...baseData,
+                tradovateAccountId: String(account.id),
+                tradovateUsername: formData.username,
+                tradovateEnvironment: formData.environment,
+              };
+          
+          await onAdd(platformData);
         }
       });
 
@@ -171,6 +189,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
       password: "",
       cid: "",
       secret: "",
+      apiKey: "",
       environment: "demo",
     });
   };
@@ -189,11 +208,11 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {step === 'credentials' ? 'Connect to Tradify/Tradovate' : 'Select Accounts'}
+            {step === 'credentials' ? 'Connect Trading Platform' : 'Select Accounts'}
           </DialogTitle>
           <DialogDescription>
             {step === 'credentials' 
-              ? 'Enter your Tradify/Tradovate credentials to fetch your trading accounts' 
+              ? 'Choose your platform and enter credentials to fetch your trading accounts' 
               : 'Choose which accounts to add and set their role'
             }
           </DialogDescription>
@@ -202,11 +221,27 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
         {step === 'credentials' ? (
           <form onSubmit={handleAuthSubmit} className="space-y-4">
             <div className="space-y-2">
+              <Label htmlFor="platform">Trading Platform</Label>
+              <Select
+                value={platform}
+                onValueChange={(value: 'tradovate' | 'tradeify') => setPlatform(value)}
+              >
+                <SelectTrigger id="platform" data-testid="select-platform">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="tradovate">Tradovate</SelectItem>
+                  <SelectItem value="tradeify">Tradeify (ProjectX)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="username">Username</Label>
               <Input
                 id="username"
                 type="text"
-                placeholder="Your Tradify/Tradovate username"
+                placeholder={`Your ${platform === 'tradeify' ? 'Tradeify' : 'Tradovate'} username`}
                 value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                 data-testid="input-username"
@@ -214,58 +249,80 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Your password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                data-testid="input-password"
-                required
-              />
-            </div>
+            {platform === 'tradovate' ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Your password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    data-testid="input-password"
+                    required
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="cid">CID (Client ID) <span className="text-xs text-muted-foreground">(Optional - for live trading)</span></Label>
-              <Input
-                id="cid"
-                type="text"
-                placeholder="Optional - API Client ID"
-                value={formData.cid}
-                onChange={(e) => setFormData({ ...formData, cid: e.target.value })}
-                data-testid="input-cid"
-              />
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="cid">CID (Client ID)</Label>
+                  <Input
+                    id="cid"
+                    type="text"
+                    placeholder="API Client ID"
+                    value={formData.cid}
+                    onChange={(e) => setFormData({ ...formData, cid: e.target.value })}
+                    data-testid="input-cid"
+                    required
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="secret">API Secret <span className="text-xs text-muted-foreground">(Optional - for live trading)</span></Label>
-              <Input
-                id="secret"
-                type="password"
-                placeholder="Optional - API Secret"
-                value={formData.secret}
-                onChange={(e) => setFormData({ ...formData, secret: e.target.value })}
-                data-testid="input-secret"
-              />
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="secret">API Secret</Label>
+                  <Input
+                    id="secret"
+                    type="password"
+                    placeholder="API Secret"
+                    value={formData.secret}
+                    onChange={(e) => setFormData({ ...formData, secret: e.target.value })}
+                    data-testid="input-secret"
+                    required
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="environment">Environment</Label>
-              <Select
-                value={formData.environment}
-                onValueChange={(value: 'demo' | 'live') => setFormData({ ...formData, environment: value })}
-              >
-                <SelectTrigger id="environment" data-testid="select-environment">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="demo">Demo</SelectItem>
-                  <SelectItem value="live">Live</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="environment">Environment</Label>
+                  <Select
+                    value={formData.environment}
+                    onValueChange={(value: 'demo' | 'live') => setFormData({ ...formData, environment: value })}
+                  >
+                    <SelectTrigger id="environment" data-testid="select-environment">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="demo">Demo</SelectItem>
+                      <SelectItem value="live">Live</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="apiKey">API Key</Label>
+                <Input
+                  id="apiKey"
+                  type="password"
+                  placeholder="Your Tradeify API key from ProjectX Dashboard"
+                  value={formData.apiKey}
+                  onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+                  data-testid="input-api-key"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Get your API key from <a href="https://dashboard.projectx.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">ProjectX Dashboard</a> ($29/month subscription required)
+                </p>
+              </div>
+            )}
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => resetDialog()}>
