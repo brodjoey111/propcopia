@@ -8,6 +8,7 @@ export const users = pgTable("users", {
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   bio: text("bio"),
+  title: text("title"),
   profilePicture: text("profile_picture"),
   globalPositionScaling: integer("global_position_scaling").default(100),
   globalMaxContracts: integer("global_max_contracts"),
@@ -30,6 +31,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
 
 export const updateUserProfileSchema = createInsertSchema(users).pick({
   bio: true,
+  title: true,
   profilePicture: true,
 });
 
