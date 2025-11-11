@@ -82,16 +82,16 @@ export function HelpChat() {
       {!isOpen && (
         <Button
           size="icon"
-          className="fixed bottom-4 right-4 md:bottom-6 md:right-6 h-12 w-12 md:h-14 md:w-14 rounded-full shadow-lg z-50 touch-manipulation"
+          className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg z-50 touch-manipulation"
           onClick={() => setIsOpen(true)}
           data-testid="button-open-chat"
         >
-          <MessageCircle className="h-5 w-5 md:h-6 md:w-6" />
+          <MessageCircle className="h-6 w-6" />
         </Button>
       )}
 
       {isOpen && (
-        <Card className="fixed bottom-0 left-0 right-0 md:bottom-6 md:right-6 md:left-auto w-full md:w-96 h-[calc(100vh-4rem)] md:h-[500px] md:rounded-lg shadow-2xl z-50 flex flex-col">
+        <Card className="fixed bottom-6 right-6 w-96 h-[600px] rounded-lg shadow-2xl z-50 flex flex-col">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 border-b">
             <CardTitle className="flex items-center gap-2">
               <Bot className="h-5 w-5 text-primary" />
