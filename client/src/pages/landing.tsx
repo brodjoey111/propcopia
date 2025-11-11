@@ -170,17 +170,17 @@ export default function Landing() {
               funded accounts and trading combines.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-4">
-              <Link href="/auth">
-                <Button size="lg" className="gap-2" data-testid="button-get-started">
+              <Button size="lg" className="gap-2" data-testid="button-get-started" asChild>
+                <Link href="/auth">
                   Get Started
                   <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-              <Link href="/test-connection">
-                <Button size="lg" variant="outline" data-testid="button-test-connection">
+                </Link>
+              </Button>
+              <Button size="lg" variant="outline" data-testid="button-test-connection" asChild>
+                <Link href="/test-connection">
                   Test Connection
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             </div>
           </div>
         </div>
@@ -376,17 +376,17 @@ export default function Landing() {
                 credit card required.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-4">
-                <Link href="/auth">
-                  <Button size="lg" className="gap-2" data-testid="button-cta-primary">
+                <Button size="lg" className="gap-2" data-testid="button-cta-primary" asChild>
+                  <Link href="/auth">
                     Get Started Now
                     <ArrowRight className="h-4 w-4" />
-                  </Button>
-                </Link>
-                <Link href="/test-connection">
-                  <Button size="lg" variant="outline" data-testid="button-cta-secondary">
+                  </Link>
+                </Button>
+                <Button size="lg" variant="outline" data-testid="button-cta-secondary" asChild>
+                  <Link href="/test-connection">
                     Test Connection
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               </div>
             </div>
           </Card>
