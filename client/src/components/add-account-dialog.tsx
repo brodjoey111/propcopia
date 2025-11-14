@@ -45,7 +45,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>('credentials');
-  const [platform, setPlatform] = useState<"tradovate" | "tradeify">("tradovate");
+  const [platform, setPlatform] = useState<"tradovate" | "tradeify" | "rithmic">("tradovate");
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isAddingAccounts, setIsAddingAccounts] = useState(false);
   const [fetchedAccounts, setFetchedAccounts] = useState<TradingAccount[]>([]);

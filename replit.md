@@ -33,6 +33,16 @@ The backend uses **Express.js** with **TypeScript**. It provides RESTful API end
   - Features: account management, order placement, position tracking, trade history, instrument search
   - Get API key from: https://dashboard.projectx.com
 
+- **RithmicAPI** (`server/rithmic-api.ts`): Integrates with Rithmic R|Protocol API
+  - Authentication: username and password
+  - Protocol: WebSocket + Google Protocol Buffers (binary)
+  - Multi-plant architecture: TICKER_PLANT, ORDER_PLANT, HISTORY_PLANT, PNL_PLANT
+  - Test credentials provided: brodjoey111@gmail.com / 3DmIzOYY
+  - Server URL: wss://rituz00100.rithmic.com:443
+  - Environment: Rithmic Test
+  - Features: ultra-fast execution, market data streaming, order management, historical data
+  - Download dev kit: https://downloads.rithmic.com/JosephBrod89214
+
 Market data integration is powered by **Finnhub API** for real-time futures data.
 
 **Important:** All placeholder/simulated data has been removed from the application:
