@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AccountCard } from "@/components/account-card";
 import { AddAccountDialog } from "@/components/add-account-dialog";
@@ -7,18 +7,17 @@ import { GlobalRiskSettingsDialog } from "@/components/global-risk-settings-dial
 import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Wallet, Settings, Loader2 } from "lucide-react";
-import type { Account as AccountType } from "@shared/schema";
+import { Wallet, Settings, Loader2, LayoutGrid, List, Table2 } from "lucide-react";
+import type { Account } from "@shared/schema";
 
-interface Account extends AccountType {
-  openPositions?: number;
-  pnl?: number;
-}
+type ViewMode = 'grid' | 'list' | 'table';
 
 export default function Accounts() {
   const { toast } = useToast();
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [globalSettings, setGlobalSettings] = useState({
     positionScaling: 100,
     maxContracts: undefined as number | undefined,
@@ -29,6 +28,21 @@ export default function Accounts() {
     accountId: string;
     accountName: string;
   }>({ open: false, accountId: '', accountName: '' });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('accounts-view-mode');
+      if (saved) {
+        setViewMode(saved as ViewMode);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('accounts-view-mode', viewMode);
+    }
+  }, [viewMode]);
 
   const { data: accountsData, isLoading } = useQuery<{ success: boolean; accounts: Account[] }>({
     queryKey: ['/api/accounts'],
@@ -174,55 +188,288 @@ export default function Accounts() {
         )}
       </div>
 
-      {hasAccounts ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {accounts.map((account) => {
-            const effectiveAccount = getEffectiveSettings(account);
-            return (
-              <AccountCard
-                key={account.id}
-                id={account.id}
-                name={account.name}
-                platform={account.platform}
-                accountType={account.accountType as 'master' | 'follower'}
-                isConnected={account.isConnected || false}
-                balance={account.balance ? parseFloat(account.balance) : 0}
-                openPositions={account.openPositions || 0}
-                pnl={account.pnl ? parseFloat(account.pnl) : 0}
-                positionScaling={effectiveAccount.positionScaling || undefined}
-                maxContracts={effectiveAccount.maxContracts || undefined}
-                blockedTickers={effectiveAccount.blockedTickers || []}
-                riskMode={(account.riskMode as 'global' | 'custom') || undefined}
-                onConnect={() => handleConnect(account.id)}
-                onDisconnect={() => handleDisconnectClick(account.id, account.name)}
-                configureButton={
-                  account.accountType === 'follower' ? (
-                    <ConfigureAccountDialog
-                      accountId={account.id}
-                      accountName={account.name}
-                      riskMode={(account.riskMode as 'global' | 'custom') || 'global'}
-                      positionScaling={account.positionScaling || 100}
-                      maxContracts={account.maxContracts || undefined}
-                      blockedTickers={account.blockedTickers || []}
-                      globalSettings={globalSettings}
-                      onSave={(config) => handleConfigure(account.id, config)}
-                    >
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        data-testid={`button-configure-${account.id}`}
-                      >
-                        <Settings className="mr-2 h-3 w-3" />
-                        Configure
-                      </Button>
-                    </ConfigureAccountDialog>
-                  ) : undefined
-                }
-              />
-            );
-          })}
+      {hasAccounts && (
+        <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
+          <Button
+            variant={viewMode === 'grid' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('grid')}
+            data-testid="button-view-grid"
+          >
+            <LayoutGrid className="h-4 w-4 mr-2" />
+            Grid
+          </Button>
+          <Button
+            variant={viewMode === 'list' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('list')}
+            data-testid="button-view-list"
+          >
+            <List className="h-4 w-4 mr-2" />
+            List
+          </Button>
+          <Button
+            variant={viewMode === 'table' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('table')}
+            data-testid="button-view-table"
+          >
+            <Table2 className="h-4 w-4 mr-2" />
+            Table
+          </Button>
         </div>
+      )}
+
+      {hasAccounts ? (
+        <>
+          {viewMode === 'grid' && (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {accounts.map((account) => {
+                const effectiveAccount = getEffectiveSettings(account);
+                return (
+                  <AccountCard
+                    key={account.id}
+                    id={account.id}
+                    name={account.name}
+                    platform={account.platform}
+                    accountType={account.accountType as 'master' | 'follower'}
+                    isConnected={account.isConnected || false}
+                    balance={account.balance ? parseFloat(account.balance) : 0}
+                    openPositions={account.openPositions || 0}
+                    pnl={account.pnl ? parseFloat(account.pnl) : 0}
+                    positionScaling={effectiveAccount.positionScaling || undefined}
+                    maxContracts={effectiveAccount.maxContracts || undefined}
+                    blockedTickers={effectiveAccount.blockedTickers || []}
+                    riskMode={(account.riskMode as 'global' | 'custom') || undefined}
+                    onConnect={() => handleConnect(account.id)}
+                    onDisconnect={() => handleDisconnectClick(account.id, account.name)}
+                    configureButton={
+                      account.accountType === 'follower' ? (
+                        <ConfigureAccountDialog
+                          accountId={account.id}
+                          accountName={account.name}
+                          riskMode={(account.riskMode as 'global' | 'custom') || 'global'}
+                          positionScaling={account.positionScaling || 100}
+                          maxContracts={account.maxContracts || undefined}
+                          blockedTickers={account.blockedTickers || []}
+                          globalSettings={globalSettings}
+                          onSave={(config) => handleConfigure(account.id, config)}
+                        >
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            data-testid={`button-configure-${account.id}`}
+                          >
+                            <Settings className="mr-2 h-3 w-3" />
+                            Configure
+                          </Button>
+                        </ConfigureAccountDialog>
+                      ) : undefined
+                    }
+                  />
+                );
+              })}
+            </div>
+          )}
+
+          {viewMode === 'list' && (
+            <div className="space-y-2">
+              {accounts.map((account) => {
+                const effectiveAccount = getEffectiveSettings(account);
+                const balance = account.balance ? parseFloat(account.balance) : 0;
+                const pnl = account.pnl ? parseFloat(account.pnl) : 0;
+                
+                return (
+                  <div
+                    key={account.id}
+                    className="flex items-center justify-between p-4 border rounded-lg hover-elevate"
+                    data-testid={`account-list-item-${account.id}`}
+                  >
+                    <div className="flex items-center gap-4 flex-1">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">{account.name}</span>
+                          <Badge variant={account.accountType === 'master' ? 'default' : 'secondary'} className="text-xs">
+                            {account.accountType}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {account.platform}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <div className={`h-2 w-2 rounded-full ${account.isConnected ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                          <span>{account.isConnected ? 'Connected' : 'Disconnected'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-8">
+                      <div className="text-right">
+                        <div className="text-xs text-muted-foreground">Balance</div>
+                        <div className="font-semibold tabular-nums">${balance.toLocaleString()}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-muted-foreground">P&L</div>
+                        <div className={`font-semibold tabular-nums ${pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          ${pnl >= 0 ? '+' : ''}{pnl.toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-muted-foreground">Positions</div>
+                        <div className="font-semibold tabular-nums">{account.openPositions || 0}</div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        {account.accountType === 'follower' && (
+                          <ConfigureAccountDialog
+                            accountId={account.id}
+                            accountName={account.name}
+                            riskMode={(account.riskMode as 'global' | 'custom') || 'global'}
+                            positionScaling={account.positionScaling || 100}
+                            maxContracts={account.maxContracts || undefined}
+                            blockedTickers={account.blockedTickers || []}
+                            globalSettings={globalSettings}
+                            onSave={(config) => handleConfigure(account.id, config)}
+                          >
+                            <Button variant="outline" size="sm" data-testid={`button-configure-${account.id}`}>
+                              <Settings className="h-3 w-3" />
+                            </Button>
+                          </ConfigureAccountDialog>
+                        )}
+                        {account.isConnected ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDisconnectClick(account.id, account.name)}
+                            data-testid={`button-disconnect-${account.id}`}
+                          >
+                            Disconnect
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleConnect(account.id)}
+                            data-testid={`button-connect-${account.id}`}
+                          >
+                            Connect
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {viewMode === 'table' && (
+            <div className="border rounded-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-muted/50 border-b">
+                    <tr>
+                      <th className="text-left p-3 text-xs font-semibold uppercase tracking-wide">Account</th>
+                      <th className="text-left p-3 text-xs font-semibold uppercase tracking-wide">Type</th>
+                      <th className="text-left p-3 text-xs font-semibold uppercase tracking-wide">Platform</th>
+                      <th className="text-left p-3 text-xs font-semibold uppercase tracking-wide">Status</th>
+                      <th className="text-right p-3 text-xs font-semibold uppercase tracking-wide">Balance</th>
+                      <th className="text-right p-3 text-xs font-semibold uppercase tracking-wide">P&L</th>
+                      <th className="text-right p-3 text-xs font-semibold uppercase tracking-wide">Positions</th>
+                      {accounts.some(a => a.accountType === 'follower') && (
+                        <th className="text-right p-3 text-xs font-semibold uppercase tracking-wide">Scaling</th>
+                      )}
+                      <th className="text-right p-3 text-xs font-semibold uppercase tracking-wide">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {accounts.map((account) => {
+                      const effectiveAccount = getEffectiveSettings(account);
+                      const balance = account.balance ? parseFloat(account.balance) : 0;
+                      const pnl = account.pnl ? parseFloat(account.pnl) : 0;
+
+                      return (
+                        <tr
+                          key={account.id}
+                          className="border-b hover-elevate"
+                          data-testid={`account-table-row-${account.id}`}
+                        >
+                          <td className="p-3 font-semibold">{account.name}</td>
+                          <td className="p-3">
+                            <Badge variant={account.accountType === 'master' ? 'default' : 'secondary'} className="text-xs">
+                              {account.accountType}
+                            </Badge>
+                          </td>
+                          <td className="p-3">
+                            <Badge variant="outline" className="text-xs">
+                              {account.platform}
+                            </Badge>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-2">
+                              <div className={`h-2 w-2 rounded-full ${account.isConnected ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                              <span className="text-sm">{account.isConnected ? 'Connected' : 'Disconnected'}</span>
+                            </div>
+                          </td>
+                          <td className="p-3 text-right font-semibold tabular-nums">${balance.toLocaleString()}</td>
+                          <td className={`p-3 text-right font-semibold tabular-nums ${pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ${pnl >= 0 ? '+' : ''}{pnl.toLocaleString()}
+                          </td>
+                          <td className="p-3 text-right tabular-nums">{account.openPositions || 0}</td>
+                          {accounts.some(a => a.accountType === 'follower') && (
+                            <td className="p-3 text-right tabular-nums">
+                              {account.accountType === 'follower' ? `${effectiveAccount.positionScaling}%` : '-'}
+                            </td>
+                          )}
+                          <td className="p-3">
+                            <div className="flex gap-2 justify-end">
+                              {account.accountType === 'follower' && (
+                                <ConfigureAccountDialog
+                                  accountId={account.id}
+                                  accountName={account.name}
+                                  riskMode={(account.riskMode as 'global' | 'custom') || 'global'}
+                                  positionScaling={account.positionScaling || 100}
+                                  maxContracts={account.maxContracts || undefined}
+                                  blockedTickers={account.blockedTickers || []}
+                                  globalSettings={globalSettings}
+                                  onSave={(config) => handleConfigure(account.id, config)}
+                                >
+                                  <Button variant="outline" size="sm" data-testid={`button-configure-${account.id}`}>
+                                    <Settings className="h-3 w-3" />
+                                  </Button>
+                                </ConfigureAccountDialog>
+                              )}
+                              {account.isConnected ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDisconnectClick(account.id, account.name)}
+                                  data-testid={`button-disconnect-${account.id}`}
+                                >
+                                  Disconnect
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => handleConnect(account.id)}
+                                  data-testid={`button-connect-${account.id}`}
+                                >
+                                  Connect
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
           <Wallet className="h-16 w-16 text-muted-foreground mb-4" />
