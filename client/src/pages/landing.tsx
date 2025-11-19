@@ -157,10 +157,6 @@ export default function Landing() {
       <section className="relative pt-20">
         <div className="mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8">
           <div className="mx-auto max-w-3xl text-center">
-            <Badge className="mb-4" variant="outline" data-testid="badge-new">
-              <Zap className="mr-1 h-3 w-3" />
-              Simplified Login - No API Keys Required
-            </Badge>
             <h1 className="mb-6 text-4xl font-bold tracking-tight sm:text-6xl" data-testid="heading-hero">
               Professional Futures Trade Copier
             </h1>
