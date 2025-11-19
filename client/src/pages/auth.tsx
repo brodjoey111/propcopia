@@ -140,7 +140,7 @@ export default function Auth() {
           <div className="mx-auto mb-4">
             <Logo size="lg" showText={false} />
           </div>
-          <CardTitle className="text-2xl font-bold">Combine Trade Copier</CardTitle>
+          <CardTitle className="text-2xl font-bold">Propcopia</CardTitle>
           <CardDescription>
             Sign in to your account or create a new one
           </CardDescription>

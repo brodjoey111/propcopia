@@ -25,11 +25,11 @@ export function Logo({ className = "", size = "md", showText = true, variant = "
     <div className={`flex items-center gap-2 ${className}`}>
       <img
         src={logoImage}
-        alt="Combine Trade Copier Logo"
+        alt="Propcopia Logo"
         className={`${sizeClasses[size]} w-auto ${filterClasses}`}
         data-testid="logo-image"
       />
-      {!showText && <span className="sr-only">Combine Trade Copier</span>}
+      {!showText && <span className="sr-only">Propcopia</span>}
     </div>
   );
 }

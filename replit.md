@@ -1,7 +1,7 @@
-# Futures Trade Copier Dashboard
+# Propcopia - Futures Trade Copier Dashboard
 
 ## Overview
-The Futures Trade Copier Dashboard is a comprehensive application designed to automate futures trading by replicating trades from master accounts to multiple follower accounts. It supports **Tradovate**, **Tradeify** (via ProjectX Gateway API), and **NinjaTrader** platforms, offering features like real-time trade synchronization, performance monitoring, and customizable position scaling. The system provides a visual dashboard for tracking account balances, P&L, and trade execution, aiming to deliver a professional financial app experience.
+Propcopia is a comprehensive application designed to automate futures trading by replicating trades from master accounts to multiple follower accounts. It supports **Tradovate**, **Tradeify** (via ProjectX Gateway API), and **NinjaTrader** platforms, offering features like real-time trade synchronization, performance monitoring, and customizable position scaling. The system provides a visual dashboard for tracking account balances, P&L, and trade execution, aiming to deliver a professional financial app experience.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.

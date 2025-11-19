@@ -398,7 +398,7 @@ export default function Landing() {
         <div className="mx-auto max-w-7xl px-6 py-12 lg:px-8">
           <div className="text-center">
             <p className="text-sm text-muted-foreground" data-testid="text-footer">
-              Professional Futures Trade Copier © {new Date().getFullYear()}
+              Propcopia © {new Date().getFullYear()}
             </p>
           </div>
         </div>

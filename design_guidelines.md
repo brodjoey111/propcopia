@@ -1,4 +1,4 @@
-# Design Guidelines: Futures Trade Copier Dashboard
+# Design Guidelines: Propcopia - Futures Trade Copier Dashboard
 ## Robinhood-Inspired Design System
 
 ## Design Approach
