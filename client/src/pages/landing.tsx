@@ -158,8 +158,11 @@ export default function Landing() {
         <div className="mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8">
           <div className="mx-auto max-w-3xl text-center">
             <h1 className="mb-6 text-4xl font-bold tracking-tight sm:text-6xl" data-testid="heading-hero">
-              Professional Futures Trade Copier
+              Propcopia
             </h1>
+            <p className="mb-6 text-xl text-muted-foreground">
+              Professional Futures Trade Copier
+            </p>
             <p className="mb-10 text-lg leading-8 text-muted-foreground" data-testid="text-hero-description">
               Automate your trading strategy across multiple accounts with
               enterprise-grade reliability. Built for serious traders managing
