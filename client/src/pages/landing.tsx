@@ -157,10 +157,10 @@ export default function Landing() {
       <section className="relative pt-20">
         <div className="mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8">
           <div className="mx-auto max-w-3xl text-center">
-            <h1 className="mb-6 text-4xl font-bold tracking-tight sm:text-6xl" data-testid="heading-hero">
+            <h1 className="mb-8 text-6xl font-black tracking-tight sm:text-8xl bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent" data-testid="heading-hero">
               Propcopia
             </h1>
-            <p className="mb-6 text-xl text-muted-foreground">
+            <p className="mb-6 text-2xl font-semibold">
               Professional Futures Trade Copier
             </p>
             <p className="mb-10 text-lg leading-8 text-muted-foreground" data-testid="text-hero-description">
