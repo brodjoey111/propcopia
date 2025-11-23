@@ -34,16 +34,18 @@ export class TradeifyAPI {
   private username: string | null = null;
 
   constructor() {
-    this.baseUrl = 'https://gateway-api.projectx.com/api';
+    this.baseUrl = "https://gateway-api.projectx.com/api";
   }
 
-  async authenticate(credentials: TradeifyCredentials): Promise<TradeifyAuthResponse> {
+  async authenticate(
+    credentials: TradeifyCredentials,
+  ): Promise<TradeifyAuthResponse> {
     this.username = credentials.username;
-    
+
     const response = await fetch(`${this.baseUrl}/auth/login`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         username: credentials.username,
@@ -53,7 +55,9 @@ export class TradeifyAPI {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Tradeify authentication failed: ${response.status} - ${errorText}`);
+      throw new Error(
+        `Tradeify authentication failed: ${response.status} - ${errorText}`,
+      );
     }
 
     const authData: TradeifyAuthResponse = await response.json();
@@ -65,23 +69,27 @@ export class TradeifyAPI {
 
   private async ensureAuthenticated(): Promise<void> {
     if (!this.accessToken) {
-      throw new Error('Not authenticated. Please authenticate first.');
+      throw new Error("Not authenticated. Please authenticate first.");
     }
 
     if (this.tokenExpiration && new Date() >= this.tokenExpiration) {
-      throw new Error('Token expired. Please re-authenticate.');
+      throw new Error("Token expired. Please re-authenticate.");
     }
   }
 
-  async testConnection(): Promise<{ success: boolean; message: string; data?: any }> {
+  async testConnection(): Promise<{
+    success: boolean;
+    message: string;
+    data?: any;
+  }> {
     try {
       await this.ensureAuthenticated();
 
       const response = await fetch(`${this.baseUrl}/Account`, {
-        method: 'GET',
+        method: "GET",
         headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.accessToken}`,
+          "Content-Type": "application/json",
         },
       });
 
@@ -96,13 +104,13 @@ export class TradeifyAPI {
       const accounts = await response.json();
       return {
         success: true,
-        message: 'Connection successful!',
+        message: "Connection successful!",
         data: accounts,
       };
     } catch (error) {
       return {
         success: false,
-        message: `Connection error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Connection error: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -111,16 +119,18 @@ export class TradeifyAPI {
     await this.ensureAuthenticated();
 
     const response = await fetch(`${this.baseUrl}/Account`, {
-      method: 'GET',
+      method: "GET",
       headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.accessToken}`,
+        "Content-Type": "application/json",
       },
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to fetch accounts: ${response.status} - ${errorText}`);
+      throw new Error(
+        `Failed to fetch accounts: ${response.status} - ${errorText}`,
+      );
     }
 
     const data = await response.json();
@@ -131,16 +141,18 @@ export class TradeifyAPI {
     await this.ensureAuthenticated();
 
     const response = await fetch(`${this.baseUrl}/Account/${accountId}`, {
-      method: 'GET',
+      method: "GET",
       headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.accessToken}`,
+        "Content-Type": "application/json",
       },
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to fetch account info: ${response.status} - ${errorText}`);
+      throw new Error(
+        `Failed to fetch account info: ${response.status} - ${errorText}`,
+      );
     }
 
     return await response.json();
@@ -149,17 +161,22 @@ export class TradeifyAPI {
   async getPositions(accountId: string): Promise<TradeifyPosition[]> {
     await this.ensureAuthenticated();
 
-    const response = await fetch(`${this.baseUrl}/Position?accountId=${accountId}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json',
+    const response = await fetch(
+      `${this.baseUrl}/Position?accountId=${accountId}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          "Content-Type": "application/json",
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to fetch positions: ${response.status} - ${errorText}`);
+      throw new Error(
+        `Failed to fetch positions: ${response.status} - ${errorText}`,
+      );
     }
 
     return await response.json();
@@ -168,19 +185,19 @@ export class TradeifyAPI {
   async placeOrder(params: {
     accountId: string;
     symbol: string;
-    side: 'Buy' | 'Sell';
+    side: "Buy" | "Sell";
     quantity: number;
-    orderType: 'Market' | 'Limit' | 'Stop';
+    orderType: "Market" | "Limit" | "Stop";
     price?: number;
     stopPrice?: number;
   }): Promise<any> {
     await this.ensureAuthenticated();
 
     const response = await fetch(`${this.baseUrl}/Order/place`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.accessToken}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         accountId: params.accountId,
@@ -195,7 +212,9 @@ export class TradeifyAPI {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to place order: ${response.status} - ${errorText}`);
+      throw new Error(
+        `Failed to place order: ${response.status} - ${errorText}`,
+      );
     }
 
     return await response.json();
@@ -205,16 +224,18 @@ export class TradeifyAPI {
     await this.ensureAuthenticated();
 
     const response = await fetch(`${this.baseUrl}/Order/${orderId}`, {
-      method: 'DELETE',
+      method: "DELETE",
       headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.accessToken}`,
+        "Content-Type": "application/json",
       },
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to cancel order: ${response.status} - ${errorText}`);
+      throw new Error(
+        `Failed to cancel order: ${response.status} - ${errorText}`,
+      );
     }
 
     return await response.json();
@@ -229,17 +250,19 @@ export class TradeifyAPI {
     await this.ensureAuthenticated();
 
     const response = await fetch(`${this.baseUrl}/Trade/search`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.accessToken}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(params),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to fetch trade history: ${response.status} - ${errorText}`);
+      throw new Error(
+        `Failed to fetch trade history: ${response.status} - ${errorText}`,
+      );
     }
 
     return await response.json();
@@ -248,17 +271,22 @@ export class TradeifyAPI {
   async searchInstrument(symbol: string): Promise<any> {
     await this.ensureAuthenticated();
 
-    const response = await fetch(`${this.baseUrl}/Instrument/search?query=${encodeURIComponent(symbol)}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json',
+    const response = await fetch(
+      `${this.baseUrl}/Instrument/search?query=${encodeURIComponent(symbol)}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          "Content-Type": "application/json",
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to search instrument: ${response.status} - ${errorText}`);
+      throw new Error(
+        `Failed to search instrument: ${response.status} - ${errorText}`,
+      );
     }
 
     return await response.json();
@@ -269,6 +297,10 @@ export class TradeifyAPI {
   }
 
   isAuthenticated(): boolean {
-    return !!this.accessToken && !!this.tokenExpiration && new Date() < this.tokenExpiration;
+    return (
+      !!this.accessToken &&
+      !!this.tokenExpiration &&
+      new Date() < this.tokenExpiration
+    );
   }
 }
