@@ -427,101 +427,120 @@ function GroupLane({
     setEditing(false);
   };
 
-  const accentColor   = isUngrouped ? "#94a3b8" : group.color;
-  const isActive      = isUngrouped ? true : (group.isActive !== false);
-  const masterId      = group.masterId ?? null;
-  const disabledIds   = isUngrouped ? [] : (group.disabledAccountIds ?? []);
-  // effective master: the selected master, unless it's been paused
+  const accentColor      = isUngrouped ? "#94a3b8" : group.color;
+  const isActive         = isUngrouped ? true : (group.isActive !== false);
+  const masterId         = group.masterId ?? null;
+  const disabledIds      = isUngrouped ? [] : (group.disabledAccountIds ?? []);
   const effectiveMasterId = masterId && !disabledIds.includes(masterId) ? masterId : null;
   const masterAccounts   = accounts.filter((a) => a.accountType === "master");
   const followerAccounts = accounts.filter((a) => a.accountType !== "master");
-  // warn if no usable (non-disabled) master is set and there are enabled accounts
   const hasMasterWarning = !isUngrouped && !effectiveMasterId && accounts.some((a) => !disabledIds.includes(a.id));
 
   return (
-    <div className={`flex flex-col w-[280px] shrink-0 transition-opacity duration-200 ${!isActive ? "opacity-55" : ""}`}>
-      {/* Lane header */}
+    <div
+      className={`w-full rounded-xl overflow-hidden border transition-opacity duration-200 ${!isActive ? "opacity-60" : ""}`}
+      style={{ borderColor: `${accentColor}30` }}
+    >
+      {/* ── Header bar ── */}
       <div
-        className="rounded-t-xl px-3 py-2.5"
+        className="flex items-center gap-3 px-4 py-2.5 flex-wrap"
         style={{
-          background: `${accentColor}14`,
-          borderTop: `3px solid ${isActive ? accentColor : "#94a3b8"}`,
-          borderLeft: `1px solid ${accentColor}28`,
-          borderRight: `1px solid ${accentColor}28`,
+          background: `${accentColor}12`,
+          borderLeft: `4px solid ${isActive ? accentColor : "#94a3b8"}`,
         }}
       >
-        {/* ── Row 1: color · name · count · edit · delete · TOGGLE ── */}
-        <div className="flex items-center gap-1.5">
-          {!isUngrouped && (
+        {/* Color dot + palette */}
+        {!isUngrouped && (
+          <div className="relative shrink-0">
             <button
-              className="h-3 w-3 rounded-full shrink-0 ring-1 ring-white/20 hover:scale-110 transition-transform"
+              className="h-3 w-3 rounded-full ring-1 ring-white/20 hover:scale-110 transition-transform"
               style={{ backgroundColor: group.color }}
               onClick={() => setShowPalette((p) => !p)}
               title="Change color"
             />
-          )}
-
-          {editing ? (
-            <div className="flex items-center gap-1 flex-1">
-              <Input
-                autoFocus
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitRename();
-                  if (e.key === "Escape") setEditing(false);
-                }}
-                className="h-6 text-xs py-0 px-1.5"
-              />
-              <Button size="sm" variant="ghost" className="h-5 w-5 p-0 shrink-0" onClick={commitRename}>
-                <Check className="h-3 w-3" />
-              </Button>
-              <Button size="sm" variant="ghost" className="h-5 w-5 p-0 shrink-0" onClick={() => setEditing(false)}>
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-          ) : (
-            <>
-              <span className="text-xs font-semibold flex-1 truncate">{group.name}</span>
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
-                {accounts.length}
-              </Badge>
-              <div className="flex items-center gap-0.5 shrink-0">
-                <Button
-                  size="sm" variant="ghost"
-                  className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground"
-                  onClick={() => { setEditName(group.name); setEditing(true); setShowPalette(false); }}
-                  title="Rename group"
-                >
-                  <Pencil className="h-3 w-3" />
-                </Button>
-                {!isUngrouped && !isDemo && (
-                  <Button
-                    size="sm" variant="ghost"
-                    className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => onDelete(group.id)}
-                    title="Delete group"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                )}
+            {showPalette && (
+              <div className="absolute top-5 left-0 z-20 flex gap-1.5 flex-wrap p-2.5 rounded-lg border bg-popover shadow-xl w-[136px]">
+                {PALETTE.map((color) => (
+                  <button
+                    key={color}
+                    className="h-5 w-5 rounded-full transition-transform hover:scale-110"
+                    style={{
+                      backgroundColor: color,
+                      outline: group.color === color ? "2px solid white" : "none",
+                      outlineOffset: "1px",
+                      boxShadow: group.color === color ? `0 0 0 3px ${color}40` : undefined,
+                    }}
+                    onClick={() => { onColorChange(group.id, color); setShowPalette(false); }}
+                  />
+                ))}
               </div>
+            )}
+          </div>
+        )}
 
-            </>
+        {/* Name / editing */}
+        {editing ? (
+          <div className="flex items-center gap-1 flex-1 min-w-[140px]">
+            <Input
+              autoFocus
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRename();
+                if (e.key === "Escape") setEditing(false);
+              }}
+              className="h-6 text-xs py-0 px-1.5"
+            />
+            <Button size="sm" variant="ghost" className="h-5 w-5 p-0 shrink-0" onClick={commitRename}>
+              <Check className="h-3 w-3" />
+            </Button>
+            <Button size="sm" variant="ghost" className="h-5 w-5 p-0 shrink-0" onClick={() => setEditing(false)}>
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        ) : (
+          <span className="text-sm font-semibold truncate max-w-[180px]">{group.name}</span>
+        )}
+
+        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
+          {accounts.length}
+        </Badge>
+
+        <div className="flex items-center gap-0.5 shrink-0">
+          <Button
+            size="sm" variant="ghost"
+            className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+            onClick={() => { setEditName(group.name); setEditing(true); setShowPalette(false); }}
+            title="Rename group"
+          >
+            <Pencil className="h-3 w-3" />
+          </Button>
+          {!isUngrouped && !isDemo && (
+            <Button
+              size="sm" variant="ghost"
+              className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+              onClick={() => onDelete(group.id)}
+              title="Delete group"
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
           )}
         </div>
 
-        {/* ── Row 2: master selector ── */}
+        {/* Divider */}
+        {!isUngrouped && <div className="h-4 w-px bg-border/60 shrink-0" />}
+
+        {/* Master selector */}
         {!isUngrouped && (
-          <div className={`flex items-center gap-1.5 mt-1.5 pt-1.5 border-t ${hasMasterWarning ? "border-amber-500/30" : "border-white/10"}`}>
+          <div className="flex items-center gap-1.5 shrink-0">
             <Crown className={`h-3 w-3 shrink-0 ${hasMasterWarning ? "text-amber-500" : effectiveMasterId ? "text-amber-500/70" : "text-muted-foreground/40"}`} />
             <select
               value={masterId || ""}
               onChange={(e) => onSetMaster(group.id, e.target.value || null)}
-              className="flex-1 min-w-0 text-[11px] bg-transparent border-none outline-none cursor-pointer truncate appearance-none"
+              className="text-[11px] bg-transparent border-none outline-none cursor-pointer max-w-[180px] truncate appearance-none"
               style={{ color: masterId ? "inherit" : "hsl(var(--muted-foreground))" }}
             >
-              <option value="">{hasMasterWarning ? "⚠ Set a master account" : "— no master —"}</option>
+              <option value="">{hasMasterWarning ? "⚠ Set a master" : "— no master —"}</option>
               {masterAccounts.map((a) => (
                 <option key={a.id} value={a.id}>★ {a.name}{disabledIds.includes(a.id) ? " (paused)" : ""}</option>
               ))}
@@ -532,90 +551,79 @@ function GroupLane({
           </div>
         )}
 
-        {/* ── Row 3: Trading toggle ── */}
+        {/* Divider */}
+        {!isUngrouped && <div className="h-4 w-px bg-border/60 shrink-0" />}
+
+        {/* Trading toggle */}
         {!isUngrouped && (
           <button
             onClick={() => onToggle(group.id)}
-            className={`mt-2 w-full flex items-center justify-center gap-2 rounded-lg py-1.5 text-xs font-semibold transition-all ${
+            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all shrink-0 ${
               isActive
                 ? "bg-green-500/15 text-green-600 hover:bg-green-500/25 dark:text-green-400 border border-green-500/30"
                 : "bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/25"
             }`}
           >
-            <Power className="h-3.5 w-3.5" />
-            {isActive ? "Trading ON — click to pause" : "Trading OFF — click to enable"}
+            <Power className="h-3 w-3" />
+            {isActive ? "Trading ON" : "Trading OFF"}
           </button>
         )}
 
-        {/* ── Row 4: Group P&L ── */}
+        {/* P&L — pushed right */}
         {accounts.length > 0 && (
-          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-white/10">
-            <span className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Group P&L</span>
-            <span className={`text-xs font-semibold tabular-nums ${totalPnl >= 0 ? "text-green-500" : "text-red-400"}`}>
+          <div className="ml-auto flex items-center gap-1.5 shrink-0">
+            <span className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">P&L</span>
+            <span className={`text-sm font-semibold tabular-nums ${totalPnl >= 0 ? "text-green-500" : "text-red-400"}`}>
               {totalPnl >= 0 ? "+" : ""}${Math.abs(totalPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
         )}
-
-        {/* Color palette */}
-        {showPalette && !isUngrouped && (
-          <div className="flex gap-1 mt-2 flex-wrap">
-            {PALETTE.map((color) => (
-              <button
-                key={color}
-                className="h-5 w-5 rounded-full transition-transform hover:scale-110"
-                style={{
-                  backgroundColor: color,
-                  outline: group.color === color ? "2px solid white" : "none",
-                  outlineOffset: "1px",
-                  boxShadow: group.color === color ? `0 0 0 3px ${color}` : undefined,
-                }}
-                onClick={() => { onColorChange(group.id, color); setShowPalette(false); }}
-              />
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* Drop zone */}
+      {/* Paused banner */}
+      {!isActive && !isUngrouped && accounts.length > 0 && (
+        <div className="flex items-center gap-1.5 px-4 py-1.5 bg-red-500/10 border-b border-red-500/20">
+          <Power className="h-3 w-3 text-red-500/70" />
+          <span className="text-[11px] font-semibold text-red-500/80 uppercase tracking-wide">Trading paused</span>
+        </div>
+      )}
+
+      {/* ── Drop zone — cards laid out horizontally ── */}
       <div
         ref={setNodeRef}
-        className="flex-1 min-h-[180px] rounded-b-xl p-2 space-y-2 transition-all"
+        className="flex flex-wrap gap-3 p-3 min-h-[104px] transition-all"
         style={{
-          background: isOver ? `${accentColor}12` : isUngrouped ? "rgba(var(--muted)/0.3)" : `${accentColor}06`,
-          borderTop: "none",
-          borderLeft:   isUngrouped ? `2px dashed ${isOver ? accentColor : "hsl(var(--border))"}` : `1px solid ${isOver ? accentColor + "60" : accentColor + "22"}`,
-          borderRight:  isUngrouped ? `2px dashed ${isOver ? accentColor : "hsl(var(--border))"}` : `1px solid ${isOver ? accentColor + "60" : accentColor + "22"}`,
-          borderBottom: isUngrouped ? `2px dashed ${isOver ? accentColor : "hsl(var(--border))"}` : `1px solid ${isOver ? accentColor + "60" : accentColor + "22"}`,
+          background: isOver
+            ? `${accentColor}10`
+            : isUngrouped
+            ? "transparent"
+            : `${accentColor}05`,
+          outline: isUngrouped
+            ? `2px dashed ${isOver ? accentColor : "hsl(var(--border))"}`
+            : undefined,
+          outlineOffset: "-2px",
           boxShadow: isOver ? `inset 0 0 0 2px ${accentColor}30` : undefined,
         }}
       >
-        {/* Paused overlay banner */}
-        {!isActive && !isUngrouped && accounts.length > 0 && (
-          <div className="flex items-center justify-center gap-1.5 rounded-md bg-red-500/10 border border-red-500/20 px-3 py-1.5 mb-1">
-            <Power className="h-3 w-3 text-red-500/70" />
-            <span className="text-[11px] font-semibold text-red-500/80 uppercase tracking-wide">Trading paused</span>
-          </div>
-        )}
-
         {accounts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-[140px] pointer-events-none">
+          <div className="flex-1 flex items-center justify-center min-h-[80px] pointer-events-none">
             <p className="text-xs font-medium transition-all" style={{ color: isOver ? accentColor : "hsl(var(--muted-foreground))" }}>
               {isOver ? "↓ Release to add" : "Drop accounts here"}
             </p>
           </div>
         ) : (
           accounts.map((account) => (
-            <DraggableCard
-              key={account.id}
-              account={account}
-              isDemo={isDemo}
-              isMaster={isUngrouped ? undefined : account.id === effectiveMasterId}
-              isDisabled={disabledIds.includes(account.id)}
-              onToggleEnabled={!isUngrouped ? () => onToggleAccount(group.id, account.id) : undefined}
-              onConnect={() => onConnect(account.id)}
-              onDisconnect={() => onDisconnect(account.id, account.name)}
-            />
+            <div key={account.id} className="w-[260px]">
+              <DraggableCard
+                account={account}
+                isDemo={isDemo}
+                isMaster={isUngrouped ? undefined : account.id === effectiveMasterId}
+                isDisabled={disabledIds.includes(account.id)}
+                onToggleEnabled={!isUngrouped ? () => onToggleAccount(group.id, account.id) : undefined}
+                onConnect={() => onConnect(account.id)}
+                onDisconnect={() => onDisconnect(account.id, account.name)}
+              />
+            </div>
           ))
         )}
       </div>
@@ -872,10 +880,10 @@ export function AccountGroupsView({
         )}
       </div>
 
-      {/* ── Kanban board ── */}
+      {/* ── Groups board ── */}
       {subView === "kanban" && (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <div className="flex gap-4 overflow-x-auto pb-4 -mx-1 px-1">
+          <div className="flex flex-col gap-4">
             {lanes.map((lane) => {
               const laneAccounts = getGroupAccounts(lane.id);
               const totalPnl = laneAccounts.reduce(
@@ -902,14 +910,13 @@ export function AccountGroupsView({
               );
             })}
 
-            {/* Always-visible "+ Add Group" lane */}
+            {/* Add Group button */}
             <button
               onClick={addGroup}
-              className="flex flex-col items-center justify-center w-[280px] shrink-0 h-[220px] rounded-xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-muted-foreground hover:text-primary"
+              className="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-muted-foreground hover:text-primary py-4"
             >
-              <Plus className="h-8 w-8 mb-2" />
+              <Plus className="h-5 w-5" />
               <span className="text-sm font-medium">Add Group</span>
-              <span className="text-xs mt-1 opacity-70">Click to create a new lane</span>
             </button>
           </div>
 
