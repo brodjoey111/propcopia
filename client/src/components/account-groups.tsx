@@ -855,9 +855,9 @@ export function AccountGroupsView({
         </div>
 
         {subView === "kanban" && (
-          <Button variant="outline" size="sm" onClick={addGroup}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            New Group
+          <Button variant="default" onClick={addGroup} className="gap-1.5">
+            <Plus className="h-4 w-4" />
+            Add Group
           </Button>
         )}
       </div>

@@ -61,7 +61,7 @@ function AppLayout() {
               <ThemeToggle />
             </header>
             <LeaderboardTicker />
-            <main className="flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4 md:p-6 min-w-0">
+            <main className="flex-1 overflow-x-auto overflow-y-auto p-3 sm:p-4 md:p-6 min-w-0">
               <div className="mx-auto max-w-7xl">
                 <AppRouter />
               </div>
