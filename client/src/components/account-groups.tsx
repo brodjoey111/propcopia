@@ -283,11 +283,6 @@ function DraggableCard({
                   <Crown className="h-3 w-3 text-amber-500" />
                 </span>
               )}
-              {isStandbyMaster && !isDisabled && (
-                <span title="Standby master — will auto-promote if active master is paused" className="shrink-0">
-                  <Crown className="h-3 w-3 text-amber-300/60" />
-                </span>
-              )}
               <span className="font-semibold text-sm leading-tight truncate max-w-[100px]">
                 {account.name}
               </span>
@@ -763,8 +758,15 @@ export function AccountGroupsView({
     setActiveId(null);
     if (!over) return;
 
-    const accountId    = active.id as string;
+    const accountId     = active.id as string;
     const targetGroupId = over.id as string;
+
+    // Auto-demote: if the dragged account was the master of its old group, clear that group's masterId
+    const clearOldMaster = (grps: TradingGroup[], oldAssign: Record<string, string>): TradingGroup[] => {
+      const oldGroupId = oldAssign[accountId];
+      if (!oldGroupId || oldGroupId === targetGroupId) return grps;
+      return grps.map((g) => g.id === oldGroupId && g.masterId === accountId ? { ...g, masterId: null } : g);
+    };
 
     if (isDemo) {
       setDemoAssignments((prev) => {
@@ -773,11 +775,13 @@ export function AccountGroupsView({
         else next[accountId] = targetGroupId;
         return next;
       });
+      setDemoGroups((prev) => clearOldMaster(prev, isDemo ? demoAssignments : assignments));
     } else {
       const next = { ...assignments };
       if (targetGroupId === UNGROUPED_ID) delete next[accountId];
       else next[accountId] = targetGroupId;
       persistAssignments(next);
+      persistGroups(clearOldMaster(groups, assignments));
     }
   };
 
