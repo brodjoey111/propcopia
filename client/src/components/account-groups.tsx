@@ -333,6 +333,7 @@ interface GroupLaneProps {
   accounts: Account[];
   isUngrouped?: boolean;
   isDemo?: boolean;
+  totalPnl: number;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
   onColorChange: (id: string, color: string) => void;
@@ -345,6 +346,7 @@ function GroupLane({
   accounts,
   isUngrouped,
   isDemo,
+  totalPnl,
   onRename,
   onDelete,
   onColorChange,
@@ -439,20 +441,36 @@ function GroupLane({
                   >
                     <Pencil className="h-3 w-3" />
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => onDelete(group.id)}
-                    title="Delete group"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
+                  {!isDemo && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => onDelete(group.id)}
+                      title="Delete group"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  )}
                 </div>
               )}
             </>
           )}
         </div>
+
+        {/* P&L total row */}
+        {accounts.length > 0 && (
+          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-white/10">
+            <span className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Group P&L</span>
+            <span
+              className={`text-xs font-semibold tabular-nums ${
+                totalPnl >= 0 ? "text-green-500" : "text-red-400"
+              }`}
+            >
+              {totalPnl >= 0 ? "+" : ""}${Math.abs(totalPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+        )}
 
         {/* Color palette */}
         {showPalette && !isUngrouped && (
@@ -463,13 +481,9 @@ function GroupLane({
                 className="h-5 w-5 rounded-full transition-transform hover:scale-110"
                 style={{
                   backgroundColor: color,
-                  outline:
-                    group.color === color ? "2px solid white" : "none",
+                  outline: group.color === color ? "2px solid white" : "none",
                   outlineOffset: "1px",
-                  boxShadow:
-                    group.color === color
-                      ? `0 0 0 3px ${color}`
-                      : undefined,
+                  boxShadow: group.color === color ? `0 0 0 3px ${color}` : undefined,
                 }}
                 onClick={() => {
                   onColorChange(group.id, color);
@@ -481,7 +495,7 @@ function GroupLane({
         )}
       </div>
 
-      {/* Drop zone */}
+      {/* Drop zone — use individual border sides to avoid shorthand/longhand React warning */}
       <div
         ref={setNodeRef}
         className="flex-1 min-h-[180px] rounded-b-xl p-2 space-y-2 transition-all"
@@ -491,10 +505,10 @@ function GroupLane({
             : isUngrouped
             ? "rgba(var(--muted)/0.3)"
             : `${accentColor}06`,
-          border: isUngrouped
-            ? `2px dashed ${isOver ? accentColor : "hsl(var(--border))"}` 
-            : `1px solid ${isOver ? accentColor + "60" : accentColor + "22"}`,
           borderTop: "none",
+          borderLeft:   isUngrouped ? `2px dashed ${isOver ? accentColor : "hsl(var(--border))"}` : `1px solid ${isOver ? accentColor + "60" : accentColor + "22"}`,
+          borderRight:  isUngrouped ? `2px dashed ${isOver ? accentColor : "hsl(var(--border))"}` : `1px solid ${isOver ? accentColor + "60" : accentColor + "22"}`,
+          borderBottom: isUngrouped ? `2px dashed ${isOver ? accentColor : "hsl(var(--border))"}` : `1px solid ${isOver ? accentColor + "60" : accentColor + "22"}`,
           boxShadow: isOver ? `inset 0 0 0 2px ${accentColor}30` : undefined,
         }}
       >
@@ -544,6 +558,7 @@ export function AccountGroupsView({
   const [assignments, setAssignments] = useState<Record<string, string>>(loadAssignments);
 
   // ── Demo state (ephemeral — resets on page reload intentionally) ───────
+  const [demoGroups, setDemoGroups] = useState<TradingGroup[]>([...DEMO_GROUPS]);
   const [demoAssignments, setDemoAssignments] = useState<Record<string, string>>(DEMO_ASSIGNMENTS);
   const [bannerDismissed, setBannerDismissed] = useState(() => {
     try { return localStorage.getItem("demo-banner-dismissed") === "1"; } catch { return false; }
@@ -553,7 +568,7 @@ export function AccountGroupsView({
 
   // ── Derived display values ─────────────────────────────────────────────
   const displayAccounts  = isDemo ? DEMO_ACCOUNTS : accounts;
-  const displayGroups    = isDemo ? DEMO_GROUPS   : groups;
+  const displayGroups    = isDemo ? demoGroups    : groups;
   const displayAssign    = isDemo ? demoAssignments : assignments;
 
   const sensors = useSensors(
@@ -585,12 +600,12 @@ export function AccountGroupsView({
   };
 
   const renameGroup = (id: string, name: string) => {
-    if (isDemo) return;
+    if (isDemo) { setDemoGroups((prev) => prev.map((g) => (g.id === id ? { ...g, name } : g))); return; }
     persistGroups(groups.map((g) => (g.id === id ? { ...g, name } : g)));
   };
 
   const deleteGroup = (id: string) => {
-    if (isDemo) return;
+    if (isDemo) return; // keep demo intact
     const next = { ...assignments };
     Object.keys(next).forEach((aid) => { if (next[aid] === id) delete next[aid]; });
     persistAssignments(next);
@@ -598,7 +613,7 @@ export function AccountGroupsView({
   };
 
   const changeColor = (id: string, color: string) => {
-    if (isDemo) return;
+    if (isDemo) { setDemoGroups((prev) => prev.map((g) => (g.id === id ? { ...g, color } : g))); return; }
     persistGroups(groups.map((g) => (g.id === id ? { ...g, color } : g)));
   };
 
@@ -683,20 +698,28 @@ export function AccountGroupsView({
       {/* Kanban board */}
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="flex gap-4 overflow-x-auto pb-4 -mx-1 px-1">
-          {lanes.map((lane) => (
-            <GroupLane
-              key={lane.id}
-              group={lane}
-              accounts={getGroupAccounts(lane.id)}
-              isUngrouped={lane.isUngrouped}
-              isDemo={isDemo}
-              onRename={renameGroup}
-              onDelete={deleteGroup}
-              onColorChange={changeColor}
-              onConnect={onConnect}
-              onDisconnect={onDisconnect}
-            />
-          ))}
+          {lanes.map((lane) => {
+            const laneAccounts = getGroupAccounts(lane.id);
+            const totalPnl = laneAccounts.reduce(
+              (sum, a) => sum + (a.pnl ? parseFloat(String(a.pnl)) : 0),
+              0,
+            );
+            return (
+              <GroupLane
+                key={lane.id}
+                group={lane}
+                accounts={laneAccounts}
+                isUngrouped={lane.isUngrouped}
+                isDemo={isDemo}
+                totalPnl={totalPnl}
+                onRename={renameGroup}
+                onDelete={deleteGroup}
+                onColorChange={changeColor}
+                onConnect={onConnect}
+                onDisconnect={onDisconnect}
+              />
+            );
+          })}
 
           {/* Add group placeholder — only for real accounts */}
           {!isDemo && groups.length === 0 && (
