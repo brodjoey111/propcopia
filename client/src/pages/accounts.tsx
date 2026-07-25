@@ -6,14 +6,15 @@ import { ConfigureAccountDialog } from "@/components/configure-account-dialog";
 import { GlobalRiskSettingsDialog } from "@/components/global-risk-settings-dialog";
 import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
 import { EmptyState } from "@/components/empty-state";
+import { AccountGroupsView } from "@/components/account-groups";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Wallet, Settings, Loader2, LayoutGrid, List, Table2 } from "lucide-react";
+import { Wallet, Settings, Loader2, LayoutGrid, List, Table2, Layers } from "lucide-react";
 import type { Account } from "@shared/schema";
 
-type ViewMode = 'grid' | 'list' | 'table';
+type ViewMode = 'grid' | 'list' | 'table' | 'groups';
 
 export default function Accounts() {
   const { toast } = useToast();
@@ -217,6 +218,15 @@ export default function Accounts() {
             <Table2 className="h-4 w-4 mr-2" />
             Table
           </Button>
+          <Button
+            variant={viewMode === 'groups' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('groups')}
+            data-testid="button-view-groups"
+          >
+            <Layers className="h-4 w-4 mr-2" />
+            Groups
+          </Button>
         </div>
       )}
 
@@ -271,6 +281,14 @@ export default function Accounts() {
                 );
               })}
             </div>
+          )}
+
+          {viewMode === 'groups' && (
+            <AccountGroupsView
+              accounts={accounts}
+              onConnect={handleConnect}
+              onDisconnect={handleDisconnectClick}
+            />
           )}
 
           {viewMode === 'list' && (
