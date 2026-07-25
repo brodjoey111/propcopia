@@ -27,6 +27,8 @@ import {
   Sparkles,
   Power,
   Crown,
+  Layers,
+  Inbox,
 } from "lucide-react";
 import type { Account } from "@shared/schema";
 
@@ -701,7 +703,10 @@ export function AccountGroupsView({
 
   // ── Render ─────────────────────────────────────────────────────────────
 
-  const activeAccount = activeId ? displayAccounts.find((a) => a.id === activeId) : null;
+  const [subView, setSubView] = useState<"kanban" | "ungrouped">("kanban");
+
+  const activeAccount    = activeId ? displayAccounts.find((a) => a.id === activeId) : null;
+  const ungroupedAccounts = getGroupAccounts(UNGROUPED_ID);
 
   const lanes = [
     { id: UNGROUPED_ID, name: isDemo ? demoUngroupedName : ungroupedName, color: "#94a3b8", isUngrouped: true as const },
@@ -722,27 +727,44 @@ export function AccountGroupsView({
             </p>
           </div>
           <Button
-            size="sm"
-            variant="ghost"
+            size="sm" variant="ghost"
             className="h-6 w-6 p-0 shrink-0 text-muted-foreground"
-            onClick={() => {
-              setBannerDismissed(true);
-              try { localStorage.setItem("demo-banner-dismissed", "1"); } catch {}
-            }}
+            onClick={() => { setBannerDismissed(true); try { localStorage.setItem("demo-banner-dismissed", "1"); } catch {} }}
           >
             <X className="h-3.5 w-3.5" />
           </Button>
         </div>
       )}
 
-      {/* Toolbar */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          {isDemo
-            ? "Example setup — drag cards between groups to see how it works"
-            : "Drag accounts between groups to organize your trading setup"}
-        </p>
-        {!isDemo && (
+      {/* Toolbar: tabs left, actions right */}
+      <div className="flex items-center justify-between gap-4">
+        {/* Sub-view tabs */}
+        <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
+          <Button
+            variant={subView === "kanban" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setSubView("kanban")}
+          >
+            <Layers className="h-4 w-4 mr-1.5" />
+            Groups
+          </Button>
+          <Button
+            variant={subView === "ungrouped" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setSubView("ungrouped")}
+            className="relative"
+          >
+            <Inbox className="h-4 w-4 mr-1.5" />
+            Ungrouped
+            {ungroupedAccounts.length > 0 && (
+              <span className="ml-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-semibold text-primary">
+                {ungroupedAccounts.length}
+              </span>
+            )}
+          </Button>
+        </div>
+
+        {!isDemo && subView === "kanban" && (
           <Button variant="outline" size="sm" onClick={addGroup}>
             <Plus className="h-4 w-4 mr-1.5" />
             New Group
@@ -750,53 +772,87 @@ export function AccountGroupsView({
         )}
       </div>
 
-      {/* Kanban board */}
-      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex gap-4 overflow-x-auto pb-4 -mx-1 px-1">
-          {lanes.map((lane) => {
-            const laneAccounts = getGroupAccounts(lane.id);
-            const totalPnl = laneAccounts.reduce(
-              (sum, a) => sum + (a.pnl ? parseFloat(String(a.pnl)) : 0),
-              0,
-            );
-            return (
-              <GroupLane
-                key={lane.id}
-                group={lane}
-                accounts={laneAccounts}
-                isUngrouped={lane.isUngrouped}
-                isDemo={isDemo}
-                totalPnl={totalPnl}
-                onRename={renameGroup}
-                onDelete={deleteGroup}
-                onColorChange={changeColor}
-                onToggle={toggleGroup}
-                onSetMaster={setMaster}
-                onConnect={onConnect}
-                onDisconnect={onDisconnect}
-              />
-            );
-          })}
+      {/* ── Kanban board ── */}
+      {subView === "kanban" && (
+        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <div className="flex gap-4 overflow-x-auto pb-4 -mx-1 px-1">
+            {lanes.map((lane) => {
+              const laneAccounts = getGroupAccounts(lane.id);
+              const totalPnl = laneAccounts.reduce(
+                (sum, a) => sum + (a.pnl ? parseFloat(String(a.pnl)) : 0),
+                0,
+              );
+              return (
+                <GroupLane
+                  key={lane.id}
+                  group={lane}
+                  accounts={laneAccounts}
+                  isUngrouped={lane.isUngrouped}
+                  isDemo={isDemo}
+                  totalPnl={totalPnl}
+                  onRename={renameGroup}
+                  onDelete={deleteGroup}
+                  onColorChange={changeColor}
+                  onToggle={toggleGroup}
+                  onSetMaster={setMaster}
+                  onConnect={onConnect}
+                  onDisconnect={onDisconnect}
+                />
+              );
+            })}
 
-          {/* Add group placeholder — only for real accounts */}
-          {!isDemo && groups.length === 0 && (
-            <button
-              onClick={addGroup}
-              className="flex flex-col items-center justify-center w-[270px] shrink-0 h-[220px] rounded-xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-muted-foreground hover:text-primary"
-            >
-              <Plus className="h-8 w-8 mb-2" />
-              <span className="text-sm font-medium">Create your first group</span>
-              <span className="text-xs mt-1 opacity-70">Drag accounts here to trade together</span>
-            </button>
+            {!isDemo && groups.length === 0 && (
+              <button
+                onClick={addGroup}
+                className="flex flex-col items-center justify-center w-[280px] shrink-0 h-[220px] rounded-xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-muted-foreground hover:text-primary"
+              >
+                <Plus className="h-8 w-8 mb-2" />
+                <span className="text-sm font-medium">Create your first group</span>
+                <span className="text-xs mt-1 opacity-70">Drag accounts here to trade together</span>
+              </button>
+            )}
+          </div>
+
+          <DragOverlay dropAnimation={null}>
+            {activeAccount ? (
+              <DraggableCard account={activeAccount} isDragOverlay isDemo={isDemo} />
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      )}
+
+      {/* ── Ungrouped panel ── */}
+      {subView === "ungrouped" && (
+        <div>
+          {ungroupedAccounts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center min-h-[260px] rounded-xl border-2 border-dashed border-border text-center p-8">
+              <Inbox className="h-10 w-10 text-muted-foreground/40 mb-3" />
+              <p className="text-sm font-medium text-muted-foreground">All accounts are in a group</p>
+              <p className="text-xs text-muted-foreground/70 mt-1">
+                Switch to Groups to drag accounts between lanes.
+              </p>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground mb-3">
+                {ungroupedAccounts.length} account{ungroupedAccounts.length !== 1 ? "s" : ""} not assigned to any group — switch to Groups to drag them in.
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {ungroupedAccounts.map((account) => (
+                  <DndContext key={account.id} sensors={sensors}>
+                    <DraggableCard
+                      account={account}
+                      isDemo={isDemo}
+                      onConnect={() => onConnect(account.id)}
+                      onDisconnect={() => onDisconnect(account.id, account.name)}
+                    />
+                  </DndContext>
+                ))}
+              </div>
+            </>
           )}
         </div>
-
-        <DragOverlay dropAnimation={null}>
-          {activeAccount ? (
-            <DraggableCard account={activeAccount} isDragOverlay isDemo={isDemo} />
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+      )}
     </div>
   );
 }
