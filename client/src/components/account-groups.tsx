@@ -629,12 +629,15 @@ interface AccountGroupsViewProps {
   accounts: Account[];
   onConnect: (accountId: string) => void;
   onDisconnect: (accountId: string, name: string) => void;
+  /** Increment this counter from the parent to trigger addGroup without a ref */
+  addGroupTrigger?: number;
 }
 
 export function AccountGroupsView({
   accounts,
   onConnect,
   onDisconnect,
+  addGroupTrigger,
 }: AccountGroupsViewProps) {
   // ── Mode detection ─────────────────────────────────────────────────────
   const isDemo = accounts.length === 0;
@@ -657,6 +660,13 @@ export function AccountGroupsView({
   });
 
   const [activeId, setActiveId] = useState<string | null>(null);
+
+  // Fire addGroup whenever parent increments the trigger
+  useEffect(() => {
+    if (!addGroupTrigger) return;
+    addGroup();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addGroupTrigger]);
 
   // ── Derived display values ─────────────────────────────────────────────
   const displayAccounts  = isDemo ? DEMO_ACCOUNTS : accounts;

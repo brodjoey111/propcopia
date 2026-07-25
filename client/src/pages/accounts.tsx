@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Settings, Loader2, LayoutGrid, List, Table2, Layers } from "lucide-react";
+import { Settings, Loader2, LayoutGrid, List, Table2, Layers, Plus } from "lucide-react";
 import type { Account } from "@shared/schema";
 
 type ViewMode = 'grid' | 'list' | 'table' | 'groups';
@@ -19,6 +19,7 @@ type ViewMode = 'grid' | 'list' | 'table' | 'groups';
 export default function Accounts() {
   const { toast } = useToast();
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [addGroupTrigger, setAddGroupTrigger] = useState(0);
   const [globalSettings, setGlobalSettings] = useState({
     positionScaling: 100,
     maxContracts: undefined as number | undefined,
@@ -185,6 +186,12 @@ export default function Accounts() {
               onSave={handleGlobalSettingsUpdate}
             />
           )}
+          {(viewMode === 'groups' || !hasAccounts) && (
+            <Button variant="outline" onClick={() => setAddGroupTrigger((n) => n + 1)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Group
+            </Button>
+          )}
           <AddAccountDialog onAdd={handleAddAccount} />
         </div>
       </div>
@@ -237,12 +244,14 @@ export default function Accounts() {
           accounts={accounts}
           onConnect={handleConnect}
           onDisconnect={handleDisconnectClick}
+          addGroupTrigger={addGroupTrigger}
         />
       ) : viewMode === 'groups' ? (
         <AccountGroupsView
           accounts={accounts}
           onConnect={handleConnect}
           onDisconnect={handleDisconnectClick}
+          addGroupTrigger={addGroupTrigger}
         />
       ) : (
         <>
