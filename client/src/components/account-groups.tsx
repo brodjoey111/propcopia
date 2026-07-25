@@ -212,9 +212,12 @@ interface DraggableCardProps {
   account: Account;
   isDragOverlay?: boolean;
   isDemo?: boolean;
+  /**
+   * undefined  → Ungrouped / no group context: show real broker type
+   * true       → this account IS the group master
+   * false      → inside a group but NOT the master → show "follower"
+   */
   isMaster?: boolean;
-  /** Overrides the displayed role badge in a group context ("master" | "follower"). Omit for Ungrouped. */
-  groupRole?: string;
   isDisabled?: boolean;
   onConnect?: () => void;
   onDisconnect?: () => void;
@@ -226,7 +229,6 @@ function DraggableCard({
   isDragOverlay,
   isDemo,
   isMaster,
-  groupRole,
   isDisabled,
   onConnect,
   onDisconnect,
@@ -288,10 +290,14 @@ function DraggableCard({
                 {account.name}
               </span>
               <Badge
-                variant={(groupRole ?? account.accountType) === "master" ? "default" : "secondary"}
+                variant={
+                  (isMaster === undefined ? account.accountType : isMaster ? "master" : "follower") === "master"
+                    ? "default"
+                    : "secondary"
+                }
                 className="text-[10px] px-1.5 py-0 h-4 shrink-0"
               >
-                {groupRole ?? account.accountType}
+                {isMaster === undefined ? account.accountType : isMaster ? "master" : "follower"}
               </Badge>
               {isDisabled && (
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0 border-red-500/40 text-red-500">
@@ -604,8 +610,7 @@ function GroupLane({
               key={account.id}
               account={account}
               isDemo={isDemo}
-              isMaster={account.id === effectiveMasterId}
-              groupRole={!isUngrouped ? (account.id === effectiveMasterId ? "master" : "follower") : undefined}
+              isMaster={isUngrouped ? undefined : account.id === effectiveMasterId}
               isDisabled={disabledIds.includes(account.id)}
               onToggleEnabled={!isUngrouped ? () => onToggleAccount(group.id, account.id) : undefined}
               onConnect={() => onConnect(account.id)}
@@ -681,9 +686,14 @@ export function AccountGroupsView({
   // ── Group actions (no-op in demo) ──────────────────────────────────────
 
   const addGroup = () => {
-    if (isDemo) return;
+    const id    = `group-${Date.now()}`;
+    if (isDemo) {
+      const color = PALETTE[demoGroups.length % PALETTE.length];
+      setDemoGroups((prev) => [...prev, { id, name: `Group ${prev.length + 1}`, color, isActive: true, masterId: null, disabledAccountIds: [] }]);
+      return;
+    }
     const color = PALETTE[groups.length % PALETTE.length];
-    persistGroups([...groups, { id: `group-${Date.now()}`, name: `Group ${groups.length + 1}`, color, isActive: true, masterId: null, disabledAccountIds: [] }]);
+    persistGroups([...groups, { id, name: `Group ${groups.length + 1}`, color, isActive: true, masterId: null, disabledAccountIds: [] }]);
   };
 
   const renameGroup = (id: string, name: string) => {
@@ -844,7 +854,7 @@ export function AccountGroupsView({
           </Button>
         </div>
 
-        {!isDemo && subView === "kanban" && (
+        {subView === "kanban" && (
           <Button variant="outline" size="sm" onClick={addGroup}>
             <Plus className="h-4 w-4 mr-1.5" />
             New Group
@@ -882,16 +892,15 @@ export function AccountGroupsView({
               );
             })}
 
-            {!isDemo && groups.length === 0 && (
-              <button
-                onClick={addGroup}
-                className="flex flex-col items-center justify-center w-[280px] shrink-0 h-[220px] rounded-xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-muted-foreground hover:text-primary"
-              >
-                <Plus className="h-8 w-8 mb-2" />
-                <span className="text-sm font-medium">Create your first group</span>
-                <span className="text-xs mt-1 opacity-70">Drag accounts here to trade together</span>
-              </button>
-            )}
+            {/* Always-visible "+ Add Group" lane */}
+            <button
+              onClick={addGroup}
+              className="flex flex-col items-center justify-center w-[280px] shrink-0 h-[220px] rounded-xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-muted-foreground hover:text-primary"
+            >
+              <Plus className="h-8 w-8 mb-2" />
+              <span className="text-sm font-medium">Add Group</span>
+              <span className="text-xs mt-1 opacity-70">Click to create a new lane</span>
+            </button>
           </div>
 
           <DragOverlay dropAnimation={null}>
