@@ -466,21 +466,6 @@ function GroupLane({
                 )}
               </div>
 
-              {/* Trading toggle — non-ungrouped only */}
-              {!isUngrouped && (
-                <button
-                  onClick={() => onToggle(group.id)}
-                  title={isActive ? "Click to pause trading" : "Click to enable trading"}
-                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all shrink-0 ${
-                    isActive
-                      ? "bg-green-500/20 text-green-600 hover:bg-green-500/30 dark:text-green-400"
-                      : "bg-muted text-muted-foreground hover:bg-muted/60"
-                  }`}
-                >
-                  <Power className="h-2.5 w-2.5" />
-                  {isActive ? "Live" : "Off"}
-                </button>
-              )}
             </>
           )}
         </div>
@@ -506,7 +491,22 @@ function GroupLane({
           </div>
         )}
 
-        {/* ── Row 3: Group P&L ── */}
+        {/* ── Row 3: Trading toggle ── */}
+        {!isUngrouped && (
+          <button
+            onClick={() => onToggle(group.id)}
+            className={`mt-2 w-full flex items-center justify-center gap-2 rounded-lg py-1.5 text-xs font-semibold transition-all ${
+              isActive
+                ? "bg-green-500/15 text-green-600 hover:bg-green-500/25 dark:text-green-400 border border-green-500/30"
+                : "bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/25"
+            }`}
+          >
+            <Power className="h-3.5 w-3.5" />
+            {isActive ? "Trading ON — click to pause" : "Trading OFF — click to enable"}
+          </button>
+        )}
+
+        {/* ── Row 4: Group P&L ── */}
         {accounts.length > 0 && (
           <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-white/10">
             <span className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Group P&L</span>
@@ -549,6 +549,14 @@ function GroupLane({
           boxShadow: isOver ? `inset 0 0 0 2px ${accentColor}30` : undefined,
         }}
       >
+        {/* Paused overlay banner */}
+        {!isActive && !isUngrouped && accounts.length > 0 && (
+          <div className="flex items-center justify-center gap-1.5 rounded-md bg-red-500/10 border border-red-500/20 px-3 py-1.5 mb-1">
+            <Power className="h-3 w-3 text-red-500/70" />
+            <span className="text-[11px] font-semibold text-red-500/80 uppercase tracking-wide">Trading paused</span>
+          </div>
+        )}
+
         {accounts.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-[140px] pointer-events-none">
             <p className="text-xs font-medium transition-all" style={{ color: isOver ? accentColor : "hsl(var(--muted-foreground))" }}>
