@@ -213,7 +213,8 @@ interface DraggableCardProps {
   isDragOverlay?: boolean;
   isDemo?: boolean;
   isMaster?: boolean;
-  isStandbyMaster?: boolean;
+  /** Overrides the displayed role badge in a group context ("master" | "follower"). Omit for Ungrouped. */
+  groupRole?: string;
   isDisabled?: boolean;
   onConnect?: () => void;
   onDisconnect?: () => void;
@@ -225,7 +226,7 @@ function DraggableCard({
   isDragOverlay,
   isDemo,
   isMaster,
-  isStandbyMaster,
+  groupRole,
   isDisabled,
   onConnect,
   onDisconnect,
@@ -287,16 +288,11 @@ function DraggableCard({
                 {account.name}
               </span>
               <Badge
-                variant={account.accountType === "master" ? "default" : "secondary"}
+                variant={(groupRole ?? account.accountType) === "master" ? "default" : "secondary"}
                 className="text-[10px] px-1.5 py-0 h-4 shrink-0"
               >
-                {account.accountType}
+                {groupRole ?? account.accountType}
               </Badge>
-              {isStandbyMaster && !isDisabled && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0 border-amber-500/40 text-amber-600 dark:text-amber-400">
-                  Standby
-                </Badge>
-              )}
               {isDisabled && (
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0 border-red-500/40 text-red-500">
                   Paused
@@ -609,7 +605,7 @@ function GroupLane({
               account={account}
               isDemo={isDemo}
               isMaster={account.id === effectiveMasterId}
-              isStandbyMaster={account.accountType === "master" && account.id !== effectiveMasterId && !disabledIds.includes(account.id)}
+              groupRole={!isUngrouped ? (account.id === effectiveMasterId ? "master" : "follower") : undefined}
               isDisabled={disabledIds.includes(account.id)}
               onToggleEnabled={!isUngrouped ? () => onToggleAccount(group.id, account.id) : undefined}
               onConnect={() => onConnect(account.id)}
