@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Settings, Loader2, LayoutGrid, List, Table2, Plus } from "lucide-react";
+import { Settings, Loader2, LayoutGrid, List, Table2 } from "lucide-react";
 import type { Account } from "@shared/schema";
 
 type ViewMode = 'grid' | 'list' | 'table' | 'groups';
@@ -186,12 +186,7 @@ export default function Accounts() {
               onSave={handleGlobalSettingsUpdate}
             />
           )}
-          {(viewMode === 'groups' || !hasAccounts) && (
-            <Button variant="outline" onClick={() => setAddGroupTrigger((n) => n + 1)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Group
-            </Button>
-          )}
+
           <AddAccountDialog onAdd={handleAddAccount} />
         </div>
       </div>
