@@ -25,6 +25,8 @@ import {
   PlugZap,
   Unplug,
   Sparkles,
+  Power,
+  Crown,
 } from "lucide-react";
 import type { Account } from "@shared/schema";
 
@@ -131,16 +133,18 @@ const DEMO_ACCOUNTS: Account[] = [
 ];
 
 const DEMO_GROUPS: TradingGroup[] = [
-  { id: "demo-group-1", name: "Scalping Desk", color: "#3b82f6" },
-  { id: "demo-group-2", name: "Swing Trades", color: "#22c55e" },
+  { id: "demo-group-1", name: "Scalping Desk", color: "#3b82f6", isActive: true,  masterId: "demo-1" },
+  { id: "demo-group-2", name: "Swing Trades",  color: "#22c55e", isActive: false, masterId: "demo-4" },
 ];
 
-// demo-1 stays ungrouped; the others are pre-placed
+// all demo accounts are pre-placed so both groups have a master + followers
 const DEMO_ASSIGNMENTS: Record<string, string> = {
+  "demo-1": "demo-group-1",
   "demo-2": "demo-group-1",
   "demo-3": "demo-group-1",
   "demo-4": "demo-group-2",
   "demo-5": "demo-group-2",
+  "demo-6": "demo-group-2",
 };
 
 // ─── Data model ─────────────────────────────────────────────────────────────
@@ -149,6 +153,8 @@ export interface TradingGroup {
   id: string;
   name: string;
   color: string;
+  isActive: boolean;
+  masterId: string | null;
 }
 
 const UNGROUPED_ID = "__ungrouped__";
@@ -167,7 +173,13 @@ const PALETTE = [
 function loadGroups(): TradingGroup[] {
   try {
     const raw = localStorage.getItem("trading-groups-v1");
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (JSON.parse(raw) as any[]).map((g) => ({
+      isActive: true,
+      masterId: null,
+      ...g,
+    }));
   } catch {
     return [];
   }
@@ -196,6 +208,7 @@ interface DraggableCardProps {
   account: Account;
   isDragOverlay?: boolean;
   isDemo?: boolean;
+  isMaster?: boolean;
   onConnect?: () => void;
   onDisconnect?: () => void;
 }
@@ -204,6 +217,7 @@ function DraggableCard({
   account,
   isDragOverlay,
   isDemo,
+  isMaster,
   onConnect,
   onDisconnect,
 }: DraggableCardProps) {
@@ -252,7 +266,12 @@ function DraggableCard({
           <div className="flex-1 min-w-0">
             {/* Header row */}
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-semibold text-sm leading-tight truncate max-w-[130px]">
+              {isMaster && (
+                <span title="Group master" className="shrink-0">
+                  <Crown className="h-3 w-3 text-amber-500" />
+                </span>
+              )}
+              <span className="font-semibold text-sm leading-tight truncate max-w-[120px]">
                 {account.name}
               </span>
               <Badge
@@ -329,7 +348,7 @@ function DraggableCard({
 // ─── Droppable group lane ─────────────────────────────────────────────────────
 
 interface GroupLaneProps {
-  group: { id: string; name: string; color: string };
+  group: { id: string; name: string; color: string; isActive?: boolean; masterId?: string | null };
   accounts: Account[];
   isUngrouped?: boolean;
   isDemo?: boolean;
@@ -337,6 +356,8 @@ interface GroupLaneProps {
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
   onColorChange: (id: string, color: string) => void;
+  onToggle: (id: string) => void;
+  onSetMaster: (groupId: string, masterId: string | null) => void;
   onConnect: (accountId: string) => void;
   onDisconnect: (accountId: string, name: string) => void;
 }
@@ -350,6 +371,8 @@ function GroupLane({
   onRename,
   onDelete,
   onColorChange,
+  onToggle,
+  onSetMaster,
   onConnect,
   onDisconnect,
 }: GroupLaneProps) {
@@ -364,22 +387,28 @@ function GroupLane({
     setEditing(false);
   };
 
-  const accentColor = isUngrouped ? "#94a3b8" : group.color;
+  const accentColor  = isUngrouped ? "#94a3b8" : group.color;
+  const isActive     = isUngrouped ? true : (group.isActive !== false);
+  const masterId     = group.masterId ?? null;
+  const masterAccounts  = accounts.filter((a) => a.accountType === "master");
+  const followerAccounts = accounts.filter((a) => a.accountType !== "master");
+  const masterAccount = accounts.find((a) => a.id === masterId);
+  const hasMasterWarning = !isUngrouped && !masterId && accounts.length > 0;
 
   return (
-    <div className="flex flex-col w-[270px] shrink-0">
+    <div className={`flex flex-col w-[280px] shrink-0 transition-opacity duration-200 ${!isActive ? "opacity-55" : ""}`}>
       {/* Lane header */}
       <div
-        className="rounded-t-xl px-3 py-2"
+        className="rounded-t-xl px-3 py-2.5"
         style={{
           background: `${accentColor}14`,
-          borderTop: `3px solid ${accentColor}`,
+          borderTop: `3px solid ${isActive ? accentColor : "#94a3b8"}`,
           borderLeft: `1px solid ${accentColor}28`,
           borderRight: `1px solid ${accentColor}28`,
         }}
       >
+        {/* ── Row 1: color · name · count · edit · delete · TOGGLE ── */}
         <div className="flex items-center gap-1.5">
-          {/* Color swatch / toggle palette */}
           {!isUngrouped && (
             <button
               className="h-3 w-3 rounded-full shrink-0 ring-1 ring-white/20 hover:scale-110 transition-transform"
@@ -401,49 +430,31 @@ function GroupLane({
                 }}
                 className="h-6 text-xs py-0 px-1.5"
               />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-5 w-5 p-0 shrink-0"
-                onClick={commitRename}
-              >
+              <Button size="sm" variant="ghost" className="h-5 w-5 p-0 shrink-0" onClick={commitRename}>
                 <Check className="h-3 w-3" />
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-5 w-5 p-0 shrink-0"
-                onClick={() => setEditing(false)}
-              >
+              <Button size="sm" variant="ghost" className="h-5 w-5 p-0 shrink-0" onClick={() => setEditing(false)}>
                 <X className="h-3 w-3" />
               </Button>
             </div>
           ) : (
             <>
-              <span className="text-xs font-semibold flex-1 truncate">
-                {group.name}
-              </span>
+              <span className="text-xs font-semibold flex-1 truncate">{group.name}</span>
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
                 {accounts.length}
               </Badge>
               <div className="flex items-center gap-0.5 shrink-0">
                 <Button
-                  size="sm"
-                  variant="ghost"
+                  size="sm" variant="ghost"
                   className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground"
-                  onClick={() => {
-                    setEditName(group.name);
-                    setEditing(true);
-                    setShowPalette(false);
-                  }}
+                  onClick={() => { setEditName(group.name); setEditing(true); setShowPalette(false); }}
                   title="Rename group"
                 >
                   <Pencil className="h-3 w-3" />
                 </Button>
                 {!isUngrouped && !isDemo && (
                   <Button
-                    size="sm"
-                    variant="ghost"
+                    size="sm" variant="ghost"
                     className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
                     onClick={() => onDelete(group.id)}
                     title="Delete group"
@@ -452,19 +463,52 @@ function GroupLane({
                   </Button>
                 )}
               </div>
+
+              {/* Trading toggle — non-ungrouped only */}
+              {!isUngrouped && (
+                <button
+                  onClick={() => onToggle(group.id)}
+                  title={isActive ? "Click to pause trading" : "Click to enable trading"}
+                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all shrink-0 ${
+                    isActive
+                      ? "bg-green-500/20 text-green-600 hover:bg-green-500/30 dark:text-green-400"
+                      : "bg-muted text-muted-foreground hover:bg-muted/60"
+                  }`}
+                >
+                  <Power className="h-2.5 w-2.5" />
+                  {isActive ? "Live" : "Off"}
+                </button>
+              )}
             </>
           )}
         </div>
 
-        {/* P&L total row */}
+        {/* ── Row 2: master selector ── */}
+        {!isUngrouped && (
+          <div className={`flex items-center gap-1.5 mt-1.5 pt-1.5 border-t ${hasMasterWarning ? "border-amber-500/30" : "border-white/10"}`}>
+            <Crown className={`h-3 w-3 shrink-0 ${hasMasterWarning ? "text-amber-500" : masterAccount ? "text-amber-500/70" : "text-muted-foreground/40"}`} />
+            <select
+              value={masterId || ""}
+              onChange={(e) => onSetMaster(group.id, e.target.value || null)}
+              className="flex-1 min-w-0 text-[11px] bg-transparent border-none outline-none cursor-pointer truncate appearance-none"
+              style={{ color: masterId ? "inherit" : hasMasterWarning ? "hsl(var(--muted-foreground))" : "hsl(var(--muted-foreground))" }}
+            >
+              <option value="">{hasMasterWarning ? "⚠ Set a master account" : "— no master —"}</option>
+              {masterAccounts.length > 0 && masterAccounts.map((a) => (
+                <option key={a.id} value={a.id}>★ {a.name}</option>
+              ))}
+              {followerAccounts.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* ── Row 3: Group P&L ── */}
         {accounts.length > 0 && (
           <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-white/10">
             <span className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Group P&L</span>
-            <span
-              className={`text-xs font-semibold tabular-nums ${
-                totalPnl >= 0 ? "text-green-500" : "text-red-400"
-              }`}
-            >
+            <span className={`text-xs font-semibold tabular-nums ${totalPnl >= 0 ? "text-green-500" : "text-red-400"}`}>
               {totalPnl >= 0 ? "+" : ""}${Math.abs(totalPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
@@ -483,26 +527,19 @@ function GroupLane({
                   outlineOffset: "1px",
                   boxShadow: group.color === color ? `0 0 0 3px ${color}` : undefined,
                 }}
-                onClick={() => {
-                  onColorChange(group.id, color);
-                  setShowPalette(false);
-                }}
+                onClick={() => { onColorChange(group.id, color); setShowPalette(false); }}
               />
             ))}
           </div>
         )}
       </div>
 
-      {/* Drop zone — use individual border sides to avoid shorthand/longhand React warning */}
+      {/* Drop zone */}
       <div
         ref={setNodeRef}
         className="flex-1 min-h-[180px] rounded-b-xl p-2 space-y-2 transition-all"
         style={{
-          background: isOver
-            ? `${accentColor}12`
-            : isUngrouped
-            ? "rgba(var(--muted)/0.3)"
-            : `${accentColor}06`,
+          background: isOver ? `${accentColor}12` : isUngrouped ? "rgba(var(--muted)/0.3)" : `${accentColor}06`,
           borderTop: "none",
           borderLeft:   isUngrouped ? `2px dashed ${isOver ? accentColor : "hsl(var(--border))"}` : `1px solid ${isOver ? accentColor + "60" : accentColor + "22"}`,
           borderRight:  isUngrouped ? `2px dashed ${isOver ? accentColor : "hsl(var(--border))"}` : `1px solid ${isOver ? accentColor + "60" : accentColor + "22"}`,
@@ -512,10 +549,7 @@ function GroupLane({
       >
         {accounts.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-[140px] pointer-events-none">
-            <p
-              className="text-xs font-medium transition-all"
-              style={{ color: isOver ? accentColor : "hsl(var(--muted-foreground))" }}
-            >
+            <p className="text-xs font-medium transition-all" style={{ color: isOver ? accentColor : "hsl(var(--muted-foreground))" }}>
               {isOver ? "↓ Release to add" : "Drop accounts here"}
             </p>
           </div>
@@ -525,6 +559,7 @@ function GroupLane({
               key={account.id}
               account={account}
               isDemo={isDemo}
+              isMaster={account.id === masterId}
               onConnect={() => onConnect(account.id)}
               onDisconnect={() => onDisconnect(account.id, account.name)}
             />
@@ -600,7 +635,7 @@ export function AccountGroupsView({
   const addGroup = () => {
     if (isDemo) return;
     const color = PALETTE[groups.length % PALETTE.length];
-    persistGroups([...groups, { id: `group-${Date.now()}`, name: `Group ${groups.length + 1}`, color }]);
+    persistGroups([...groups, { id: `group-${Date.now()}`, name: `Group ${groups.length + 1}`, color, isActive: true, masterId: null }]);
   };
 
   const renameGroup = (id: string, name: string) => {
@@ -625,6 +660,16 @@ export function AccountGroupsView({
   const changeColor = (id: string, color: string) => {
     if (isDemo) { setDemoGroups((prev) => prev.map((g) => (g.id === id ? { ...g, color } : g))); return; }
     persistGroups(groups.map((g) => (g.id === id ? { ...g, color } : g)));
+  };
+
+  const toggleGroup = (id: string) => {
+    if (isDemo) { setDemoGroups((prev) => prev.map((g) => (g.id === id ? { ...g, isActive: !g.isActive } : g))); return; }
+    persistGroups(groups.map((g) => (g.id === id ? { ...g, isActive: !g.isActive } : g)));
+  };
+
+  const setMaster = (groupId: string, masterId: string | null) => {
+    if (isDemo) { setDemoGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, masterId } : g))); return; }
+    persistGroups(groups.map((g) => (g.id === groupId ? { ...g, masterId } : g)));
   };
 
   // ── Drag events ────────────────────────────────────────────────────────
@@ -725,6 +770,8 @@ export function AccountGroupsView({
                 onRename={renameGroup}
                 onDelete={deleteGroup}
                 onColorChange={changeColor}
+                onToggle={toggleGroup}
+                onSetMaster={setMaster}
                 onConnect={onConnect}
                 onDisconnect={onDisconnect}
               />
