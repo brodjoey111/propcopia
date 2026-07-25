@@ -24,8 +24,124 @@ import {
   X,
   PlugZap,
   Unplug,
+  Sparkles,
 } from "lucide-react";
 import type { Account } from "@shared/schema";
+
+// ─── Demo data ───────────────────────────────────────────────────────────────
+
+const NULL_FIELDS = {
+  userId: "demo",
+  tradovateUsername: null,
+  tradovateAccountId: null,
+  tradovateEnvironment: null,
+  tradeifyUsername: null,
+  tradeifyAccountId: null,
+  tradeifyApiKey: null,
+  rithmicUsername: null,
+  rithmicAccountId: null,
+  rithmicPassword: null,
+  rithmicEnvironment: null,
+  apiKey: null,
+  apiSecret: null,
+  maxContracts: null,
+  blockedTickers: null,
+  lastSync: null,
+} as const;
+
+const DEMO_ACCOUNTS: Account[] = [
+  {
+    ...NULL_FIELDS,
+    id: "demo-1",
+    name: "ES Futures Master",
+    platform: "Rithmic",
+    accountType: "master",
+    isConnected: true,
+    balance: "125000.00",
+    pnl: "2340.00",
+    openPositions: 3,
+    positionScaling: 100,
+    riskMode: "custom",
+  },
+  {
+    ...NULL_FIELDS,
+    id: "demo-2",
+    name: "NQ Follower Alpha",
+    platform: "Tradovate",
+    accountType: "follower",
+    isConnected: true,
+    balance: "52000.00",
+    pnl: "890.00",
+    openPositions: 2,
+    positionScaling: 75,
+    riskMode: "custom",
+  },
+  {
+    ...NULL_FIELDS,
+    id: "demo-3",
+    name: "NQ Follower Beta",
+    platform: "Tradovate",
+    accountType: "follower",
+    isConnected: false,
+    balance: "48000.00",
+    pnl: "-120.00",
+    openPositions: 0,
+    positionScaling: 50,
+    riskMode: "global",
+  },
+  {
+    ...NULL_FIELDS,
+    id: "demo-4",
+    name: "CL Swing Master",
+    platform: "Tradeify",
+    accountType: "master",
+    isConnected: true,
+    balance: "78500.00",
+    pnl: "1650.00",
+    openPositions: 1,
+    positionScaling: 100,
+    riskMode: "custom",
+  },
+  {
+    ...NULL_FIELDS,
+    id: "demo-5",
+    name: "CL Follower A",
+    platform: "Tradovate",
+    accountType: "follower",
+    isConnected: true,
+    balance: "30000.00",
+    pnl: "540.00",
+    openPositions: 1,
+    positionScaling: 50,
+    riskMode: "global",
+  },
+  {
+    ...NULL_FIELDS,
+    id: "demo-6",
+    name: "GC Scalp Follower",
+    platform: "Rithmic",
+    accountType: "follower",
+    isConnected: false,
+    balance: "25000.00",
+    pnl: "0.00",
+    openPositions: 0,
+    positionScaling: 25,
+    riskMode: "global",
+  },
+];
+
+const DEMO_GROUPS: TradingGroup[] = [
+  { id: "demo-group-1", name: "Scalping Desk", color: "#3b82f6" },
+  { id: "demo-group-2", name: "Swing Trades", color: "#22c55e" },
+];
+
+// demo-1 stays ungrouped; the others are pre-placed
+const DEMO_ASSIGNMENTS: Record<string, string> = {
+  "demo-2": "demo-group-1",
+  "demo-3": "demo-group-1",
+  "demo-4": "demo-group-2",
+  "demo-5": "demo-group-2",
+};
 
 // ─── Data model ─────────────────────────────────────────────────────────────
 
@@ -79,6 +195,7 @@ function saveAssignments(assignments: Record<string, string>) {
 interface DraggableCardProps {
   account: Account;
   isDragOverlay?: boolean;
+  isDemo?: boolean;
   onConnect?: () => void;
   onDisconnect?: () => void;
 }
@@ -86,6 +203,7 @@ interface DraggableCardProps {
 function DraggableCard({
   account,
   isDragOverlay,
+  isDemo,
   onConnect,
   onDisconnect,
 }: DraggableCardProps) {
@@ -175,15 +293,17 @@ function DraggableCard({
 
             {/* Action button */}
             <div className="mt-2">
-              {account.isConnected ? (
+              {isDemo ? (
+                <div className="flex items-center justify-center h-6 rounded-md border border-dashed border-muted-foreground/30 gap-1">
+                  <Sparkles className="h-3 w-3 text-muted-foreground/50" />
+                  <span className="text-[10px] text-muted-foreground/50">example account</span>
+                </div>
+              ) : account.isConnected ? (
                 <Button
                   size="sm"
                   variant="outline"
                   className="h-6 text-[11px] px-2 w-full"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDisconnect?.();
-                  }}
+                  onClick={(e) => { e.stopPropagation(); onDisconnect?.(); }}
                 >
                   <Unplug className="h-3 w-3 mr-1" />
                   Disconnect
@@ -192,10 +312,7 @@ function DraggableCard({
                 <Button
                   size="sm"
                   className="h-6 text-[11px] px-2 w-full"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onConnect?.();
-                  }}
+                  onClick={(e) => { e.stopPropagation(); onConnect?.(); }}
                 >
                   <PlugZap className="h-3 w-3 mr-1" />
                   Connect
@@ -215,6 +332,7 @@ interface GroupLaneProps {
   group: { id: string; name: string; color: string };
   accounts: Account[];
   isUngrouped?: boolean;
+  isDemo?: boolean;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
   onColorChange: (id: string, color: string) => void;
@@ -226,6 +344,7 @@ function GroupLane({
   group,
   accounts,
   isUngrouped,
+  isDemo,
   onRename,
   onDelete,
   onColorChange,
@@ -393,6 +512,7 @@ function GroupLane({
             <DraggableCard
               key={account.id}
               account={account}
+              isDemo={isDemo}
               onConnect={() => onConnect(account.id)}
               onDisconnect={() => onDisconnect(account.id, account.name)}
             />
@@ -416,123 +536,152 @@ export function AccountGroupsView({
   onConnect,
   onDisconnect,
 }: AccountGroupsViewProps) {
+  // ── Mode detection ─────────────────────────────────────────────────────
+  const isDemo = accounts.length === 0;
+
+  // ── Real-account state (persisted) ────────────────────────────────────
   const [groups, setGroups] = useState<TradingGroup[]>(loadGroups);
-  const [assignments, setAssignments] = useState<Record<string, string>>(
-    loadAssignments,
-  );
+  const [assignments, setAssignments] = useState<Record<string, string>>(loadAssignments);
+
+  // ── Demo state (ephemeral — resets on page reload intentionally) ───────
+  const [demoAssignments, setDemoAssignments] = useState<Record<string, string>>(DEMO_ASSIGNMENTS);
+  const [bannerDismissed, setBannerDismissed] = useState(() => {
+    try { return localStorage.getItem("demo-banner-dismissed") === "1"; } catch { return false; }
+  });
+
   const [activeId, setActiveId] = useState<string | null>(null);
+
+  // ── Derived display values ─────────────────────────────────────────────
+  const displayAccounts  = isDemo ? DEMO_ACCOUNTS : accounts;
+  const displayGroups    = isDemo ? DEMO_GROUPS   : groups;
+  const displayAssign    = isDemo ? demoAssignments : assignments;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 5 },
-    }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
   );
 
   // ── Helpers ────────────────────────────────────────────────────────────
 
-  const persistGroups = (next: TradingGroup[]) => {
-    setGroups(next);
-    saveGroups(next);
-  };
-
-  const persistAssignments = (next: Record<string, string>) => {
-    setAssignments(next);
-    saveAssignments(next);
-  };
+  const persistGroups = (next: TradingGroup[]) => { setGroups(next); saveGroups(next); };
+  const persistAssignments = (next: Record<string, string>) => { setAssignments(next); saveAssignments(next); };
 
   const getGroupAccounts = (groupId: string): Account[] => {
     if (groupId === UNGROUPED_ID) {
-      return accounts.filter((a) => {
-        const g = assignments[a.id];
-        return !g || !groups.find((grp) => grp.id === g);
+      return displayAccounts.filter((a) => {
+        const g = displayAssign[a.id];
+        return !g || !displayGroups.find((grp) => grp.id === g);
       });
     }
-    return accounts.filter((a) => assignments[a.id] === groupId);
+    return displayAccounts.filter((a) => displayAssign[a.id] === groupId);
   };
 
-  // ── Group actions ──────────────────────────────────────────────────────
+  // ── Group actions (no-op in demo) ──────────────────────────────────────
 
   const addGroup = () => {
+    if (isDemo) return;
     const color = PALETTE[groups.length % PALETTE.length];
-    const next: TradingGroup = {
-      id: `group-${Date.now()}`,
-      name: `Group ${groups.length + 1}`,
-      color,
-    };
-    persistGroups([...groups, next]);
+    persistGroups([...groups, { id: `group-${Date.now()}`, name: `Group ${groups.length + 1}`, color }]);
   };
 
-  const renameGroup = (id: string, name: string) =>
+  const renameGroup = (id: string, name: string) => {
+    if (isDemo) return;
     persistGroups(groups.map((g) => (g.id === id ? { ...g, name } : g)));
+  };
 
   const deleteGroup = (id: string) => {
-    // Return accounts in the deleted group to ungrouped
+    if (isDemo) return;
     const next = { ...assignments };
-    Object.keys(next).forEach((accountId) => {
-      if (next[accountId] === id) delete next[accountId];
-    });
+    Object.keys(next).forEach((aid) => { if (next[aid] === id) delete next[aid]; });
     persistAssignments(next);
     persistGroups(groups.filter((g) => g.id !== id));
   };
 
-  const changeColor = (id: string, color: string) =>
+  const changeColor = (id: string, color: string) => {
+    if (isDemo) return;
     persistGroups(groups.map((g) => (g.id === id ? { ...g, color } : g)));
+  };
 
   // ── Drag events ────────────────────────────────────────────────────────
 
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  };
+  const handleDragStart = (event: DragStartEvent) => setActiveId(event.active.id as string);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
     if (!over) return;
 
-    const accountId = active.id as string;
+    const accountId    = active.id as string;
     const targetGroupId = over.id as string;
-    const next = { ...assignments };
 
-    if (targetGroupId === UNGROUPED_ID) {
-      delete next[accountId];
+    if (isDemo) {
+      setDemoAssignments((prev) => {
+        const next = { ...prev };
+        if (targetGroupId === UNGROUPED_ID) delete next[accountId];
+        else next[accountId] = targetGroupId;
+        return next;
+      });
     } else {
-      next[accountId] = targetGroupId;
+      const next = { ...assignments };
+      if (targetGroupId === UNGROUPED_ID) delete next[accountId];
+      else next[accountId] = targetGroupId;
+      persistAssignments(next);
     }
-
-    persistAssignments(next);
   };
 
   // ── Render ─────────────────────────────────────────────────────────────
 
-  const activeAccount = activeId
-    ? accounts.find((a) => a.id === activeId)
-    : null;
+  const activeAccount = activeId ? displayAccounts.find((a) => a.id === activeId) : null;
 
   const lanes = [
     { id: UNGROUPED_ID, name: "Ungrouped", color: "#94a3b8", isUngrouped: true as const },
-    ...groups.map((g) => ({ ...g, isUngrouped: false as const })),
+    ...displayGroups.map((g) => ({ ...g, isUngrouped: false as const })),
   ];
 
   return (
     <div className="flex flex-col gap-4">
+
+      {/* Demo banner */}
+      {isDemo && !bannerDismissed && (
+        <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+          <Sparkles className="h-4 w-4 text-primary shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-primary">Interactive demo — try it now</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Drag the example cards between groups using the ⠿ handle. Add real accounts to replace these.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 w-6 p-0 shrink-0 text-muted-foreground"
+            onClick={() => {
+              setBannerDismissed(true);
+              try { localStorage.setItem("demo-banner-dismissed", "1"); } catch {}
+            }}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Drag accounts between groups to organize your trading setup
+          {isDemo
+            ? "Example setup — drag cards between groups to see how it works"
+            : "Drag accounts between groups to organize your trading setup"}
         </p>
-        <Button variant="outline" size="sm" onClick={addGroup}>
-          <Plus className="h-4 w-4 mr-1.5" />
-          New Group
-        </Button>
+        {!isDemo && (
+          <Button variant="outline" size="sm" onClick={addGroup}>
+            <Plus className="h-4 w-4 mr-1.5" />
+            New Group
+          </Button>
+        )}
       </div>
 
       {/* Kanban board */}
-      <DndContext
-        sensors={sensors}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="flex gap-4 overflow-x-auto pb-4 -mx-1 px-1">
           {lanes.map((lane) => (
             <GroupLane
@@ -540,6 +689,7 @@ export function AccountGroupsView({
               group={lane}
               accounts={getGroupAccounts(lane.id)}
               isUngrouped={lane.isUngrouped}
+              isDemo={isDemo}
               onRename={renameGroup}
               onDelete={deleteGroup}
               onColorChange={changeColor}
@@ -548,23 +698,22 @@ export function AccountGroupsView({
             />
           ))}
 
-          {/* Add group button as a lane placeholder */}
-          {groups.length === 0 && (
+          {/* Add group placeholder — only for real accounts */}
+          {!isDemo && groups.length === 0 && (
             <button
               onClick={addGroup}
-              className="flex flex-col items-center justify-center w-[270px] shrink-0 h-[220px] rounded-xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-muted-foreground hover:text-primary group"
+              className="flex flex-col items-center justify-center w-[270px] shrink-0 h-[220px] rounded-xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-muted-foreground hover:text-primary"
             >
-              <Plus className="h-8 w-8 mb-2 transition-transform group-hover:scale-110" />
+              <Plus className="h-8 w-8 mb-2" />
               <span className="text-sm font-medium">Create your first group</span>
               <span className="text-xs mt-1 opacity-70">Drag accounts here to trade together</span>
             </button>
           )}
         </div>
 
-        {/* Drag overlay — ghost card that follows the cursor */}
         <DragOverlay dropAnimation={null}>
           {activeAccount ? (
-            <DraggableCard account={activeAccount} isDragOverlay />
+            <DraggableCard account={activeAccount} isDragOverlay isDemo={isDemo} />
           ) : null}
         </DragOverlay>
       </DndContext>

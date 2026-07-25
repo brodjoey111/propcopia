@@ -189,48 +189,56 @@ export default function Accounts() {
         )}
       </div>
 
-      {hasAccounts && (
-        <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
-          <Button
-            variant={viewMode === 'grid' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('grid')}
-            data-testid="button-view-grid"
-          >
-            <LayoutGrid className="h-4 w-4 mr-2" />
-            Grid
-          </Button>
-          <Button
-            variant={viewMode === 'list' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('list')}
-            data-testid="button-view-list"
-          >
-            <List className="h-4 w-4 mr-2" />
-            List
-          </Button>
-          <Button
-            variant={viewMode === 'table' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('table')}
-            data-testid="button-view-table"
-          >
-            <Table2 className="h-4 w-4 mr-2" />
-            Table
-          </Button>
-          <Button
-            variant={viewMode === 'groups' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('groups')}
-            data-testid="button-view-groups"
-          >
-            <Layers className="h-4 w-4 mr-2" />
-            Groups
-          </Button>
-        </div>
-      )}
+      <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
+        {hasAccounts && (
+          <>
+            <Button
+              variant={viewMode === 'grid' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('grid')}
+              data-testid="button-view-grid"
+            >
+              <LayoutGrid className="h-4 w-4 mr-2" />
+              Grid
+            </Button>
+            <Button
+              variant={viewMode === 'list' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('list')}
+              data-testid="button-view-list"
+            >
+              <List className="h-4 w-4 mr-2" />
+              List
+            </Button>
+            <Button
+              variant={viewMode === 'table' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('table')}
+              data-testid="button-view-table"
+            >
+              <Table2 className="h-4 w-4 mr-2" />
+              Table
+            </Button>
+          </>
+        )}
+        <Button
+          variant={viewMode === 'groups' ? 'default' : 'ghost'}
+          size="sm"
+          onClick={() => setViewMode('groups')}
+          data-testid="button-view-groups"
+        >
+          <Layers className="h-4 w-4 mr-2" />
+          Groups
+        </Button>
+      </div>
 
-      {hasAccounts ? (
+      {viewMode === 'groups' ? (
+        <AccountGroupsView
+          accounts={accounts}
+          onConnect={handleConnect}
+          onDisconnect={handleDisconnectClick}
+        />
+      ) : hasAccounts ? (
         <>
           {viewMode === 'grid' && (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -281,14 +289,6 @@ export default function Accounts() {
                 );
               })}
             </div>
-          )}
-
-          {viewMode === 'groups' && (
-            <AccountGroupsView
-              accounts={accounts}
-              onConnect={handleConnect}
-              onDisconnect={handleDisconnectClick}
-            />
           )}
 
           {viewMode === 'list' && (
