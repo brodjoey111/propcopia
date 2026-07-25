@@ -46,6 +46,8 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>('credentials');
   const [platform, setPlatform] = useState<"tradovate" | "tradeify" | "rithmic">("tradovate");
+  const [rithmicSystemName, setRithmicSystemName] = useState("Rithmic Test");
+  const [rithmicEnvironment, setRithmicEnvironment] = useState<"test" | "live">("test");
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isAddingAccounts, setIsAddingAccounts] = useState(false);
   const [fetchedAccounts, setFetchedAccounts] = useState<TradingAccount[]>([]);
@@ -66,16 +68,28 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
     setIsAuthenticating(true);
 
     try {
-      const endpoint = platform === 'tradeify' ? '/api/tradeify/test-connection' : '/api/tradovate/test-connection';
-      const payload = platform === 'tradeify' 
-        ? { username: formData.username, apiKey: formData.apiKey }
-        : {
-            username: formData.username,
-            password: formData.password,
-            cid: formData.cid || undefined,
-            secret: formData.secret || undefined,
-            environment: formData.environment,
-          };
+      const endpoint =
+        platform === 'tradeify' ? '/api/tradeify/test-connection' :
+        platform === 'rithmic'  ? '/api/rithmic/test-connection'  :
+                                   '/api/tradovate/test-connection';
+
+      const payload =
+        platform === 'tradeify'
+          ? { username: formData.username, apiKey: formData.apiKey }
+          : platform === 'rithmic'
+          ? {
+              username: formData.username,
+              password: formData.password,
+              systemName: rithmicSystemName,
+              environment: rithmicEnvironment,
+            }
+          : {
+              username: formData.username,
+              password: formData.password,
+              cid: formData.cid || undefined,
+              secret: formData.secret || undefined,
+              environment: formData.environment,
+            };
 
       const res = await apiRequest('POST', endpoint, payload);
       const response = await res.json();
@@ -90,7 +104,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
       } else {
         toast({
           title: "Connection Failed",
-          description: response.message || `Unable to connect to ${platform === 'tradeify' ? 'Tradeify' : 'Tradovate'}`,
+          description: response.message || `Unable to connect to ${platform === 'tradeify' ? 'Tradeify' : platform === 'rithmic' ? 'Rithmic' : 'Tradovate'}`,
           variant: "destructive",
         });
       }
@@ -137,23 +151,32 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
         if (account && onAdd) {
           const baseData = {
             name: account.name,
-            platform: platform === 'tradeify' ? 'Tradeify' : 'Tradovate',
+            platform: platform === 'tradeify' ? 'Tradeify' : platform === 'rithmic' ? 'Rithmic' : 'Tradovate',
             accountType: accountRoles.get(accountId) || 'follower',
           };
-          
-          const platformData = platform === 'tradeify'
-            ? {
-                ...baseData,
-                tradeifyUsername: formData.username,
-                tradeifyAccountId: String(account.id),
-                tradeifyApiKey: formData.apiKey,
-              }
-            : {
-                ...baseData,
-                tradovateAccountId: String(account.id),
-                tradovateUsername: formData.username,
-                tradovateEnvironment: formData.environment,
-              };
+
+          const platformData =
+            platform === 'tradeify'
+              ? {
+                  ...baseData,
+                  tradeifyUsername: formData.username,
+                  tradeifyAccountId: String(account.id),
+                  tradeifyApiKey: formData.apiKey,
+                }
+              : platform === 'rithmic'
+              ? {
+                  ...baseData,
+                  rithmicUsername: formData.username,
+                  rithmicAccountId: String(account.id),
+                  rithmicPassword: formData.password,
+                  rithmicEnvironment: rithmicEnvironment,
+                }
+              : {
+                  ...baseData,
+                  tradovateAccountId: String(account.id),
+                  tradovateUsername: formData.username,
+                  tradovateEnvironment: formData.environment,
+                };
           
           await onAdd(platformData);
         }
@@ -192,6 +215,8 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
       apiKey: "",
       environment: "demo",
     });
+    setRithmicSystemName("Rithmic Test");
+    setRithmicEnvironment("test");
   };
 
   return (
@@ -224,7 +249,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
               <Label htmlFor="platform">Trading Platform</Label>
               <Select
                 value={platform}
-                onValueChange={(value: 'tradovate' | 'tradeify') => setPlatform(value)}
+                onValueChange={(value: 'tradovate' | 'tradeify' | 'rithmic') => setPlatform(value)}
               >
                 <SelectTrigger id="platform" data-testid="select-platform">
                   <SelectValue />
@@ -232,6 +257,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
                 <SelectContent>
                   <SelectItem value="tradovate">Tradovate</SelectItem>
                   <SelectItem value="tradeify">Tradeify (ProjectX)</SelectItem>
+                  <SelectItem value="rithmic">Rithmic</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -241,7 +267,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
               <Input
                 id="username"
                 type="text"
-                placeholder={`Your ${platform === 'tradeify' ? 'Tradeify' : 'Tradovate'} username`}
+                placeholder={`Your ${platform === 'tradeify' ? 'Tradeify' : platform === 'rithmic' ? 'Rithmic' : 'Tradovate'} username`}
                 value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                 data-testid="input-username"
@@ -305,6 +331,59 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
                     </SelectContent>
                   </Select>
                 </div>
+              </>
+            ) : platform === 'rithmic' ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="rithmic-password">Password</Label>
+                  <Input
+                    id="rithmic-password"
+                    type="password"
+                    placeholder="Your Rithmic account password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    data-testid="input-password"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="rithmic-system">System Name</Label>
+                  <Input
+                    id="rithmic-system"
+                    type="text"
+                    placeholder="e.g. Rithmic Test"
+                    value={rithmicSystemName}
+                    onChange={(e) => setRithmicSystemName(e.target.value)}
+                    data-testid="input-rithmic-system"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The system name assigned to your account by your broker (e.g. "Rithmic Test", "Rithmic 01").
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="rithmic-env">Environment</Label>
+                  <Select
+                    value={rithmicEnvironment}
+                    onValueChange={(value: 'test' | 'live') => setRithmicEnvironment(value)}
+                  >
+                    <SelectTrigger id="rithmic-env" data-testid="select-rithmic-env">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="test">Test / Paper Trading</SelectItem>
+                      <SelectItem value="live">Live</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Rithmic uses the native R|Protocol over WebSocket. Contact your broker or{' '}
+                  <a href="mailto:rapi@rithmic.com" className="text-primary hover:underline">rapi@rithmic.com</a>{' '}
+                  for API access credentials.
+                </p>
               </>
             ) : (
               <div className="space-y-2">

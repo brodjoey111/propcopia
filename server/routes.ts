@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
 import { TradovateAPI } from "./tradovate-api";
 import { TradeifyAPI } from "./tradeify-api";
+import { RithmicAPI } from "./rithmic-api";
 import { storage } from "./storage";
 import { db } from "./db";
 import bcrypt from "bcrypt";
@@ -15,6 +16,7 @@ import { tradeLogger } from "./trade-logger";
 
 const tradovateInstances = new Map<string, TradovateAPI>();
 const tradeifyInstances = new Map<string, TradeifyAPI>();
+const rithmicInstances = new Map<string, RithmicAPI>();
 const tradeCopyEngines = new Map<string, TradeCopyEngine>();
 
 const openai = new OpenAI({
@@ -298,6 +300,57 @@ export function registerRoutes(app: Express): Server {
       });
     } catch (error) {
       console.error('Tradeify connection error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.post("/api/rithmic/test-connection", async (req, res) => {
+    try {
+      const { username, password, systemName, environment } = req.body;
+
+      if (!username || !password) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing required credentials: username and password are required to connect to Rithmic",
+        });
+      }
+
+      const rithmicAPI = new RithmicAPI({
+        username,
+        password,
+        systemName: systemName || 'Rithmic Test',
+        environment: environment || 'test',
+      });
+
+      const connectionTest = await rithmicAPI.testConnection();
+
+      if (connectionTest.success) {
+        rithmicInstances.set(username, rithmicAPI);
+
+        const normalizedAccounts = (connectionTest.data ?? []).map((account: any) => ({
+          id: String(account.id),
+          name: account.name,
+          accountType: account.accountType || 'futures',
+          balance: account.balance || 0,
+          active: account.active !== false,
+        }));
+
+        return res.json({
+          success: true,
+          message: connectionTest.message,
+          accounts: normalizedAccounts,
+        });
+      }
+
+      return res.json({
+        success: false,
+        message: connectionTest.message || 'Connection test failed',
+      });
+    } catch (error) {
+      console.error('Rithmic connection error:', error);
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Unknown error occurred',

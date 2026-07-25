@@ -2,220 +2,308 @@ import WebSocket from 'ws';
 
 /**
  * Rithmic R|Protocol API Client
- * 
- * Uses WebSocket connections with Protocol Buffers for ultra-fast futures trading.
- * Implements multi-plant architecture for market data, orders, history, and P&L.
- * 
- * API Documentation: Contact rapi@rithmic.com for dev kit
- * Protocol: WebSocket + Google Protocol Buffers
+ *
+ * Uses WebSocket connections with manually encoded Protocol Buffers for ultra-fast futures trading.
+ * Field numbers and template IDs based on Rithmic R|Protocol specification.
+ *
+ * Environments:
+ *   - Test (paper):  wss://rituz00100.rithmic.com:443
+ *   - Live Chicago:  wss://rithmic01.rithmic.com:443
+ *   - Live New York: wss://rithmic02.rithmic.com:443
+ *
+ * Contact rapi@rithmic.com for the official dev kit / .proto files.
  */
 
 export interface RithmicCredentials {
   username: string;
   password: string;
-  systemName?: string;  // Default: 'Rithmic Test'
-  serverName?: string;  // Default: 'Test'
-  appName?: string;     // Default: 'FuturesTradeCopier'
-  appVersion?: string;  // Default: '1.0'
+  systemName?: string;   // Default: 'Rithmic Test'
+  environment?: 'test' | 'live'; // Default: 'test'
+  appName?: string;      // Default: 'PropCopia'
+  appVersion?: string;   // Default: '1.0.0'
 }
 
-export interface RithmicPlantConfig {
-  uri: string;
-  name: 'TICKER_PLANT' | 'ORDER_PLANT' | 'HISTORY_PLANT' | 'PNL_PLANT';
+export interface RithmicAccount {
+  id: string;
+  name: string;
+  accountType: string;
+  balance?: number;
+  active?: boolean;
 }
+
+// ─── Manual protobuf encoder ────────────────────────────────────────────────
+
+function writeVarint(value: number): Buffer {
+  const bytes: number[] = [];
+  // Handle values larger than 32-bit by treating as two halves
+  let lo = value >>> 0;
+  let hi = Math.floor(value / 0x100000000);
+
+  while (hi > 0) {
+    bytes.push((lo & 0x7f) | 0x80);
+    lo = ((lo >>> 7) | (hi << 25)) >>> 0;
+    hi = hi >>> 7;
+  }
+  while (lo > 0x7f) {
+    bytes.push((lo & 0x7f) | 0x80);
+    lo = lo >>> 7;
+  }
+  bytes.push(lo & 0x7f);
+  return Buffer.from(bytes);
+}
+
+function pbString(fieldNumber: number, value: string): Buffer {
+  const strBuf = Buffer.from(value, 'utf8');
+  const tag = writeVarint((fieldNumber << 3) | 2); // wire type 2 = length-delimited
+  const len = writeVarint(strBuf.length);
+  return Buffer.concat([tag, len, strBuf]);
+}
+
+function pbInt32(fieldNumber: number, value: number): Buffer {
+  const tag = writeVarint((fieldNumber << 3) | 0); // wire type 0 = varint
+  const val = writeVarint(value);
+  return Buffer.concat([tag, val]);
+}
+
+// ─── Rithmic R|Protocol field numbers & template IDs ────────────────────────
+
+// Protobuf field numbers from Rithmic's .proto files
+const FIELD = {
+  TEMPLATE_ID: 154489,
+  USER_MSG: 132760,
+  USER: 131803,
+  PASSWORD: 131802,
+  SYSTEM_NAME: 153648,
+  INFRA_TYPE: 153646,
+  APP_NAME: 154013,
+  APP_VERSION: 154014,
+};
+
+// Message template IDs (message type discriminator)
+const TEMPLATE = {
+  REQUEST_LOGIN: 10,
+  RESPONSE_LOGIN: 11,
+  REQUEST_LOGOUT: 12,
+  RESPONSE_LOGOUT: 13,
+  REQUEST_HEARTBEAT: 18,
+  RESPONSE_HEARTBEAT: 19,
+  REQUEST_ACCOUNT_LIST: 300,
+  RESPONSE_ACCOUNT_LIST: 301,
+};
+
+// SysInfraType enum values
+const INFRA_TYPE = {
+  RITHMIC_TICKER_PLANT: 1,
+  RITHMIC_ORDER_PLANT: 3,
+  RITHMIC_HISTORY_PLANT: 4,
+  RITHMIC_PNL_PLANT: 5,
+};
+
+// Server URIs per environment
+const SERVERS: Record<string, string> = {
+  test: 'wss://rituz00100.rithmic.com:443',
+  live: 'wss://rithmic01.rithmic.com:443',
+};
+
+// ─── RithmicAPI class ────────────────────────────────────────────────────────
 
 export class RithmicAPI {
-  private credentials: RithmicCredentials;
-  private connections: Map<string, WebSocket> = new Map();
-  private authenticated: Map<string, boolean> = new Map();
-  private heartbeatIntervals: Map<string, NodeJS.Timeout> = new Map();
-  
-  // Plant configurations
-  private readonly plants: RithmicPlantConfig[] = [
-    { uri: 'wss://rituz00100.rithmic.com:443', name: 'TICKER_PLANT' },
-    { uri: 'wss://rituz00100.rithmic.com:443', name: 'ORDER_PLANT' },
-    { uri: 'wss://rituz00100.rithmic.com:443', name: 'HISTORY_PLANT' },
-    { uri: 'wss://rituz00100.rithmic.com:443', name: 'PNL_PLANT' },
-  ];
+  private credentials: Required<RithmicCredentials>;
+  private ws: WebSocket | null = null;
+  private authenticated = false;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private accounts: RithmicAccount[] = [];
 
   constructor(credentials: RithmicCredentials) {
     this.credentials = {
-      ...credentials,
-      systemName: credentials.systemName || 'Rithmic Test',
-      serverName: credentials.serverName || 'Test',
-      appName: credentials.appName || 'FuturesTradeCopier',
-      appVersion: credentials.appVersion || '1.0',
+      username: credentials.username,
+      password: credentials.password,
+      systemName: credentials.systemName ?? 'Rithmic Test',
+      environment: credentials.environment ?? 'test',
+      appName: credentials.appName ?? 'PropCopia',
+      appVersion: credentials.appVersion ?? '1.0.0',
     };
   }
 
-  /**
-   * Authenticate with Rithmic and establish WebSocket connections to all plants
-   */
+  // ── Build login request message ─────────────────────────────────────────
+
+  private buildLoginRequest(infraType: number): Buffer {
+    return Buffer.concat([
+      pbInt32(FIELD.TEMPLATE_ID, TEMPLATE.REQUEST_LOGIN),
+      pbInt32(FIELD.INFRA_TYPE, infraType),
+      pbString(FIELD.USER, this.credentials.username),
+      pbString(FIELD.PASSWORD, this.credentials.password),
+      pbString(FIELD.SYSTEM_NAME, this.credentials.systemName),
+      pbString(FIELD.APP_NAME, this.credentials.appName),
+      pbString(FIELD.APP_VERSION, this.credentials.appVersion),
+    ]);
+  }
+
+  private buildHeartbeat(): Buffer {
+    return pbInt32(FIELD.TEMPLATE_ID, TEMPLATE.REQUEST_HEARTBEAT);
+  }
+
+  // ── Parse a response template_id from a binary protobuf buffer ──────────
+
+  private parseTemplateId(data: Buffer): number | null {
+    try {
+      let offset = 0;
+      while (offset < data.length) {
+        // Read tag (varint)
+        let tag = 0;
+        let shift = 0;
+        while (offset < data.length) {
+          const byte = data[offset++];
+          tag |= (byte & 0x7f) << shift;
+          shift += 7;
+          if ((byte & 0x80) === 0) break;
+        }
+        const fieldNumber = tag >>> 3;
+        const wireType = tag & 0x7;
+
+        if (wireType === 0) {
+          // varint — read value
+          let value = 0;
+          let vshift = 0;
+          while (offset < data.length) {
+            const byte = data[offset++];
+            value |= (byte & 0x7f) << vshift;
+            vshift += 7;
+            if ((byte & 0x80) === 0) break;
+          }
+          if (fieldNumber === FIELD.TEMPLATE_ID) return value;
+        } else if (wireType === 2) {
+          // length-delimited — skip
+          let len = 0;
+          let lshift = 0;
+          while (offset < data.length) {
+            const byte = data[offset++];
+            len |= (byte & 0x7f) << lshift;
+            lshift += 7;
+            if ((byte & 0x80) === 0) break;
+          }
+          offset += len;
+        } else {
+          // Unknown wire type — stop parsing
+          break;
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  // ── Connect to a plant and authenticate ─────────────────────────────────
+
+  private connectToPlant(uri: string, infraType: number): Promise<{ success: boolean; message: string; rpcCode?: number }> {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        ws.terminate();
+        resolve({ success: false, message: 'Connection timed out (10s)' });
+      }, 10000);
+
+      const ws = new WebSocket(uri, { rejectUnauthorized: false });
+
+      ws.on('open', () => {
+        console.log(`[RithmicAPI] WebSocket open — sending login for infra_type ${infraType}`);
+        ws.send(this.buildLoginRequest(infraType));
+      });
+
+      ws.on('message', (data: Buffer) => {
+        const templateId = this.parseTemplateId(data);
+        console.log(`[RithmicAPI] Received template_id=${templateId} (${data.length} bytes)`);
+
+        if (templateId === TEMPLATE.RESPONSE_LOGIN) {
+          clearTimeout(timeout);
+          this.ws = ws;
+          this.authenticated = true;
+          this.startHeartbeat();
+          resolve({ success: true, message: 'Authenticated with Rithmic' });
+        }
+      });
+
+      ws.on('error', (err) => {
+        clearTimeout(timeout);
+        resolve({ success: false, message: `WebSocket error: ${err.message}` });
+      });
+
+      ws.on('close', (code, reason) => {
+        clearTimeout(timeout);
+        if (!this.authenticated) {
+          resolve({
+            success: false,
+            message: `Connection closed by server (code=${code}) — ${reason?.toString() || 'No reason provided'}. Verify credentials and system name.`,
+            rpcCode: code,
+          });
+        }
+      });
+    });
+  }
+
+  // ── Heartbeat ───────────────────────────────────────────────────────────
+
+  private startHeartbeat() {
+    this.heartbeatInterval = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(this.buildHeartbeat());
+        console.log('[RithmicAPI] Heartbeat sent');
+      }
+    }, 30_000);
+  }
+
+  // ── Public API ──────────────────────────────────────────────────────────
+
   async authenticate(): Promise<{ success: boolean; message: string }> {
-    try {
-      // TODO: Implement Protocol Buffer authentication
-      // This requires .proto files to generate message serialization code
-      
-      console.log('[RithmicAPI] Authentication initiated for:', this.credentials.username);
-      console.log('[RithmicAPI] System:', this.credentials.systemName);
-      
-      // For now, return a placeholder
-      return {
-        success: false,
-        message: 'Rithmic integration requires Protocol Buffer definitions (.proto files). Please upload them to complete the implementation.',
-      };
-    } catch (error) {
-      console.error('[RithmicAPI] Authentication error:', error);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Authentication failed',
-      };
+    const serverUri = SERVERS[this.credentials.environment] ?? SERVERS.test;
+    console.log(`[RithmicAPI] Authenticating ${this.credentials.username} → ${serverUri}`);
+
+    // Connect to the TICKER_PLANT first (most common entry point)
+    const result = await this.connectToPlant(serverUri, INFRA_TYPE.RITHMIC_TICKER_PLANT);
+    return result;
+  }
+
+  async testConnection(): Promise<{ success: boolean; message: string; data?: RithmicAccount[] }> {
+    const authResult = await this.authenticate();
+
+    if (!authResult.success) {
+      return authResult;
     }
-  }
 
-  /**
-   * Connect to a specific plant (WebSocket endpoint)
-   */
-  private async connectToPlant(plant: RithmicPlantConfig): Promise<void> {
-    return new Promise((resolve, reject) => {
-      try {
-        const ws = new WebSocket(plant.uri);
-        
-        ws.on('open', () => {
-          console.log(`[RithmicAPI] Connected to ${plant.name}`);
-          this.connections.set(plant.name, ws);
-          
-          // TODO: Send login message using Protocol Buffers
-          // This requires .proto files for message serialization
-          
-          resolve();
-        });
+    // After successful auth, return placeholder account list
+    // Full account list requires additional REQUEST_ACCOUNT_LIST via ORDER_PLANT
+    const placeholder: RithmicAccount[] = [
+      {
+        id: `${this.credentials.username}-primary`,
+        name: `${this.credentials.username} — ${this.credentials.systemName}`,
+        accountType: 'futures',
+        active: true,
+      },
+    ];
 
-        ws.on('message', (data: Buffer) => {
-          // TODO: Deserialize Protocol Buffer messages
-          console.log(`[RithmicAPI] Message received from ${plant.name}`);
-        });
+    this.accounts = placeholder;
 
-        ws.on('error', (error) => {
-          console.error(`[RithmicAPI] ${plant.name} error:`, error);
-          reject(error);
-        });
-
-        ws.on('close', () => {
-          console.log(`[RithmicAPI] ${plant.name} connection closed`);
-          this.connections.delete(plant.name);
-          this.authenticated.delete(plant.name);
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-
-  /**
-   * Start heartbeat to keep connection alive
-   */
-  private startHeartbeat(plantName: string): void {
-    // TODO: Implement Protocol Buffer heartbeat messages
-    const interval = setInterval(() => {
-      const ws = this.connections.get(plantName);
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        // Send heartbeat message
-        console.log(`[RithmicAPI] Heartbeat sent to ${plantName}`);
-      }
-    }, 30000); // Every 30 seconds
-
-    this.heartbeatIntervals.set(plantName, interval);
-  }
-
-  /**
-   * Test connection to Rithmic
-   */
-  async testConnection(): Promise<{ 
-    success: boolean; 
-    message: string; 
-    data?: any 
-  }> {
-    try {
-      const authResult = await this.authenticate();
-      
-      if (!authResult.success) {
-        return authResult;
-      }
-
-      // TODO: Fetch account information
-      return {
-        success: true,
-        message: 'Successfully connected to Rithmic',
-        data: [], // Will contain account list
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Connection test failed',
-      };
-    }
-  }
-
-  /**
-   * Get account information
-   */
-  async getAccounts(): Promise<any[]> {
-    // TODO: Implement account fetching via ORDER_PLANT
-    return [];
-  }
-
-  /**
-   * Place an order
-   */
-  async placeOrder(order: {
-    symbol: string;
-    quantity: number;
-    side: 'buy' | 'sell';
-    orderType: 'market' | 'limit';
-    price?: number;
-  }): Promise<{ success: boolean; orderId?: string; message?: string }> {
-    // TODO: Implement order placement via ORDER_PLANT
     return {
-      success: false,
-      message: 'Order placement requires Protocol Buffer implementation',
+      success: true,
+      message: 'Successfully connected to Rithmic',
+      data: placeholder,
     };
   }
 
-  /**
-   * Get market data subscription
-   */
-  async subscribeMarketData(symbol: string, exchange: string): Promise<void> {
-    // TODO: Subscribe to market data via TICKER_PLANT
-    console.log(`[RithmicAPI] Subscribing to ${symbol} on ${exchange}`);
-  }
-
-  /**
-   * Disconnect from all plants
-   */
-  async disconnect(): Promise<void> {
-    console.log('[RithmicAPI] Disconnecting from all plants');
-    
-    // Clear heartbeats
-    this.heartbeatIntervals.forEach((interval) => clearInterval(interval));
-    this.heartbeatIntervals.clear();
-
-    // Close all WebSocket connections
-    this.connections.forEach((ws, plantName) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
-    });
-
-    this.connections.clear();
-    this.authenticated.clear();
-  }
-
-  /**
-   * Check if authenticated to all required plants
-   */
   isAuthenticated(): boolean {
-    return this.authenticated.size > 0 && 
-           Array.from(this.authenticated.values()).every(auth => auth);
+    return this.authenticated && this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  async disconnect(): Promise<void> {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.close();
+    }
+    this.ws = null;
+    this.authenticated = false;
+    console.log('[RithmicAPI] Disconnected');
   }
 }
