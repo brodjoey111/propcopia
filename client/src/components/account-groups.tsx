@@ -426,34 +426,32 @@ function GroupLane({
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
                 {accounts.length}
               </Badge>
-              {!isUngrouped && (
-                <div className="flex items-center gap-0.5 shrink-0">
+              <div className="flex items-center gap-0.5 shrink-0">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setEditName(group.name);
+                    setEditing(true);
+                    setShowPalette(false);
+                  }}
+                  title="Rename group"
+                >
+                  <Pencil className="h-3 w-3" />
+                </Button>
+                {!isUngrouped && !isDemo && (
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground"
-                    onClick={() => {
-                      setEditName(group.name);
-                      setEditing(true);
-                      setShowPalette(false);
-                    }}
-                    title="Rename group"
+                    className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => onDelete(group.id)}
+                    title="Delete group"
                   >
-                    <Pencil className="h-3 w-3" />
+                    <Trash2 className="h-3 w-3" />
                   </Button>
-                  {!isDemo && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => onDelete(group.id)}
-                      title="Delete group"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
             </>
           )}
         </div>
@@ -557,6 +555,12 @@ export function AccountGroupsView({
   const [groups, setGroups] = useState<TradingGroup[]>(loadGroups);
   const [assignments, setAssignments] = useState<Record<string, string>>(loadAssignments);
 
+  // ── Ungrouped lane name (persisted for real, ephemeral for demo) ─────
+  const [ungroupedName, setUngroupedName] = useState(() => {
+    try { return localStorage.getItem("ungrouped-name-v1") || "Ungrouped"; } catch { return "Ungrouped"; }
+  });
+  const [demoUngroupedName, setDemoUngroupedName] = useState("Ungrouped");
+
   // ── Demo state (ephemeral — resets on page reload intentionally) ───────
   const [demoGroups, setDemoGroups] = useState<TradingGroup[]>([...DEMO_GROUPS]);
   const [demoAssignments, setDemoAssignments] = useState<Record<string, string>>(DEMO_ASSIGNMENTS);
@@ -600,6 +604,12 @@ export function AccountGroupsView({
   };
 
   const renameGroup = (id: string, name: string) => {
+    if (id === UNGROUPED_ID) {
+      if (isDemo) { setDemoUngroupedName(name); return; }
+      setUngroupedName(name);
+      try { localStorage.setItem("ungrouped-name-v1", name); } catch {}
+      return;
+    }
     if (isDemo) { setDemoGroups((prev) => prev.map((g) => (g.id === id ? { ...g, name } : g))); return; }
     persistGroups(groups.map((g) => (g.id === id ? { ...g, name } : g)));
   };
@@ -649,7 +659,7 @@ export function AccountGroupsView({
   const activeAccount = activeId ? displayAccounts.find((a) => a.id === activeId) : null;
 
   const lanes = [
-    { id: UNGROUPED_ID, name: "Ungrouped", color: "#94a3b8", isUngrouped: true as const },
+    { id: UNGROUPED_ID, name: isDemo ? demoUngroupedName : ungroupedName, color: "#94a3b8", isUngrouped: true as const },
     ...displayGroups.map((g) => ({ ...g, isUngrouped: false as const })),
   ];
 
