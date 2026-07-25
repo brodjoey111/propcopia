@@ -135,8 +135,8 @@ const DEMO_ACCOUNTS: Account[] = [
 ];
 
 const DEMO_GROUPS: TradingGroup[] = [
-  { id: "demo-group-1", name: "Scalping Desk", color: "#3b82f6", isActive: true,  masterId: "demo-1" },
-  { id: "demo-group-2", name: "Swing Trades",  color: "#22c55e", isActive: false, masterId: "demo-4" },
+  { id: "demo-group-1", name: "Scalping Desk", color: "#3b82f6", isActive: true,  masterId: "demo-1", disabledAccountIds: [] },
+  { id: "demo-group-2", name: "Swing Trades",  color: "#22c55e", isActive: false, masterId: "demo-4", disabledAccountIds: [] },
 ];
 
 // all demo accounts are pre-placed so both groups have a master + followers
@@ -157,6 +157,7 @@ export interface TradingGroup {
   color: string;
   isActive: boolean;
   masterId: string | null;
+  disabledAccountIds: string[];
 }
 
 const UNGROUPED_ID = "__ungrouped__";
@@ -180,6 +181,7 @@ function loadGroups(): TradingGroup[] {
     return (JSON.parse(raw) as any[]).map((g) => ({
       isActive: true,
       masterId: null,
+      disabledAccountIds: [],
       ...g,
     }));
   } catch {
@@ -211,8 +213,11 @@ interface DraggableCardProps {
   isDragOverlay?: boolean;
   isDemo?: boolean;
   isMaster?: boolean;
+  isStandbyMaster?: boolean;
+  isDisabled?: boolean;
   onConnect?: () => void;
   onDisconnect?: () => void;
+  onToggleEnabled?: () => void;
 }
 
 function DraggableCard({
@@ -220,8 +225,11 @@ function DraggableCard({
   isDragOverlay,
   isDemo,
   isMaster,
+  isStandbyMaster,
+  isDisabled,
   onConnect,
   onDisconnect,
+  onToggleEnabled,
 }: DraggableCardProps) {
   const {
     attributes,
@@ -245,12 +253,14 @@ function DraggableCard({
       ref={setNodeRef}
       style={style}
       {...attributes}
-      className={`relative transition-opacity ${isDragging ? "opacity-30" : "opacity-100"}`}
+      className={`relative transition-opacity ${isDragging ? "opacity-30" : isDisabled ? "opacity-50" : "opacity-100"}`}
     >
       <Card
         className={`p-3 select-none ${
           isDragOverlay
             ? "rotate-2 shadow-2xl ring-2 ring-primary/60 scale-105"
+            : isDisabled
+            ? "border-red-500/20 bg-muted/40"
             : "hover:shadow-md transition-shadow"
         }`}
       >
@@ -268,12 +278,17 @@ function DraggableCard({
           <div className="flex-1 min-w-0">
             {/* Header row */}
             <div className="flex items-center gap-1.5 flex-wrap">
-              {isMaster && (
-                <span title="Group master" className="shrink-0">
+              {isMaster && !isDisabled && (
+                <span title="Active master — followers copy this account" className="shrink-0">
                   <Crown className="h-3 w-3 text-amber-500" />
                 </span>
               )}
-              <span className="font-semibold text-sm leading-tight truncate max-w-[120px]">
+              {isStandbyMaster && !isDisabled && (
+                <span title="Standby master — will auto-promote if active master is paused" className="shrink-0">
+                  <Crown className="h-3 w-3 text-amber-300/60" />
+                </span>
+              )}
+              <span className="font-semibold text-sm leading-tight truncate max-w-[100px]">
                 {account.name}
               </span>
               <Badge
@@ -282,6 +297,30 @@ function DraggableCard({
               >
                 {account.accountType}
               </Badge>
+              {isStandbyMaster && !isDisabled && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0 border-amber-500/40 text-amber-600 dark:text-amber-400">
+                  Standby
+                </Badge>
+              )}
+              {isDisabled && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0 border-red-500/40 text-red-500">
+                  Paused
+                </Badge>
+              )}
+              {/* Per-account toggle */}
+              {!isDragOverlay && onToggleEnabled && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onToggleEnabled(); }}
+                  title={isDisabled ? "Re-enable this account" : "Pause this account"}
+                  className={`ml-auto shrink-0 rounded p-0.5 transition-colors ${
+                    isDisabled
+                      ? "text-red-500 hover:text-green-500"
+                      : "text-muted-foreground/30 hover:text-red-500"
+                  }`}
+                >
+                  <Power className="h-3 w-3" />
+                </button>
+              )}
             </div>
 
             <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
@@ -350,7 +389,7 @@ function DraggableCard({
 // ─── Droppable group lane ─────────────────────────────────────────────────────
 
 interface GroupLaneProps {
-  group: { id: string; name: string; color: string; isActive?: boolean; masterId?: string | null };
+  group: { id: string; name: string; color: string; isActive?: boolean; masterId?: string | null; disabledAccountIds?: string[] };
   accounts: Account[];
   isUngrouped?: boolean;
   isDemo?: boolean;
@@ -360,6 +399,7 @@ interface GroupLaneProps {
   onColorChange: (id: string, color: string) => void;
   onToggle: (id: string) => void;
   onSetMaster: (groupId: string, masterId: string | null) => void;
+  onToggleAccount: (groupId: string, accountId: string) => void;
   onConnect: (accountId: string) => void;
   onDisconnect: (accountId: string, name: string) => void;
 }
@@ -375,6 +415,7 @@ function GroupLane({
   onColorChange,
   onToggle,
   onSetMaster,
+  onToggleAccount,
   onConnect,
   onDisconnect,
 }: GroupLaneProps) {
@@ -389,13 +430,16 @@ function GroupLane({
     setEditing(false);
   };
 
-  const accentColor  = isUngrouped ? "#94a3b8" : group.color;
-  const isActive     = isUngrouped ? true : (group.isActive !== false);
-  const masterId     = group.masterId ?? null;
-  const masterAccounts  = accounts.filter((a) => a.accountType === "master");
+  const accentColor   = isUngrouped ? "#94a3b8" : group.color;
+  const isActive      = isUngrouped ? true : (group.isActive !== false);
+  const masterId      = group.masterId ?? null;
+  const disabledIds   = isUngrouped ? [] : (group.disabledAccountIds ?? []);
+  // effective master: the selected master, unless it's been paused
+  const effectiveMasterId = masterId && !disabledIds.includes(masterId) ? masterId : null;
+  const masterAccounts   = accounts.filter((a) => a.accountType === "master");
   const followerAccounts = accounts.filter((a) => a.accountType !== "master");
-  const masterAccount = accounts.find((a) => a.id === masterId);
-  const hasMasterWarning = !isUngrouped && !masterId && accounts.length > 0;
+  // warn if no usable (non-disabled) master is set and there are enabled accounts
+  const hasMasterWarning = !isUngrouped && !effectiveMasterId && accounts.some((a) => !disabledIds.includes(a.id));
 
   return (
     <div className={`flex flex-col w-[280px] shrink-0 transition-opacity duration-200 ${!isActive ? "opacity-55" : ""}`}>
@@ -473,19 +517,19 @@ function GroupLane({
         {/* ── Row 2: master selector ── */}
         {!isUngrouped && (
           <div className={`flex items-center gap-1.5 mt-1.5 pt-1.5 border-t ${hasMasterWarning ? "border-amber-500/30" : "border-white/10"}`}>
-            <Crown className={`h-3 w-3 shrink-0 ${hasMasterWarning ? "text-amber-500" : masterAccount ? "text-amber-500/70" : "text-muted-foreground/40"}`} />
+            <Crown className={`h-3 w-3 shrink-0 ${hasMasterWarning ? "text-amber-500" : effectiveMasterId ? "text-amber-500/70" : "text-muted-foreground/40"}`} />
             <select
               value={masterId || ""}
               onChange={(e) => onSetMaster(group.id, e.target.value || null)}
               className="flex-1 min-w-0 text-[11px] bg-transparent border-none outline-none cursor-pointer truncate appearance-none"
-              style={{ color: masterId ? "inherit" : hasMasterWarning ? "hsl(var(--muted-foreground))" : "hsl(var(--muted-foreground))" }}
+              style={{ color: masterId ? "inherit" : "hsl(var(--muted-foreground))" }}
             >
               <option value="">{hasMasterWarning ? "⚠ Set a master account" : "— no master —"}</option>
-              {masterAccounts.length > 0 && masterAccounts.map((a) => (
-                <option key={a.id} value={a.id}>★ {a.name}</option>
+              {masterAccounts.map((a) => (
+                <option key={a.id} value={a.id}>★ {a.name}{disabledIds.includes(a.id) ? " (paused)" : ""}</option>
               ))}
               {followerAccounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
+                <option key={a.id} value={a.id}>{a.name}{disabledIds.includes(a.id) ? " (paused)" : ""}</option>
               ))}
             </select>
           </div>
@@ -569,7 +613,10 @@ function GroupLane({
               key={account.id}
               account={account}
               isDemo={isDemo}
-              isMaster={account.id === masterId}
+              isMaster={account.id === effectiveMasterId}
+              isStandbyMaster={account.accountType === "master" && account.id !== effectiveMasterId && !disabledIds.includes(account.id)}
+              isDisabled={disabledIds.includes(account.id)}
+              onToggleEnabled={!isUngrouped ? () => onToggleAccount(group.id, account.id) : undefined}
               onConnect={() => onConnect(account.id)}
               onDisconnect={() => onDisconnect(account.id, account.name)}
             />
@@ -645,7 +692,7 @@ export function AccountGroupsView({
   const addGroup = () => {
     if (isDemo) return;
     const color = PALETTE[groups.length % PALETTE.length];
-    persistGroups([...groups, { id: `group-${Date.now()}`, name: `Group ${groups.length + 1}`, color, isActive: true, masterId: null }]);
+    persistGroups([...groups, { id: `group-${Date.now()}`, name: `Group ${groups.length + 1}`, color, isActive: true, masterId: null, disabledAccountIds: [] }]);
   };
 
   const renameGroup = (id: string, name: string) => {
@@ -680,6 +727,31 @@ export function AccountGroupsView({
   const setMaster = (groupId: string, masterId: string | null) => {
     if (isDemo) { setDemoGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, masterId } : g))); return; }
     persistGroups(groups.map((g) => (g.id === groupId ? { ...g, masterId } : g)));
+  };
+
+  const toggleAccountEnabled = (groupId: string, accountId: string) => {
+    const updateGroup = (g: TradingGroup): TradingGroup => {
+      if (g.id !== groupId) return g;
+      const isCurrentlyDisabled = (g.disabledAccountIds ?? []).includes(accountId);
+      if (isCurrentlyDisabled) {
+        // Re-enabling — just remove from disabled list
+        return { ...g, disabledAccountIds: (g.disabledAccountIds ?? []).filter((id) => id !== accountId) };
+      }
+      // Disabling — add to disabled list
+      const newDisabled = [...(g.disabledAccountIds ?? []), accountId];
+      // Auto-promote: if this was the active master, switch to next available enabled master
+      let newMasterId = g.masterId;
+      if (g.masterId === accountId) {
+        const groupAccts = getGroupAccounts(groupId);
+        const next = groupAccts.find(
+          (a) => a.accountType === "master" && a.id !== accountId && !newDisabled.includes(a.id),
+        );
+        newMasterId = next ? next.id : null;
+      }
+      return { ...g, disabledAccountIds: newDisabled, masterId: newMasterId };
+    };
+    if (isDemo) { setDemoGroups((prev) => prev.map(updateGroup)); return; }
+    persistGroups(groups.map(updateGroup));
   };
 
   // ── Drag events ────────────────────────────────────────────────────────
@@ -803,6 +875,7 @@ export function AccountGroupsView({
                   onColorChange={changeColor}
                   onToggle={toggleGroup}
                   onSetMaster={setMaster}
+                  onToggleAccount={toggleAccountEnabled}
                   onConnect={onConnect}
                   onDisconnect={onDisconnect}
                 />
