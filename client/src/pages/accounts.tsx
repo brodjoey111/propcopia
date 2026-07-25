@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Wallet, Settings, Loader2, LayoutGrid, List, Table2, Layers } from "lucide-react";
+import { Settings, Loader2, LayoutGrid, List, Table2, Layers } from "lucide-react";
 import type { Account } from "@shared/schema";
 
 type ViewMode = 'grid' | 'list' | 'table' | 'groups';
@@ -176,17 +176,17 @@ export default function Accounts() {
             Manage your master and follower trading accounts
           </p>
         </div>
-        {hasAccounts && (
-          <div className="flex gap-2">
+        <div className="flex gap-2">
+          {hasAccounts && (
             <GlobalRiskSettingsDialog
               positionScaling={globalSettings.positionScaling}
               maxContracts={globalSettings.maxContracts}
               blockedTickers={globalSettings.blockedTickers}
               onSave={handleGlobalSettingsUpdate}
             />
-            <AddAccountDialog onAdd={handleAddAccount} />
-          </div>
-        )}
+          )}
+          <AddAccountDialog onAdd={handleAddAccount} />
+        </div>
       </div>
 
       <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
@@ -232,13 +232,19 @@ export default function Accounts() {
         </Button>
       </div>
 
-      {viewMode === 'groups' ? (
+      {!hasAccounts ? (
         <AccountGroupsView
           accounts={accounts}
           onConnect={handleConnect}
           onDisconnect={handleDisconnectClick}
         />
-      ) : hasAccounts ? (
+      ) : viewMode === 'groups' ? (
+        <AccountGroupsView
+          accounts={accounts}
+          onConnect={handleConnect}
+          onDisconnect={handleDisconnectClick}
+        />
+      ) : (
         <>
           {viewMode === 'grid' && (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -488,15 +494,6 @@ export default function Accounts() {
             </div>
           )}
         </>
-      ) : (
-        <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-          <Wallet className="h-16 w-16 text-muted-foreground mb-4" />
-          <h3 className="text-xl font-semibold mb-2">No accounts connected</h3>
-          <p className="text-sm text-muted-foreground mb-6 max-w-md">
-            Connect your first trading account to start copying trades. You can add accounts from Tradovate and Tradify.
-          </p>
-          <AddAccountDialog onAdd={handleAddAccount} />
-        </div>
       )}
 
       {/* Disconnect Confirmation Alert */}
