@@ -846,7 +846,7 @@ export function AccountGroupsView({
             onClick={() => setSubView("kanban")}
           >
             <Layers className="h-4 w-4 mr-1.5" />
-            Groups
+            Board
           </Button>
           <Button
             variant={subView === "ungrouped" ? "default" : "ghost"}
