@@ -1510,10 +1510,23 @@ remind them that you provide platform assistance only, not financial advice.`;
               } else {
                 skipped.push(`${account.name} (Tradovate — session not active, reconnect to close positions)`);
               }
-            } else if (account.platform === 'Rithmic') {
-              skipped.push(`${account.name} (Rithmic — close positions manually on your broker platform)`);
+            } else if (account.platform === 'Rithmic' && account.rithmicUsername && account.rithmicAccountId) {
+              // Use existing live instance or create a fresh one from DB credentials
+              let api = rithmicInstances.get(account.rithmicUsername);
+              if (!api && account.rithmicPassword) {
+                api = new RithmicAPI({
+                  username: account.rithmicUsername,
+                  password: account.rithmicPassword,
+                  environment: (account.rithmicEnvironment as 'test' | 'live') ?? 'test',
+                });
+              }
+              if (api) {
+                const result = await api.closeAllPositions(account.rithmicAccountId);
+                closedPositions.push({ account: account.name, platform: 'Rithmic', ...result });
+              } else {
+                skipped.push(`${account.name} (Rithmic — no stored credentials, close manually)`);
+              }
             } else if (account.isConnected) {
-              // Any other connected broker — log for visibility
               skipped.push(`${account.name} (${account.platform} — automated close not yet supported, close manually)`);
             }
           } catch (e) {

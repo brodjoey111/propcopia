@@ -81,24 +81,14 @@ function ConfirmDialog({
           account. No new trades will be copied until you deactivate it.
         </p>
 
-        <div className="space-y-2 mb-5">
-          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3">
-            <div className="flex items-start gap-2">
-              <Zap className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
-              <p className="text-xs text-red-600 dark:text-red-400">
-                <strong>Immediately closes all open positions</strong> across every
-                connected prop firm and broker account using market orders.
-              </p>
-            </div>
-          </div>
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-              <p className="text-xs text-amber-600 dark:text-amber-400">
-                Rithmic accounts: trade copying halts instantly but you must
-                close open positions manually from your broker platform.
-              </p>
-            </div>
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 mb-5">
+          <div className="flex items-start gap-2">
+            <Zap className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+            <p className="text-xs text-red-600 dark:text-red-400">
+              <strong>Immediately closes all open positions</strong> across every
+              connected prop firm and broker account — Tradovate and Rithmic —
+              using market orders.
+            </p>
           </div>
         </div>
 

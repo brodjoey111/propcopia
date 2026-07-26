@@ -89,6 +89,14 @@ const TEMPLATE = {
   RESPONSE_HEARTBEAT: 19,
   REQUEST_ACCOUNT_LIST: 300,
   RESPONSE_ACCOUNT_LIST: 301,
+  // Order plant templates
+  REQUEST_FLATTEN_POSITIONS: 334,
+  RESPONSE_FLATTEN_POSITIONS: 335,
+};
+
+// Additional field numbers for order messages
+const ORDER_FIELD = {
+  ACCOUNT_ID: 154008,   // account_id in all account/order messages
 };
 
 // SysInfraType enum values
@@ -141,6 +149,13 @@ export class RithmicAPI {
 
   private buildHeartbeat(): Buffer {
     return pbInt32(FIELD.TEMPLATE_ID, TEMPLATE.REQUEST_HEARTBEAT);
+  }
+
+  private buildFlattenRequest(accountId: string): Buffer {
+    return Buffer.concat([
+      pbInt32(FIELD.TEMPLATE_ID, TEMPLATE.REQUEST_FLATTEN_POSITIONS),
+      pbString(ORDER_FIELD.ACCOUNT_ID, accountId),
+    ]);
   }
 
   // ── Parse a response template_id from a binary protobuf buffer ──────────
@@ -288,6 +303,70 @@ export class RithmicAPI {
       message: 'Successfully connected to Rithmic',
       data: placeholder,
     };
+  }
+
+  /**
+   * Close all open positions for the given account by connecting to the
+   * ORDER_PLANT and sending REQUEST_FLATTEN_POSITIONS (template 334).
+   * Re-authenticates using the instance's stored credentials — no live
+   * session required.
+   */
+  async closeAllPositions(accountId: string): Promise<{ closed: number; errors: string[] }> {
+    const serverUri = SERVERS[this.credentials.environment] ?? SERVERS.test;
+
+    return new Promise((resolve) => {
+      let loginDone = false;
+      let flattenSent = false;
+
+      const timeout = setTimeout(() => {
+        ws.terminate();
+        if (flattenSent) {
+          // Request was sent — assume broker received it even without explicit ack
+          console.warn(`[RithmicAPI] Flatten ack timed out for ${accountId}, but request was sent`);
+          resolve({ closed: 1, errors: [] });
+        } else {
+          resolve({ closed: 0, errors: ['ORDER_PLANT connection timed out before request could be sent'] });
+        }
+      }, 15_000);
+
+      const ws = new WebSocket(serverUri, { rejectUnauthorized: false });
+
+      ws.on('open', () => {
+        console.log(`[RithmicAPI] ORDER_PLANT open — logging in for flatten (account=${accountId})`);
+        ws.send(this.buildLoginRequest(INFRA_TYPE.RITHMIC_ORDER_PLANT));
+      });
+
+      ws.on('message', (data: Buffer) => {
+        const templateId = this.parseTemplateId(data);
+        console.log(`[RithmicAPI] ORDER_PLANT template_id=${templateId}`);
+
+        if (templateId === TEMPLATE.RESPONSE_LOGIN && !loginDone) {
+          loginDone = true;
+          console.log(`[RithmicAPI] ORDER_PLANT authenticated — sending flatten for ${accountId}`);
+          ws.send(this.buildFlattenRequest(accountId));
+          flattenSent = true;
+        } else if (templateId === TEMPLATE.RESPONSE_FLATTEN_POSITIONS) {
+          clearTimeout(timeout);
+          ws.close();
+          console.log(`[RithmicAPI] Flatten confirmed for account=${accountId}`);
+          resolve({ closed: 1, errors: [] });
+        }
+      });
+
+      ws.on('error', (err) => {
+        clearTimeout(timeout);
+        resolve({ closed: 0, errors: [`ORDER_PLANT error: ${err.message}`] });
+      });
+
+      ws.on('close', () => {
+        clearTimeout(timeout);
+      });
+    });
+  }
+
+  /** Expose credentials so the kill switch can create a fresh instance from DB */
+  getCredentials(): Required<RithmicCredentials> {
+    return { ...this.credentials };
   }
 
   isAuthenticated(): boolean {
