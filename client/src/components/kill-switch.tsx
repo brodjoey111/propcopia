@@ -86,8 +86,8 @@ function ConfirmDialog({
             <div className="flex items-start gap-2">
               <Zap className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
               <p className="text-xs text-red-600 dark:text-red-400">
-                <strong>Will immediately close all open positions</strong> on connected
-                Tradovate and Tradeify accounts using market orders.
+                <strong>Immediately closes all open positions</strong> across every
+                connected prop firm and broker account using market orders.
               </p>
             </div>
           </div>
@@ -95,8 +95,8 @@ function ConfirmDialog({
             <div className="flex items-start gap-2">
               <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
               <p className="text-xs text-amber-600 dark:text-amber-400">
-                Rithmic accounts: copying will stop but positions must be
-                closed manually from your broker platform.
+                Rithmic accounts: trade copying halts instantly but you must
+                close open positions manually from your broker platform.
               </p>
             </div>
           </div>

@@ -1508,18 +1508,13 @@ remind them that you provide platform assistance only, not financial advice.`;
                 const result = await api.closeAllPositions(filterId);
                 closedPositions.push({ account: account.name, platform: 'Tradovate', ...result });
               } else {
-                skipped.push(`${account.name} (Tradovate — session not active, reconnect to close)`);
-              }
-            } else if (account.platform === 'Tradeify' && account.tradeifyUsername && account.tradeifyAccountId) {
-              const api = tradeifyInstances.get(account.tradeifyUsername);
-              if (api && api.isAuthenticated()) {
-                const result = await api.closeAllPositions(account.tradeifyAccountId);
-                closedPositions.push({ account: account.name, platform: 'Tradeify', ...result });
-              } else {
-                skipped.push(`${account.name} (Tradeify — session not active, reconnect to close)`);
+                skipped.push(`${account.name} (Tradovate — session not active, reconnect to close positions)`);
               }
             } else if (account.platform === 'Rithmic') {
-              skipped.push(`${account.name} (Rithmic — direct position closing not yet available)`);
+              skipped.push(`${account.name} (Rithmic — close positions manually on your broker platform)`);
+            } else if (account.isConnected) {
+              // Any other connected broker — log for visibility
+              skipped.push(`${account.name} (${account.platform} — automated close not yet supported, close manually)`);
             }
           } catch (e) {
             console.error(`[KillSwitch] Error closing positions for account ${account.name}:`, e);
