@@ -292,6 +292,36 @@ export class TradeifyAPI {
     return await response.json();
   }
 
+  /** Close every open position for the given account */
+  async closeAllPositions(accountId: string): Promise<{ closed: number; errors: string[] }> {
+    const positions: TradeifyPosition[] = await this.getPositions(accountId);
+    const errors: string[] = [];
+    let closed = 0;
+
+    for (const pos of positions) {
+      if (!pos.quantity || pos.quantity === 0) continue;
+      // Positive quantity = long → sell to close; negative = short → buy to close
+      const side: 'Buy' | 'Sell' = pos.quantity > 0 ? 'Sell' : 'Buy';
+      try {
+        await this.placeOrder({
+          accountId,
+          symbol: pos.symbol,
+          side,
+          quantity: Math.abs(pos.quantity),
+          orderType: 'Market',
+        });
+        closed++;
+        console.log(`[KillSwitch] Tradeify closed ${pos.symbol} qty=${pos.quantity} via ${side}`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        errors.push(`${pos.symbol}: ${msg}`);
+        console.error(`[KillSwitch] Failed to close Tradeify position:`, msg);
+      }
+    }
+
+    return { closed, errors };
+  }
+
   getAccessToken(): string | null {
     return this.accessToken;
   }

@@ -1476,29 +1476,71 @@ remind them that you provide platform assistance only, not financial advice.`;
   app.post("/api/kill-switch/activate", async (req, res) => {
     try {
       const reason = req.body?.reason || null;
+      const userId = req.session?.userId;
 
-      // Stop every active trade-copy engine
+      // ── 1. Stop every active trade-copy engine ───────────────────────────
       const stopped: string[] = [];
-      for (const [userId, engine] of tradeCopyEngines.entries()) {
+      for (const [uid, engine] of tradeCopyEngines.entries()) {
         try {
           await engine.disconnect();
-          tradeCopyEngines.delete(userId);
-          stopped.push(userId);
+          tradeCopyEngines.delete(uid);
+          stopped.push(uid);
         } catch (e) {
-          console.error(`[KillSwitch] Failed to stop engine for user ${userId}:`, e);
+          console.error(`[KillSwitch] Failed to stop engine for user ${uid}:`, e);
         }
+      }
+
+      // ── 2. Close open positions on all connected broker accounts ─────────
+      type CloseResult = { account: string; platform: string; closed: number; errors: string[] };
+      const closedPositions: CloseResult[] = [];
+      const skipped: string[] = [];
+
+      if (userId) {
+        const userAccounts = await db.select().from(accounts).where(eq(accounts.userId, userId));
+        const connected = userAccounts.filter((a) => a.isConnected);
+
+        await Promise.allSettled(connected.map(async (account) => {
+          try {
+            if (account.platform === 'Tradovate' && account.tradovateUsername) {
+              const api = tradovateInstances.get(account.tradovateUsername);
+              if (api && api.isTokenValid()) {
+                const filterId = account.tradovateAccountId ? parseInt(account.tradovateAccountId) : undefined;
+                const result = await api.closeAllPositions(filterId);
+                closedPositions.push({ account: account.name, platform: 'Tradovate', ...result });
+              } else {
+                skipped.push(`${account.name} (Tradovate — session not active, reconnect to close)`);
+              }
+            } else if (account.platform === 'Tradeify' && account.tradeifyUsername && account.tradeifyAccountId) {
+              const api = tradeifyInstances.get(account.tradeifyUsername);
+              if (api && api.isAuthenticated()) {
+                const result = await api.closeAllPositions(account.tradeifyAccountId);
+                closedPositions.push({ account: account.name, platform: 'Tradeify', ...result });
+              } else {
+                skipped.push(`${account.name} (Tradeify — session not active, reconnect to close)`);
+              }
+            } else if (account.platform === 'Rithmic') {
+              skipped.push(`${account.name} (Rithmic — direct position closing not yet available)`);
+            }
+          } catch (e) {
+            console.error(`[KillSwitch] Error closing positions for account ${account.name}:`, e);
+            closedPositions.push({ account: account.name, platform: account.platform, closed: 0, errors: [e instanceof Error ? e.message : String(e)] });
+          }
+        }));
       }
 
       killSwitchState.active = true;
       killSwitchState.activatedAt = new Date().toISOString();
       killSwitchState.reason = reason;
 
-      console.warn(`[KillSwitch] ACTIVATED at ${killSwitchState.activatedAt}. Stopped engines: [${stopped.join(', ')}]. Reason: ${reason || 'none'}`);
+      const totalClosed = closedPositions.reduce((s, r) => s + r.closed, 0);
+      console.warn(`[KillSwitch] ACTIVATED at ${killSwitchState.activatedAt}. Engines stopped: ${stopped.length}. Positions closed: ${totalClosed}. Skipped: ${skipped.length}. Reason: ${reason || 'none'}`);
 
       return res.json({
         success: true,
-        message: `Kill switch activated. Stopped ${stopped.length} engine(s).`,
+        message: `Kill switch activated. Stopped ${stopped.length} engine(s), closed ${totalClosed} position(s).`,
         stoppedEngines: stopped,
+        closedPositions,
+        skipped,
         activatedAt: killSwitchState.activatedAt,
       });
     } catch (error) {

@@ -130,6 +130,50 @@ export class TradovateAPI {
     return await response.json();
   }
 
+  /** Liquidate a single open position by accountId + contractId */
+  async liquidatePosition(accountId: number, contractId: number): Promise<any> {
+    if (!this.accessToken) throw new Error('Not authenticated');
+
+    const response = await fetch(`${this.baseUrl}/order/liquidatePosition`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ accountId, contractId, admin: false }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Liquidate failed: ${response.status} - ${errorText}`);
+    }
+
+    return await response.json();
+  }
+
+  /** Close every open position on this connection (optionally filtered to one accountId) */
+  async closeAllPositions(filterAccountId?: number): Promise<{ closed: number; errors: string[] }> {
+    const positions: any[] = await this.getPositions();
+    const errors: string[] = [];
+    let closed = 0;
+
+    for (const pos of positions) {
+      if (!pos.netPos || pos.netPos === 0) continue;
+      if (filterAccountId !== undefined && pos.accountId !== filterAccountId) continue;
+      try {
+        await this.liquidatePosition(pos.accountId, pos.contractId);
+        closed++;
+        console.log(`[KillSwitch] Tradovate liquidated position contractId=${pos.contractId} accountId=${pos.accountId}`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        errors.push(`contractId ${pos.contractId}: ${msg}`);
+        console.error(`[KillSwitch] Failed to liquidate Tradovate position:`, msg);
+      }
+    }
+
+    return { closed, errors };
+  }
+
   isTokenValid(): boolean {
     if (!this.accessToken || !this.tokenExpiration) {
       return false;
