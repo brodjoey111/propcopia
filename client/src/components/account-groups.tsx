@@ -685,6 +685,13 @@ function GroupLane({
           </button>
         )}
 
+        {/* Global badge — visible only while trading is ON */}
+        {!isUngrouped && isActive && (
+          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/25 shrink-0 select-none">
+            Global
+          </span>
+        )}
+
         {/* Risk settings button */}
         {!isUngrouped && !isDemo && onEditRisk && (
           <button
