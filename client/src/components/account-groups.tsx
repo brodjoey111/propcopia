@@ -856,20 +856,6 @@ export function AccountGroupsView({
             <Layers className="h-4 w-4 mr-1.5" />
             Board
           </Button>
-          <Button
-            variant={subView === "ungrouped" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setSubView("ungrouped")}
-            className="relative"
-          >
-            <Inbox className="h-4 w-4 mr-1.5" />
-            Ungrouped
-            {ungroupedAccounts.length > 0 && (
-              <span className="ml-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-semibold text-primary">
-                {ungroupedAccounts.length}
-              </span>
-            )}
-          </Button>
         </div>
 
         {subView === "kanban" && (
