@@ -715,7 +715,7 @@ function GroupLane({
         )}
 
         {/* Risk settings button */}
-        {!isUngrouped && !isDemo && onEditRisk && (
+        {!isUngrouped && onEditRisk && (
           <button
             onClick={() => onEditRisk(group.id)}
             className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all shrink-0 bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60"
