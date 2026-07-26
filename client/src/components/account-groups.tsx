@@ -237,11 +237,16 @@ function DraggableCard({
   const {
     attributes,
     listeners,
-    setNodeRef,
+    setNodeRef: setDragRef,
     setActivatorNodeRef,
     transform,
     isDragging,
   } = useDraggable({ id: account.id });
+
+  // Also a drop target for the master crown token
+  const { setNodeRef: setDropRef, isOver: isMasterOver } = useDroppable({ id: `master-drop:${account.id}` });
+
+  const setNodeRef = (el: HTMLDivElement | null) => { setDragRef(el); setDropRef(el); };
 
   const balance = account.balance ? parseFloat(String(account.balance)) : 0;
   const pnl = account.pnl ? parseFloat(String(account.pnl)) : 0;
@@ -259,12 +264,14 @@ function DraggableCard({
       className={`relative transition-opacity ${isDragging ? "opacity-30" : isDisabled ? "opacity-50" : "opacity-100"}`}
     >
       <Card
-        className={`p-3 select-none ${
+        className={`p-3 select-none transition-all ${
           isDragOverlay
             ? "rotate-2 shadow-2xl ring-2 ring-primary/60 scale-105"
+            : isMasterOver
+            ? "ring-2 ring-amber-400/70 border-amber-400/60 shadow-md shadow-amber-400/20"
             : isDisabled
             ? "border-red-500/20 bg-muted/40"
-            : "hover:shadow-md transition-shadow"
+            : "hover:shadow-md"
         }`}
       >
         <div className="flex items-start gap-2">
@@ -379,6 +386,63 @@ function DraggableCard({
           </div>
         </div>
       </Card>
+    </div>
+  );
+}
+
+// ─── Draggable master crown token ────────────────────────────────────────────
+
+function DraggableMasterToken({
+  groupId,
+  masterName,
+  hasWarning,
+}: {
+  groupId: string;
+  masterName: string | null;
+  hasWarning: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `master-token:${groupId}`,
+  });
+
+  const style = transform
+    ? { transform: `translate3d(${transform.x}px,${transform.y}px,0)` }
+    : undefined;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      title="Drag onto an account to make it the master"
+      className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md cursor-grab active:cursor-grabbing touch-none select-none transition-opacity ${
+        isDragging ? "opacity-20" : "opacity-100"
+      } ${
+        hasWarning
+          ? "bg-amber-500/15 border border-amber-500/35 hover:bg-amber-500/25"
+          : masterName
+          ? "bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20"
+          : "bg-muted/60 border border-border/60 hover:bg-muted"
+      }`}
+    >
+      <Crown
+        className={`h-3 w-3 shrink-0 ${
+          hasWarning || masterName ? "text-amber-500" : "text-muted-foreground/40"
+        }`}
+      />
+      <span
+        className={`text-[11px] font-medium max-w-[140px] truncate ${
+          hasWarning
+            ? "text-amber-600 dark:text-amber-400"
+            : masterName
+            ? "text-foreground/80"
+            : "text-muted-foreground/60"
+        }`}
+      >
+        {hasWarning ? "Set a master" : masterName ?? "No master"}
+      </span>
+      <GripVertical className="h-3 w-3 text-muted-foreground/25 shrink-0" />
     </div>
   );
 }
@@ -530,25 +594,13 @@ function GroupLane({
         {/* Divider */}
         {!isUngrouped && <div className="h-4 w-px bg-border/60 shrink-0" />}
 
-        {/* Master selector */}
+        {/* Master crown — drag onto a card to set master */}
         {!isUngrouped && (
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Crown className={`h-3 w-3 shrink-0 ${hasMasterWarning ? "text-amber-500" : effectiveMasterId ? "text-amber-500/70" : "text-muted-foreground/40"}`} />
-            <select
-              value={masterId || ""}
-              onChange={(e) => onSetMaster(group.id, e.target.value || null)}
-              className="text-[11px] bg-transparent border-none outline-none cursor-pointer max-w-[180px] truncate appearance-none"
-              style={{ color: masterId ? "inherit" : "hsl(var(--muted-foreground))" }}
-            >
-              <option value="">{hasMasterWarning ? "⚠ Set a master" : "— no master —"}</option>
-              {masterAccounts.map((a) => (
-                <option key={a.id} value={a.id}>★ {a.name}{disabledIds.includes(a.id) ? " (paused)" : ""}</option>
-              ))}
-              {followerAccounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}{disabledIds.includes(a.id) ? " (paused)" : ""}</option>
-              ))}
-            </select>
-          </div>
+          <DraggableMasterToken
+            groupId={group.id}
+            masterName={effectiveMasterId ? (accounts.find((a) => a.id === effectiveMasterId)?.name ?? null) : null}
+            hasWarning={hasMasterWarning}
+          />
         )}
 
         {/* Divider */}
@@ -612,19 +664,25 @@ function GroupLane({
             </p>
           </div>
         ) : (
-          accounts.map((account) => (
-            <div key={account.id} className="w-[260px]">
-              <DraggableCard
-                account={account}
-                isDemo={isDemo}
-                isMaster={isUngrouped ? undefined : account.id === effectiveMasterId}
-                isDisabled={disabledIds.includes(account.id)}
-                onToggleEnabled={!isUngrouped ? () => onToggleAccount(group.id, account.id) : undefined}
-                onConnect={() => onConnect(account.id)}
-                onDisconnect={() => onDisconnect(account.id, account.name)}
-              />
-            </div>
-          ))
+          [...accounts]
+            .sort((a, b) => {
+              if (a.id === effectiveMasterId) return -1;
+              if (b.id === effectiveMasterId) return 1;
+              return 0;
+            })
+            .map((account) => (
+              <div key={account.id} className="w-[260px]">
+                <DraggableCard
+                  account={account}
+                  isDemo={isDemo}
+                  isMaster={isUngrouped ? undefined : account.id === effectiveMasterId}
+                  isDisabled={disabledIds.includes(account.id)}
+                  onToggleEnabled={!isUngrouped ? () => onToggleAccount(group.id, account.id) : undefined}
+                  onConnect={() => onConnect(account.id)}
+                  onDisconnect={() => onDisconnect(account.id, account.name)}
+                />
+              </div>
+            ))
         )}
       </div>
     </div>
@@ -782,10 +840,30 @@ export function AccountGroupsView({
     setActiveId(null);
     if (!over) return;
 
-    const accountId     = active.id as string;
-    const targetGroupId = over.id as string;
+    const activeItemId = active.id as string;
+    const overId       = over.id as string;
 
-    // Auto-demote: if the dragged account was the master of its old group, clear that group's masterId
+    // ── Master crown token dropped onto a card ────────────────────────────
+    if (activeItemId.startsWith("master-token:")) {
+      if (overId.startsWith("master-drop:")) {
+        const groupId   = activeItemId.slice("master-token:".length);
+        const accountId = overId.slice("master-drop:".length);
+        setMaster(groupId, accountId);
+      }
+      return;
+    }
+
+    // ── Account card moved to a group ────────────────────────────────────
+    const accountId = activeItemId;
+
+    // If the card was dropped on another card's droppable, resolve to that card's group
+    let targetGroupId = overId;
+    if (overId.startsWith("master-drop:")) {
+      const targetAccountId = overId.slice("master-drop:".length);
+      targetGroupId = (isDemo ? demoAssignments : assignments)[targetAccountId] ?? UNGROUPED_ID;
+    }
+
+    // Auto-demote: if the dragged account was the master of its old group, clear masterId there
     const clearOldMaster = (grps: TradingGroup[], oldAssign: Record<string, string>): TradingGroup[] => {
       const oldGroupId = oldAssign[accountId];
       if (!oldGroupId || oldGroupId === targetGroupId) return grps;
@@ -799,7 +877,7 @@ export function AccountGroupsView({
         else next[accountId] = targetGroupId;
         return next;
       });
-      setDemoGroups((prev) => clearOldMaster(prev, isDemo ? demoAssignments : assignments));
+      setDemoGroups((prev) => clearOldMaster(prev, demoAssignments));
     } else {
       const next = { ...assignments };
       if (targetGroupId === UNGROUPED_ID) delete next[accountId];
@@ -813,7 +891,8 @@ export function AccountGroupsView({
 
   const [subView, setSubView] = useState<"kanban" | "ungrouped">("kanban");
 
-  const activeAccount    = activeId ? displayAccounts.find((a) => a.id === activeId) : null;
+  const isMasterTokenDrag = activeId?.startsWith("master-token:") ?? false;
+  const activeAccount     = activeId && !isMasterTokenDrag ? displayAccounts.find((a) => a.id === activeId) : null;
   const ungroupedAccounts = getGroupAccounts(UNGROUPED_ID);
 
   const lanes = [
@@ -907,7 +986,12 @@ export function AccountGroupsView({
           </div>
 
           <DragOverlay dropAnimation={null}>
-            {activeAccount ? (
+            {isMasterTokenDrag ? (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/50 shadow-xl shadow-amber-500/20 backdrop-blur-sm">
+                <Crown className="h-3.5 w-3.5 text-amber-500" />
+                <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">Set as Master</span>
+              </div>
+            ) : activeAccount ? (
               <DraggableCard account={activeAccount} isDragOverlay isDemo={isDemo} />
             ) : null}
           </DragOverlay>
