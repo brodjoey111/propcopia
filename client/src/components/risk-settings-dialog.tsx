@@ -357,7 +357,7 @@ export function RiskSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{children}</DialogTrigger>
+      {children && <DialogTrigger asChild>{children}</DialogTrigger>}
       <DialogContent className="sm:max-w-[620px] max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
         {/* ── Header ── */}
         <DialogHeader className="px-6 pt-5 pb-0 shrink-0">
