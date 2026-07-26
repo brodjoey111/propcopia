@@ -481,6 +481,7 @@ function GroupLane({
   onDisconnect,
 }: GroupLaneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: group.id });
+  const { setNodeRef: setClearRef, isOver: isClearOver } = useDroppable({ id: `master-clear:${group.id}` });
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(group.name);
   const [showPalette, setShowPalette] = useState(false);
@@ -594,23 +595,22 @@ function GroupLane({
         {/* Divider */}
         {!isUngrouped && <div className="h-4 w-px bg-border/60 shrink-0" />}
 
-        {/* Master crown — drag onto a card to set master */}
+        {/* Master crown — drag chip onto a card to set master; drag a card back here to clear */}
         {!isUngrouped && (
-          <div className="flex items-center gap-1 shrink-0">
+          <div
+            ref={setClearRef}
+            className={`flex items-center gap-1 shrink-0 rounded-md transition-all ${
+              isClearOver
+                ? "ring-2 ring-red-400/70 bg-red-500/10"
+                : ""
+            }`}
+            title={masterId ? "Drop an account card here to remove master" : undefined}
+          >
             <DraggableMasterToken
               groupId={group.id}
               masterName={effectiveMasterId ? (accounts.find((a) => a.id === effectiveMasterId)?.name ?? null) : null}
               hasWarning={hasMasterWarning}
             />
-            {masterId && (
-              <button
-                onClick={() => onSetMaster(group.id, null)}
-                title="Remove master"
-                className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-500/10 transition-colors"
-              >
-                <X className="h-2.5 w-2.5" />
-              </button>
-            )}
           </div>
         )}
 
@@ -862,6 +862,13 @@ export function AccountGroupsView({
         setMaster(groupId, accountId);
       }
       return;
+    }
+
+    // ── Account card dropped on the crown zone → clear master ─────────────
+    if (overId.startsWith("master-clear:")) {
+      const groupId = overId.slice("master-clear:".length);
+      setMaster(groupId, null);
+      return; // don't move the card
     }
 
     // ── Account card moved to a group ────────────────────────────────────
