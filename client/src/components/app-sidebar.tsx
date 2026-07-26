@@ -1,4 +1,5 @@
 import { LayoutDashboard, Wallet, History, Settings, Activity, Plug, LogOut, User, Users, Calendar, TrendingUp, Star } from "lucide-react";
+import { KillSwitchButton } from "@/components/kill-switch";
 import { Link, useLocation } from "wouter";
 import { useUser } from "@/contexts/user-context";
 import { Button } from "@/components/ui/button";
@@ -101,6 +102,7 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="space-y-2 p-4">
+        <KillSwitchButton />
         <div className="flex items-center gap-2 rounded-lg border p-3">
           <Avatar className="h-8 w-8">
             <AvatarImage src={user?.profilePicture || undefined} alt={user?.username} />

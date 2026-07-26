@@ -11,6 +11,7 @@ import { UserProvider } from "@/contexts/user-context";
 import { ProtectedRoute } from "@/components/protected-route";
 import { HelpChat } from "@/components/help-chat";
 import { LeaderboardTicker } from "@/components/leaderboard-ticker";
+import { KillSwitchBanner } from "@/components/kill-switch";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Auth from "@/pages/auth";
@@ -60,6 +61,7 @@ function AppLayout() {
               <SidebarTrigger data-testid="button-sidebar-toggle" className="h-11 w-11 touch-manipulation" />
               <ThemeToggle />
             </header>
+            <KillSwitchBanner />
             <LeaderboardTicker />
             <main className="flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4 md:p-6 min-w-0">
               <div className="mx-auto max-w-7xl">

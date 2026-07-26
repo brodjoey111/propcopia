@@ -1461,5 +1461,77 @@ remind them that you provide platform assistance only, not financial advice.`;
     });
   });
 
+  // ── Kill Switch ─────────────────────────────────────────────────────────────
+  // In-memory state (resets on server restart — intentional for safety)
+  const killSwitchState = {
+    active: false,
+    activatedAt: null as string | null,
+    reason: null as string | null,
+  };
+
+  app.get("/api/kill-switch/status", (_req, res) => {
+    return res.json({ success: true, ...killSwitchState });
+  });
+
+  app.post("/api/kill-switch/activate", async (req, res) => {
+    try {
+      const reason = req.body?.reason || null;
+
+      // Stop every active trade-copy engine
+      const stopped: string[] = [];
+      for (const [userId, engine] of tradeCopyEngines.entries()) {
+        try {
+          await engine.disconnect();
+          tradeCopyEngines.delete(userId);
+          stopped.push(userId);
+        } catch (e) {
+          console.error(`[KillSwitch] Failed to stop engine for user ${userId}:`, e);
+        }
+      }
+
+      killSwitchState.active = true;
+      killSwitchState.activatedAt = new Date().toISOString();
+      killSwitchState.reason = reason;
+
+      console.warn(`[KillSwitch] ACTIVATED at ${killSwitchState.activatedAt}. Stopped engines: [${stopped.join(', ')}]. Reason: ${reason || 'none'}`);
+
+      return res.json({
+        success: true,
+        message: `Kill switch activated. Stopped ${stopped.length} engine(s).`,
+        stoppedEngines: stopped,
+        activatedAt: killSwitchState.activatedAt,
+      });
+    } catch (error) {
+      console.error('[KillSwitch] Error during activation:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+  app.post("/api/kill-switch/deactivate", (_req, res) => {
+    killSwitchState.active = false;
+    killSwitchState.activatedAt = null;
+    killSwitchState.reason = null;
+
+    console.info(`[KillSwitch] Deactivated at ${new Date().toISOString()}`);
+
+    return res.json({ success: true, message: "Kill switch deactivated. Trade copying can be resumed." });
+  });
+
+  // Block trade-copy start while kill switch is active
+  // (injected check — the original /api/trade-copy/start route runs before this,
+  //  so we patch it with a middleware applied to that path only)
+  app.use("/api/trade-copy/start", (req, res, next) => {
+    if (killSwitchState.active) {
+      return res.status(423).json({
+        success: false,
+        message: "Kill switch is active. Deactivate it before starting trade copying.",
+      });
+    }
+    next();
+  });
+
   return server;
 }
