@@ -8,7 +8,7 @@ import { storage } from "./storage";
 import { db } from "./db";
 import bcrypt from "bcrypt";
 import { insertUserSchema, updateUserProfileSchema, insertWatchlistItemSchema, insertAccountSchema, accounts } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { marketDataService, type MarketPrice } from "./market-data";
 import OpenAI from "openai";
 import { TradeCopyEngine } from "./trade-copy-engine";
@@ -481,6 +481,57 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // ── Risk settings per-account ────────────────────────────────────────────
+  app.patch("/api/accounts/:id/risk-settings", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
+      const { id } = req.params;
+      const [existing] = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, id), eq(accounts.userId, req.session.userId)));
+      if (!existing) {
+        return res.status(404).json({ success: false, message: "Account not found" });
+      }
+      const b = req.body;
+      const [updated] = await db
+        .update(accounts)
+        .set({
+          riskMode:             b.riskMode            ?? existing.riskMode,
+          positionScaling:      b.positionScaling      ?? existing.positionScaling,
+          maxContracts:         b.maxContracts         ?? null,
+          maxOpenPositions:     b.maxOpenPositions      ?? null,
+          allowedDirections:    b.allowedDirections     ?? existing.allowedDirections,
+          maxDailyLoss:         b.maxDailyLoss     != null ? String(b.maxDailyLoss)     : null,
+          maxDailyLossPct:      b.maxDailyLossPct  != null ? String(b.maxDailyLossPct)  : null,
+          maxWeeklyLoss:        b.maxWeeklyLoss    != null ? String(b.maxWeeklyLoss)    : null,
+          maxWeeklyLossPct:     b.maxWeeklyLossPct != null ? String(b.maxWeeklyLossPct) : null,
+          maxDrawdownPct:       b.maxDrawdownPct   != null ? String(b.maxDrawdownPct)   : null,
+          maxConsecutiveLosses: b.maxConsecutiveLosses ?? null,
+          blockedTickers:       b.blockedTickers  ?? [],
+          allowedTickers:       b.allowedTickers  ?? [],
+          maxTradesPerDay:      b.maxTradesPerDay  ?? null,
+          minAccountBalance:    b.minAccountBalance != null ? String(b.minAccountBalance) : null,
+          tradingStartTime:     b.tradingStartTime  ?? null,
+          tradingEndTime:       b.tradingEndTime    ?? null,
+          tradingDays:          b.tradingDays       ?? [],
+          cooldownAfterLoss:    b.cooldownAfterLoss ?? null,
+          onBreachAction:       b.onBreachAction    ?? existing.onBreachAction,
+        })
+        .where(eq(accounts.id, id))
+        .returning();
+      return res.json({ success: true, account: updated });
+    } catch (error) {
+      console.error('Error saving risk settings:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
   // Trade copying routes
   app.post("/api/trade-copy/start", async (req, res) => {
     try {
@@ -622,6 +673,22 @@ export function registerRoutes(app: Express): Server {
           openPositions: 0,
           pnl: null,
           riskMode: 'custom',
+          maxOpenPositions: null,
+          allowedDirections: null,
+          maxDailyLoss: null,
+          maxDailyLossPct: null,
+          maxWeeklyLoss: null,
+          maxWeeklyLossPct: null,
+          maxDrawdownPct: null,
+          maxConsecutiveLosses: null,
+          allowedTickers: null,
+          maxTradesPerDay: null,
+          minAccountBalance: null,
+          tradingStartTime: null,
+          tradingEndTime: null,
+          tradingDays: null,
+          cooldownAfterLoss: null,
+          onBreachAction: null,
           lastSync: null,
         },
         followerToken

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AccountCard } from "@/components/account-card";
 import { AddAccountDialog } from "@/components/add-account-dialog";
-import { ConfigureAccountDialog } from "@/components/configure-account-dialog";
+import { RiskSettingsDialog, type RiskSettings, DEFAULT_RISK_SETTINGS } from "@/components/risk-settings-dialog";
 import { GlobalRiskSettingsDialog } from "@/components/global-risk-settings-dialog";
 import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
 import { EmptyState } from "@/components/empty-state";
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Settings, Loader2, LayoutGrid, List, Table2 } from "lucide-react";
+import { ShieldAlert, Loader2, LayoutGrid, List, Table2 } from "lucide-react";
 import type { Account } from "@shared/schema";
 
 type ViewMode = 'grid' | 'list' | 'table' | 'groups';
@@ -118,17 +118,51 @@ export default function Accounts() {
     setDisconnectAlert({ open: false, accountId: '', accountName: '' });
   };
 
-  const handleConfigure = (accountId: string, config: {
-    riskMode: 'global' | 'custom';
-    positionScaling: number;
-    maxContracts: number | null;
-    blockedTickers: string[];
-  }) => {
+  // Convert a DB account row → RiskSettings shape for the dialog
+  const accountToRiskSettings = (account: Account): RiskSettings => {
+    const a = account as any;
+    return {
+      riskMode:             (account.riskMode as 'global' | 'custom') || 'global',
+      positionScaling:      account.positionScaling || 100,
+      maxContracts:         account.maxContracts     ?? null,
+      maxOpenPositions:     a.maxOpenPositions       ?? null,
+      allowedDirections:    a.allowedDirections      || 'both',
+      maxDailyLoss:         a.maxDailyLoss     ? parseFloat(a.maxDailyLoss)     : null,
+      maxDailyLossPct:      a.maxDailyLossPct  ? parseFloat(a.maxDailyLossPct)  : null,
+      maxWeeklyLoss:        a.maxWeeklyLoss    ? parseFloat(a.maxWeeklyLoss)    : null,
+      maxWeeklyLossPct:     a.maxWeeklyLossPct ? parseFloat(a.maxWeeklyLossPct) : null,
+      maxDrawdownPct:       a.maxDrawdownPct   ? parseFloat(a.maxDrawdownPct)   : null,
+      maxConsecutiveLosses: a.maxConsecutiveLosses ?? null,
+      blockedTickers:       account.blockedTickers   || [],
+      allowedTickers:       a.allowedTickers         || [],
+      maxTradesPerDay:      a.maxTradesPerDay         ?? null,
+      minAccountBalance:    a.minAccountBalance ? parseFloat(a.minAccountBalance) : null,
+      tradingStartTime:     a.tradingStartTime  ?? null,
+      tradingEndTime:       a.tradingEndTime    ?? null,
+      tradingDays:          a.tradingDays?.length ? a.tradingDays : ['mon','tue','wed','thu','fri'],
+      cooldownAfterLoss:    a.cooldownAfterLoss ?? null,
+      onBreachAction:       a.onBreachAction    || 'pause',
+    };
+  };
+
+  const saveRiskSettingsMutation = useMutation({
+    mutationFn: async ({ accountId, settings }: { accountId: string; settings: RiskSettings }) => {
+      const res = await fetch(`/api/accounts/${accountId}/risk-settings`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to save risk settings');
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['/api/accounts'] }),
+  });
+
+  const handleRiskSettingsSave = (accountId: string, settings: RiskSettings) => {
+    saveRiskSettingsMutation.mutate({ accountId, settings });
     const account = accounts.find(a => a.id === accountId);
-    toast({
-      title: "Settings Updated",
-      description: `Configuration saved for ${account?.name}`,
-    });
+    toast({ title: "Risk Settings Saved", description: `Updated for ${account?.name}` });
   };
 
   const handleGlobalSettingsUpdate = (config: {
@@ -265,15 +299,12 @@ export default function Accounts() {
                     onDisconnect={() => handleDisconnectClick(account.id, account.name)}
                     configureButton={
                       account.accountType === 'follower' ? (
-                        <ConfigureAccountDialog
-                          accountId={account.id}
-                          accountName={account.name}
-                          riskMode={(account.riskMode as 'global' | 'custom') || 'global'}
-                          positionScaling={account.positionScaling || 100}
-                          maxContracts={account.maxContracts || undefined}
-                          blockedTickers={account.blockedTickers || []}
+                        <RiskSettingsDialog
+                          name={account.name}
+                          kind="account"
+                          settings={accountToRiskSettings(account)}
                           globalSettings={globalSettings}
-                          onSave={(config) => handleConfigure(account.id, config)}
+                          onSave={(s) => handleRiskSettingsSave(account.id, s)}
                         >
                           <Button
                             variant="outline"
@@ -281,10 +312,10 @@ export default function Accounts() {
                             className="w-full"
                             data-testid={`button-configure-${account.id}`}
                           >
-                            <Settings className="mr-2 h-3 w-3" />
-                            Configure
+                            <ShieldAlert className="mr-2 h-3 w-3" />
+                            Risk Settings
                           </Button>
-                        </ConfigureAccountDialog>
+                        </RiskSettingsDialog>
                       ) : undefined
                     }
                   />
@@ -342,20 +373,17 @@ export default function Accounts() {
 
                       <div className="flex gap-2">
                         {account.accountType === 'follower' && (
-                          <ConfigureAccountDialog
-                            accountId={account.id}
-                            accountName={account.name}
-                            riskMode={(account.riskMode as 'global' | 'custom') || 'global'}
-                            positionScaling={account.positionScaling || 100}
-                            maxContracts={account.maxContracts || undefined}
-                            blockedTickers={account.blockedTickers || []}
+                          <RiskSettingsDialog
+                            name={account.name}
+                            kind="account"
+                            settings={accountToRiskSettings(account)}
                             globalSettings={globalSettings}
-                            onSave={(config) => handleConfigure(account.id, config)}
+                            onSave={(s) => handleRiskSettingsSave(account.id, s)}
                           >
                             <Button variant="outline" size="sm" data-testid={`button-configure-${account.id}`}>
-                              <Settings className="h-3 w-3" />
+                              <ShieldAlert className="h-3 w-3" />
                             </Button>
-                          </ConfigureAccountDialog>
+                          </RiskSettingsDialog>
                         )}
                         {account.isConnected ? (
                           <Button
@@ -445,20 +473,17 @@ export default function Accounts() {
                           <td className="p-3">
                             <div className="flex gap-2 justify-end">
                               {account.accountType === 'follower' && (
-                                <ConfigureAccountDialog
-                                  accountId={account.id}
-                                  accountName={account.name}
-                                  riskMode={(account.riskMode as 'global' | 'custom') || 'global'}
-                                  positionScaling={account.positionScaling || 100}
-                                  maxContracts={account.maxContracts || undefined}
-                                  blockedTickers={account.blockedTickers || []}
+                                <RiskSettingsDialog
+                                  name={account.name}
+                                  kind="account"
+                                  settings={accountToRiskSettings(account)}
                                   globalSettings={globalSettings}
-                                  onSave={(config) => handleConfigure(account.id, config)}
+                                  onSave={(s) => handleRiskSettingsSave(account.id, s)}
                                 >
                                   <Button variant="outline" size="sm" data-testid={`button-configure-${account.id}`}>
-                                    <Settings className="h-3 w-3" />
+                                    <ShieldAlert className="h-3 w-3" />
                                   </Button>
-                                </ConfigureAccountDialog>
+                                </RiskSettingsDialog>
                               )}
                               {account.isConnected ? (
                                 <Button

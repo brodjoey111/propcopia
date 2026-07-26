@@ -69,10 +69,32 @@ export const accounts = pgTable("accounts", {
   balance: decimal("balance", { precision: 12, scale: 2 }),
   openPositions: integer("open_positions").default(0),
   pnl: decimal("pnl", { precision: 12, scale: 2 }).default('0'),
-  riskMode: text("risk_mode").default("global"),
+  // ── Risk mode ────────────────────────────────────────────────────────
+  riskMode: text("risk_mode").default("global"),   // 'global' | 'custom'
+  // ── Position limits ──────────────────────────────────────────────────
   positionScaling: integer("position_scaling").default(100),
   maxContracts: integer("max_contracts"),
+  maxOpenPositions: integer("max_open_positions"),
+  allowedDirections: text("allowed_directions").default("both"), // 'both'|'long_only'|'short_only'
+  // ── Loss limits ──────────────────────────────────────────────────────
+  maxDailyLoss: decimal("max_daily_loss", { precision: 12, scale: 2 }),
+  maxDailyLossPct: decimal("max_daily_loss_pct", { precision: 5, scale: 2 }),
+  maxWeeklyLoss: decimal("max_weekly_loss", { precision: 12, scale: 2 }),
+  maxWeeklyLossPct: decimal("max_weekly_loss_pct", { precision: 5, scale: 2 }),
+  maxDrawdownPct: decimal("max_drawdown_pct", { precision: 5, scale: 2 }),
+  maxConsecutiveLosses: integer("max_consecutive_losses"),
+  // ── Trade filters ────────────────────────────────────────────────────
   blockedTickers: text("blocked_tickers").array(),
+  allowedTickers: text("allowed_tickers").array(),        // whitelist (overrides blocked)
+  maxTradesPerDay: integer("max_trades_per_day"),
+  minAccountBalance: decimal("min_account_balance", { precision: 12, scale: 2 }),
+  // ── Schedule ─────────────────────────────────────────────────────────
+  tradingStartTime: text("trading_start_time"),            // 'HH:MM' UTC
+  tradingEndTime: text("trading_end_time"),                // 'HH:MM' UTC
+  tradingDays: text("trading_days").array(),               // ['mon','tue','wed','thu','fri']
+  cooldownAfterLoss: integer("cooldown_after_loss"),       // minutes
+  // ── Breach action ────────────────────────────────────────────────────
+  onBreachAction: text("on_breach_action").default("pause"), // 'pause'|'alert'|'close_and_pause'
   lastSync: timestamp("last_sync"),
 });
 

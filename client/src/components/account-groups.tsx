@@ -29,7 +29,9 @@ import {
   Crown,
   Layers,
   Inbox,
+  ShieldAlert,
 } from "lucide-react";
+import { RiskSettingsDialog, type RiskSettings, DEFAULT_RISK_SETTINGS } from "@/components/risk-settings-dialog";
 import type { Account } from "@shared/schema";
 
 // ─── Demo data ───────────────────────────────────────────────────────────────
@@ -50,6 +52,22 @@ const NULL_FIELDS = {
   apiSecret: null,
   maxContracts: null,
   blockedTickers: null,
+  maxOpenPositions: null,
+  allowedDirections: null,
+  maxDailyLoss: null,
+  maxDailyLossPct: null,
+  maxWeeklyLoss: null,
+  maxWeeklyLossPct: null,
+  maxDrawdownPct: null,
+  maxConsecutiveLosses: null,
+  allowedTickers: null,
+  maxTradesPerDay: null,
+  minAccountBalance: null,
+  tradingStartTime: null,
+  tradingEndTime: null,
+  tradingDays: null,
+  cooldownAfterLoss: null,
+  onBreachAction: null,
   lastSync: null,
 } as const;
 
@@ -494,6 +512,8 @@ interface GroupLaneProps {
   onToggleAccount: (groupId: string, accountId: string) => void;
   onConnect: (accountId: string) => void;
   onDisconnect: (accountId: string, name: string) => void;
+  onEditRisk?: (groupId: string) => void;
+  riskSettings?: Partial<RiskSettings>;
 }
 
 function GroupLane({
@@ -510,6 +530,8 @@ function GroupLane({
   onToggleAccount,
   onConnect,
   onDisconnect,
+  onEditRisk,
+  riskSettings,
 }: GroupLaneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: group.id });
   const { setNodeRef: setClearRef, isOver: isClearOver } = useDroppable({ id: `master-clear:${group.id}` });
@@ -663,6 +685,24 @@ function GroupLane({
           </button>
         )}
 
+        {/* Risk settings button */}
+        {!isUngrouped && !isDemo && onEditRisk && (
+          <button
+            onClick={() => onEditRisk(group.id)}
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all shrink-0 bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60"
+            title="Group risk settings"
+          >
+            <ShieldAlert className="h-3 w-3" />
+            Risk
+            {riskSettings && Object.values(riskSettings).some(v =>
+              v !== null && v !== undefined && v !== 'both' && v !== 'pause' &&
+              v !== 100 && !(Array.isArray(v) && v.length === 0)
+            ) && (
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
+            )}
+          </button>
+        )}
+
         {/* P&L — pushed right */}
         {accounts.length > 0 && (
           <div className="ml-auto flex items-center gap-1.5 shrink-0">
@@ -769,6 +809,23 @@ export function AccountGroupsView({
   });
 
   const [activeId, setActiveId] = useState<string | null>(null);
+
+  // ── Group risk settings (persisted in localStorage) ────────────────────
+  const [groupRiskSettings, setGroupRiskSettings] = useState<Record<string, Partial<RiskSettings>>>(() => {
+    try {
+      const raw = localStorage.getItem("group-risk-settings-v1");
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  });
+  const [riskDialogGroupId, setRiskDialogGroupId] = useState<string | null>(null);
+
+  const saveGroupRiskSetting = (groupId: string, settings: RiskSettings) => {
+    setGroupRiskSettings((prev) => {
+      const next = { ...prev, [groupId]: settings };
+      try { localStorage.setItem("group-risk-settings-v1", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
 
   // Fire addGroup whenever parent increments the trigger
   useEffect(() => {
@@ -1033,6 +1090,8 @@ export function AccountGroupsView({
                   onToggleAccount={toggleAccountEnabled}
                   onConnect={onConnect}
                   onDisconnect={onDisconnect}
+                  onEditRisk={setRiskDialogGroupId}
+                  riskSettings={groupRiskSettings[lane.id]}
                 />
               );
             })}
@@ -1092,6 +1151,27 @@ export function AccountGroupsView({
           )}
         </div>
       )}
+
+      {/* ── Group risk settings dialog ── */}
+      {riskDialogGroupId && (() => {
+        const grp = displayGroups.find((g) => g.id === riskDialogGroupId);
+        if (!grp) return null;
+        const existing = groupRiskSettings[riskDialogGroupId] ?? {};
+        return (
+          <RiskSettingsDialog
+            key={riskDialogGroupId}
+            name={grp.name}
+            kind="group"
+            settings={{ ...DEFAULT_RISK_SETTINGS, ...existing } as import("@/components/risk-settings-dialog").RiskSettings}
+            onSave={(settings) => {
+              saveGroupRiskSetting(riskDialogGroupId, settings);
+              setRiskDialogGroupId(null);
+            }}
+            open
+            onOpenChange={(open) => { if (!open) setRiskDialogGroupId(null); }}
+          />
+        );
+      })()}
     </div>
   );
 }
