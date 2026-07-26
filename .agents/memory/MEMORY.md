@@ -1,0 +1,1 @@
+- [Rithmic proto corrections](rithmic-proto-corrections.md) — all field numbers and template IDs for R|Protocol v0.87.0.0, sourced from official protos + Reference Guide; exit_position = template 3504/3505, ORDER_PLANT = infra_type 2
