@@ -596,11 +596,22 @@ function GroupLane({
 
         {/* Master crown — drag onto a card to set master */}
         {!isUngrouped && (
-          <DraggableMasterToken
-            groupId={group.id}
-            masterName={effectiveMasterId ? (accounts.find((a) => a.id === effectiveMasterId)?.name ?? null) : null}
-            hasWarning={hasMasterWarning}
-          />
+          <div className="flex items-center gap-1 shrink-0">
+            <DraggableMasterToken
+              groupId={group.id}
+              masterName={effectiveMasterId ? (accounts.find((a) => a.id === effectiveMasterId)?.name ?? null) : null}
+              hasWarning={hasMasterWarning}
+            />
+            {masterId && (
+              <button
+                onClick={() => onSetMaster(group.id, null)}
+                title="Remove master"
+                className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-500/10 transition-colors"
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            )}
+          </div>
         )}
 
         {/* Divider */}
