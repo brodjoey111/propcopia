@@ -219,6 +219,7 @@ interface DraggableCardProps {
    */
   isMaster?: boolean;
   isDisabled?: boolean;
+  groupId?: string;
   onConnect?: () => void;
   onDisconnect?: () => void;
   onToggleEnabled?: () => void;
@@ -230,6 +231,7 @@ function DraggableCard({
   isDemo,
   isMaster,
   isDisabled,
+  groupId,
   onConnect,
   onDisconnect,
   onToggleEnabled,
@@ -289,9 +291,11 @@ function DraggableCard({
             {/* Header row */}
             <div className="flex items-center gap-1.5 flex-wrap">
               {isMaster && !isDisabled && (
-                <span title="Active master — followers copy this account" className="shrink-0">
-                  <Crown className="h-3 w-3 text-amber-500" />
-                </span>
+                groupId && !isDragOverlay
+                  ? <DraggableCrownOnCard groupId={groupId} accountId={account.id} />
+                  : <span title="Active master — followers copy this account" className="shrink-0">
+                      <Crown className="h-3 w-3 text-amber-500" />
+                    </span>
               )}
               <span className="font-semibold text-sm leading-tight truncate max-w-[100px]">
                 {account.name}
@@ -386,6 +390,33 @@ function DraggableCard({
           </div>
         </div>
       </Card>
+    </div>
+  );
+}
+
+// ─── Draggable crown on the master card itself ───────────────────────────────
+
+function DraggableCrownOnCard({ groupId, accountId }: { groupId: string; accountId: string }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `master-card-token:${groupId}:${accountId}`,
+  });
+
+  const style = transform
+    ? { transform: `translate3d(${transform.x}px,${transform.y}px,0)` }
+    : undefined;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      title="Drag to transfer master to another account"
+      className={`shrink-0 cursor-grab active:cursor-grabbing touch-none transition-opacity ${
+        isDragging ? "opacity-20" : "opacity-100"
+      }`}
+    >
+      <Crown className="h-3 w-3 text-amber-500" />
     </div>
   );
 }
@@ -688,6 +719,7 @@ function GroupLane({
                   isDemo={isDemo}
                   isMaster={isUngrouped ? undefined : account.id === effectiveMasterId}
                   isDisabled={disabledIds.includes(account.id)}
+                  groupId={isUngrouped ? undefined : group.id}
                   onToggleEnabled={!isUngrouped ? () => onToggleAccount(group.id, account.id) : undefined}
                   onConnect={() => onConnect(account.id)}
                   onDisconnect={() => onDisconnect(account.id, account.name)}
@@ -854,12 +886,24 @@ export function AccountGroupsView({
     const activeItemId = active.id as string;
     const overId       = over.id as string;
 
-    // ── Master crown token dropped onto a card ────────────────────────────
+    // ── Master crown token (header chip) dropped onto a card ─────────────
     if (activeItemId.startsWith("master-token:")) {
       if (overId.startsWith("master-drop:")) {
         const groupId   = activeItemId.slice("master-token:".length);
         const accountId = overId.slice("master-drop:".length);
         setMaster(groupId, accountId);
+      }
+      return;
+    }
+
+    // ── Master crown on a card dragged to another card ────────────────────
+    if (activeItemId.startsWith("master-card-token:")) {
+      const rest       = activeItemId.slice("master-card-token:".length);
+      const colonIdx   = rest.indexOf(":");
+      const groupId    = rest.slice(0, colonIdx);
+      if (overId.startsWith("master-drop:")) {
+        const targetAccountId = overId.slice("master-drop:".length);
+        setMaster(groupId, targetAccountId);
       }
       return;
     }
@@ -909,7 +953,7 @@ export function AccountGroupsView({
 
   const [subView, setSubView] = useState<"kanban" | "ungrouped">("kanban");
 
-  const isMasterTokenDrag = activeId?.startsWith("master-token:") ?? false;
+  const isMasterTokenDrag = (activeId?.startsWith("master-token:") || activeId?.startsWith("master-card-token:")) ?? false;
   const activeAccount     = activeId && !isMasterTokenDrag ? displayAccounts.find((a) => a.id === activeId) : null;
   const ungroupedAccounts = getGroupAccounts(UNGROUPED_ID);
 
