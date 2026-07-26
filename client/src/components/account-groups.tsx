@@ -512,7 +512,7 @@ interface GroupLaneProps {
   onToggleAccount: (groupId: string, accountId: string) => void;
   onConnect: (accountId: string) => void;
   onDisconnect: (accountId: string, name: string) => void;
-  onEditRisk?: (groupId: string) => void;
+  onSaveRisk?: (groupId: string, settings: RiskSettings) => void;
   onClearRisk?: (groupId: string) => void;
   riskSettings?: Partial<RiskSettings>;
 }
@@ -531,7 +531,7 @@ function GroupLane({
   onToggleAccount,
   onConnect,
   onDisconnect,
-  onEditRisk,
+  onSaveRisk,
   onClearRisk,
   riskSettings,
 }: GroupLaneProps) {
@@ -714,22 +714,25 @@ function GroupLane({
             )
         )}
 
-        {/* Risk settings button */}
-        {!isUngrouped && onEditRisk && (
-          <button
-            onClick={() => onEditRisk(group.id)}
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all shrink-0 bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60"
-            title="Group risk settings"
+        {/* Risk settings button — dialog lives here as its own trigger */}
+        {!isUngrouped && onSaveRisk && (
+          <RiskSettingsDialog
+            name={group.name}
+            kind="group"
+            settings={{ ...DEFAULT_RISK_SETTINGS, ...(riskSettings ?? {}) } as RiskSettings}
+            onSave={(settings) => onSaveRisk(group.id, settings)}
           >
-            <ShieldAlert className="h-3 w-3" />
-            Risk
-            {riskSettings && Object.values(riskSettings).some(v =>
-              v !== null && v !== undefined && v !== 'both' && v !== 'pause' &&
-              v !== 100 && !(Array.isArray(v) && v.length === 0)
-            ) && (
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
-            )}
-          </button>
+            <button
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all shrink-0 bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60"
+              title="Group risk settings"
+            >
+              <ShieldAlert className="h-3 w-3" />
+              Risk
+              {riskSettings && (
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
+              )}
+            </button>
+          </RiskSettingsDialog>
         )}
 
         {/* P&L — pushed right */}
@@ -1128,7 +1131,7 @@ export function AccountGroupsView({
                   onToggleAccount={toggleAccountEnabled}
                   onConnect={onConnect}
                   onDisconnect={onDisconnect}
-                  onEditRisk={setRiskDialogGroupId}
+                  onSaveRisk={saveGroupRiskSetting}
                   onClearRisk={clearGroupRiskSetting}
                   riskSettings={groupRiskSettings[lane.id]}
                 />
@@ -1191,26 +1194,6 @@ export function AccountGroupsView({
         </div>
       )}
 
-      {/* ── Group risk settings dialog ── */}
-      {riskDialogGroupId && (() => {
-        const grp = displayGroups.find((g) => g.id === riskDialogGroupId);
-        if (!grp) return null;
-        const existing = groupRiskSettings[riskDialogGroupId] ?? {};
-        return (
-          <RiskSettingsDialog
-            key={riskDialogGroupId}
-            name={grp.name}
-            kind="group"
-            settings={{ ...DEFAULT_RISK_SETTINGS, ...existing } as import("@/components/risk-settings-dialog").RiskSettings}
-            onSave={(settings) => {
-              saveGroupRiskSetting(riskDialogGroupId, settings);
-              setRiskDialogGroupId(null);
-            }}
-            open
-            onOpenChange={(open) => { if (!open) setRiskDialogGroupId(null); }}
-          />
-        );
-      })()}
     </div>
   );
 }
