@@ -513,6 +513,7 @@ interface GroupLaneProps {
   onConnect: (accountId: string) => void;
   onDisconnect: (accountId: string, name: string) => void;
   onEditRisk?: (groupId: string) => void;
+  onClearRisk?: (groupId: string) => void;
   riskSettings?: Partial<RiskSettings>;
 }
 
@@ -531,6 +532,7 @@ function GroupLane({
   onConnect,
   onDisconnect,
   onEditRisk,
+  onClearRisk,
   riskSettings,
 }: GroupLaneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: group.id });
@@ -685,12 +687,31 @@ function GroupLane({
           </button>
         )}
 
-        {/* Risk Settings – Global badge — visible only while trading is ON */}
+        {/* Risk mode badge — visible only while trading is ON */}
         {!isUngrouped && isActive && (
-          <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold tracking-wide bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/25 shrink-0 select-none">
-            <ShieldAlert className="h-2.5 w-2.5" />
-            Risk Settings – Global
-          </span>
+          riskSettings
+            ? (
+              /* Custom mode — amber badge with × to reset */
+              <span className="inline-flex items-center gap-1 rounded-full pl-2.5 pr-1 py-0.5 text-[10px] font-semibold tracking-wide bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25 shrink-0">
+                <ShieldAlert className="h-2.5 w-2.5" />
+                Risk Settings – Custom
+                {onClearRisk && (
+                  <button
+                    onClick={() => onClearRisk(group.id)}
+                    className="ml-0.5 rounded-full p-0.5 hover:bg-amber-500/20 transition-colors"
+                    title="Reset to Global defaults"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                )}
+              </span>
+            ) : (
+              /* Global mode — blue badge */
+              <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold tracking-wide bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/25 shrink-0 select-none">
+                <ShieldAlert className="h-2.5 w-2.5" />
+                Risk Settings – Global
+              </span>
+            )
         )}
 
         {/* Risk settings button */}
@@ -830,6 +851,15 @@ export function AccountGroupsView({
   const saveGroupRiskSetting = (groupId: string, settings: RiskSettings) => {
     setGroupRiskSettings((prev) => {
       const next = { ...prev, [groupId]: settings };
+      try { localStorage.setItem("group-risk-settings-v1", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const clearGroupRiskSetting = (groupId: string) => {
+    setGroupRiskSettings((prev) => {
+      const next = { ...prev };
+      delete next[groupId];
       try { localStorage.setItem("group-risk-settings-v1", JSON.stringify(next)); } catch {}
       return next;
     });
@@ -1099,6 +1129,7 @@ export function AccountGroupsView({
                   onConnect={onConnect}
                   onDisconnect={onDisconnect}
                   onEditRisk={setRiskDialogGroupId}
+                  onClearRisk={clearGroupRiskSetting}
                   riskSettings={groupRiskSettings[lane.id]}
                 />
               );
