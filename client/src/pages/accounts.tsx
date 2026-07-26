@@ -3,7 +3,6 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { AccountCard } from "@/components/account-card";
 import { AddAccountDialog } from "@/components/add-account-dialog";
 import { RiskSettingsDialog, type RiskSettings, DEFAULT_RISK_SETTINGS } from "@/components/risk-settings-dialog";
-import { GlobalRiskSettingsDialog } from "@/components/global-risk-settings-dialog";
 import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
 import { EmptyState } from "@/components/empty-state";
 import { AccountGroupsView } from "@/components/account-groups";
@@ -11,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { ShieldAlert, Loader2, LayoutGrid, List, Table2 } from "lucide-react";
+import { ShieldAlert, Loader2, LayoutGrid, List, Table2, Settings, Globe } from "lucide-react";
 import type { Account } from "@shared/schema";
 
 type ViewMode = 'grid' | 'list' | 'table' | 'groups';
@@ -20,10 +19,13 @@ export default function Accounts() {
   const { toast } = useToast();
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [addGroupTrigger, setAddGroupTrigger] = useState(0);
-  const [globalSettings, setGlobalSettings] = useState({
-    positionScaling: 100,
-    maxContracts: undefined as number | undefined,
-    blockedTickers: [] as string[],
+  const [globalSettings, setGlobalSettings] = useState<RiskSettings>(() => {
+    try {
+      const saved = localStorage.getItem('global-risk-settings-v1');
+      return saved ? { ...DEFAULT_RISK_SETTINGS, ...JSON.parse(saved) } : { ...DEFAULT_RISK_SETTINGS };
+    } catch {
+      return { ...DEFAULT_RISK_SETTINGS };
+    }
   });
   const [disconnectAlert, setDisconnectAlert] = useState<{
     open: boolean;
@@ -165,32 +167,29 @@ export default function Accounts() {
     toast({ title: "Risk Settings Saved", description: `Updated for ${account?.name}` });
   };
 
-  const handleGlobalSettingsUpdate = (config: {
-    positionScaling: number;
-    maxContracts: number | null;
-    blockedTickers: string[];
-  }) => {
-    setGlobalSettings({
-      positionScaling: config.positionScaling,
-      maxContracts: config.maxContracts || undefined,
-      blockedTickers: config.blockedTickers,
-    });
+  const handleGlobalSettingsUpdate = (settings: RiskSettings) => {
+    setGlobalSettings(settings);
+    try { localStorage.setItem('global-risk-settings-v1', JSON.stringify(settings)); } catch {}
+    toast({ title: "Global Defaults Saved", description: "All accounts on 'Global' mode now use these limits." });
   };
 
   const getEffectiveSettings = (account: any) => {
-    if (account.accountType !== 'follower') return account;
-    
     if (account.riskMode === 'global') {
-      return {
-        ...account,
-        positionScaling: globalSettings.positionScaling,
-        maxContracts: globalSettings.maxContracts,
-        blockedTickers: globalSettings.blockedTickers,
-      };
+      return { ...account, ...globalSettings };
     }
-    
     return account;
   };
+
+  // Count active risk limits on an account (for badge)
+  const countActiveLimits = (settings: RiskSettings): number =>
+    [settings.maxDailyLoss, settings.maxDailyLossPct, settings.maxWeeklyLoss,
+     settings.maxWeeklyLossPct, settings.maxDrawdownPct, settings.maxConsecutiveLosses,
+     settings.maxOpenPositions, settings.maxTradesPerDay, settings.minAccountBalance,
+     settings.cooldownAfterLoss].filter(v => v !== null && v !== undefined && v !== 0).length
+    + (settings.blockedTickers?.length ? 1 : 0)
+    + (settings.allowedTickers?.length ? 1 : 0)
+    + (settings.allowedDirections !== 'both' ? 1 : 0)
+    + (settings.tradingStartTime ? 1 : 0);
 
   const hasAccounts = accounts.length > 0;
 
@@ -212,17 +211,58 @@ export default function Accounts() {
           </p>
         </div>
         <div className="flex gap-2">
-          {hasAccounts && (
-            <GlobalRiskSettingsDialog
-              positionScaling={globalSettings.positionScaling}
-              maxContracts={globalSettings.maxContracts}
-              blockedTickers={globalSettings.blockedTickers}
-              onSave={handleGlobalSettingsUpdate}
-            />
-          )}
-
           <AddAccountDialog onAdd={handleAddAccount} />
         </div>
+      </div>
+
+      {/* ── Global Risk Defaults panel ───────────────────────────── */}
+      <div className="rounded-xl border bg-card p-4 flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="rounded-lg bg-primary/10 p-2.5 shrink-0 w-fit">
+          <ShieldAlert className="h-5 w-5 text-primary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm">Global Risk Defaults</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Set limits once here — every account using <span className="font-medium text-foreground">Global</span> mode inherits them automatically.
+          </p>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {globalSettings.maxDailyLoss && (
+              <Badge variant="secondary" className="text-xs">Daily loss: ${globalSettings.maxDailyLoss.toLocaleString()}</Badge>
+            )}
+            {globalSettings.maxDailyLossPct && (
+              <Badge variant="secondary" className="text-xs">Daily loss: {globalSettings.maxDailyLossPct}%</Badge>
+            )}
+            {globalSettings.maxDrawdownPct && (
+              <Badge variant="secondary" className="text-xs">Drawdown: {globalSettings.maxDrawdownPct}%</Badge>
+            )}
+            {globalSettings.maxWeeklyLoss && (
+              <Badge variant="secondary" className="text-xs">Weekly loss: ${globalSettings.maxWeeklyLoss.toLocaleString()}</Badge>
+            )}
+            {globalSettings.maxConsecutiveLosses && (
+              <Badge variant="secondary" className="text-xs">Max {globalSettings.maxConsecutiveLosses} consecutive losses</Badge>
+            )}
+            {globalSettings.allowedDirections !== 'both' && (
+              <Badge variant="secondary" className="text-xs capitalize">{globalSettings.allowedDirections} only</Badge>
+            )}
+            {globalSettings.positionScaling !== 100 && (
+              <Badge variant="secondary" className="text-xs">Scaling: {globalSettings.positionScaling}%</Badge>
+            )}
+            {countActiveLimits(globalSettings) === 0 && (
+              <span className="text-xs text-muted-foreground italic">No limits set yet</span>
+            )}
+          </div>
+        </div>
+        <RiskSettingsDialog
+          name="Global Risk Defaults"
+          kind="group"
+          settings={globalSettings}
+          onSave={handleGlobalSettingsUpdate}
+        >
+          <Button variant="outline" size="sm" className="shrink-0">
+            <Settings className="mr-2 h-3.5 w-3.5" />
+            Edit Defaults
+          </Button>
+        </RiskSettingsDialog>
       </div>
 
       <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
@@ -298,25 +338,28 @@ export default function Accounts() {
                     onConnect={() => handleConnect(account.id)}
                     onDisconnect={() => handleDisconnectClick(account.id, account.name)}
                     configureButton={
-                      account.accountType === 'follower' ? (
-                        <RiskSettingsDialog
-                          name={account.name}
-                          kind="account"
-                          settings={accountToRiskSettings(account)}
-                          globalSettings={globalSettings}
-                          onSave={(s) => handleRiskSettingsSave(account.id, s)}
+                      <RiskSettingsDialog
+                        name={account.name}
+                        kind="account"
+                        settings={accountToRiskSettings(account)}
+                        globalSettings={globalSettings}
+                        onSave={(s) => handleRiskSettingsSave(account.id, s)}
+                      >
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          data-testid={`button-configure-${account.id}`}
                         >
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full"
-                            data-testid={`button-configure-${account.id}`}
-                          >
-                            <ShieldAlert className="mr-2 h-3 w-3" />
-                            Risk Settings
-                          </Button>
-                        </RiskSettingsDialog>
-                      ) : undefined
+                          <ShieldAlert className="mr-2 h-3 w-3" />
+                          Risk Settings
+                          {account.riskMode === 'global'
+                            ? <Globe className="ml-1.5 h-3 w-3 text-muted-foreground" />
+                            : countActiveLimits(accountToRiskSettings(account)) > 0
+                              ? <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-amber-500 inline-block" />
+                              : null}
+                        </Button>
+                      </RiskSettingsDialog>
                     }
                   />
                 );
@@ -372,19 +415,27 @@ export default function Accounts() {
                       </div>
 
                       <div className="flex gap-2">
-                        {account.accountType === 'follower' && (
-                          <RiskSettingsDialog
-                            name={account.name}
-                            kind="account"
-                            settings={accountToRiskSettings(account)}
-                            globalSettings={globalSettings}
-                            onSave={(s) => handleRiskSettingsSave(account.id, s)}
+                        <RiskSettingsDialog
+                          name={account.name}
+                          kind="account"
+                          settings={accountToRiskSettings(account)}
+                          globalSettings={globalSettings}
+                          onSave={(s) => handleRiskSettingsSave(account.id, s)}
+                        >
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            data-testid={`button-configure-${account.id}`}
+                            title={account.riskMode === 'global' ? 'Using global defaults' : 'Custom risk settings'}
                           >
-                            <Button variant="outline" size="sm" data-testid={`button-configure-${account.id}`}>
-                              <ShieldAlert className="h-3 w-3" />
-                            </Button>
-                          </RiskSettingsDialog>
-                        )}
+                            <ShieldAlert className="h-3 w-3" />
+                            {account.riskMode === 'global'
+                              ? <Globe className="ml-1 h-3 w-3 text-muted-foreground" />
+                              : countActiveLimits(accountToRiskSettings(account)) > 0
+                                ? <span className="ml-1 h-1.5 w-1.5 rounded-full bg-amber-500 inline-block" />
+                                : null}
+                          </Button>
+                        </RiskSettingsDialog>
                         {account.isConnected ? (
                           <Button
                             variant="outline"
@@ -472,19 +523,27 @@ export default function Accounts() {
                           )}
                           <td className="p-3">
                             <div className="flex gap-2 justify-end">
-                              {account.accountType === 'follower' && (
-                                <RiskSettingsDialog
-                                  name={account.name}
-                                  kind="account"
-                                  settings={accountToRiskSettings(account)}
-                                  globalSettings={globalSettings}
-                                  onSave={(s) => handleRiskSettingsSave(account.id, s)}
+                              <RiskSettingsDialog
+                                name={account.name}
+                                kind="account"
+                                settings={accountToRiskSettings(account)}
+                                globalSettings={globalSettings}
+                                onSave={(s) => handleRiskSettingsSave(account.id, s)}
+                              >
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  data-testid={`button-configure-${account.id}`}
+                                  title={account.riskMode === 'global' ? 'Using global defaults' : 'Custom risk settings'}
                                 >
-                                  <Button variant="outline" size="sm" data-testid={`button-configure-${account.id}`}>
-                                    <ShieldAlert className="h-3 w-3" />
-                                  </Button>
-                                </RiskSettingsDialog>
-                              )}
+                                  <ShieldAlert className="h-3 w-3" />
+                                  {account.riskMode === 'global'
+                                    ? <Globe className="ml-1 h-3 w-3 text-muted-foreground" />
+                                    : countActiveLimits(accountToRiskSettings(account)) > 0
+                                      ? <span className="ml-1 h-1.5 w-1.5 rounded-full bg-amber-500 inline-block" />
+                                      : null}
+                                </Button>
+                              </RiskSettingsDialog>
                               {account.isConnected ? (
                                 <Button
                                   variant="outline"
