@@ -1,3 +1,4 @@
+
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
@@ -7,13 +8,19 @@ import { RithmicAPI } from "./rithmic-api";
 import { storage } from "./storage";
 import { db } from "./db";
 import bcrypt from "bcrypt";
-import { insertUserSchema, updateUserProfileSchema, insertWatchlistItemSchema, insertAccountSchema, accounts } from "@shared/schema";
+import {
+  insertUserSchema,
+  updateUserProfileSchema,
+  insertWatchlistItemSchema,
+  insertAccountSchema,
+  accounts,
+} from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { marketDataService, type MarketPrice } from "./market-data";
 import OpenAI from "openai";
 import { TradeCopyEngine } from "./trade-copy-engine";
 import { tradeLogger } from "./trade-logger";
-
+import { DashboardController } from "./controllers/DashboardController";
 const tradovateInstances = new Map<string, TradovateAPI>();
 const tradeifyInstances = new Map<string, TradeifyAPI>();
 const rithmicInstances = new Map<string, RithmicAPI>();
@@ -26,6 +33,8 @@ const openai = new OpenAI({
 
 export function registerRoutes(app: Express): Server {
   const server = createServer(app);
+
+  app.get("/api/dashboard", DashboardController.getDashboard);
 
   // Authentication routes
   app.post("/api/auth/signup", async (req, res) => {
@@ -220,7 +229,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       const tradovateAPI = new TradovateAPI(environment || 'demo');
-      
+
       const authResult = await tradovateAPI.authenticate({
         username,
         password,
@@ -264,7 +273,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       const tradeifyAPI = new TradeifyAPI();
-      
+
       const authResult = await tradeifyAPI.authenticate({
         username,
         apiKey,
@@ -274,7 +283,7 @@ export function registerRoutes(app: Express): Server {
 
       if (connectionTest.success) {
         tradeifyInstances.set(username, tradeifyAPI);
-        
+
         const normalizedAccounts = connectionTest.data?.map((account: any) => ({
           id: String(account.id || account.accountId),
           name: account.name || account.accountName || `Account ${account.id}`,
@@ -571,7 +580,7 @@ export function registerRoutes(app: Express): Server {
       // Get master account Tradovate API instance (must be authenticated first)
       const masterUsername = req.body.masterUsername;
       const masterTradovate = tradovateInstances.get(masterUsername);
-      
+
       if (!masterTradovate || !masterTradovate.isTokenValid()) {
         return res.status(401).json({
           success: false,
@@ -629,7 +638,7 @@ export function registerRoutes(app: Express): Server {
       // Get follower account Tradovate API instance
       const followerUsername = req.body.followerUsername;
       const followerTradovate = tradovateInstances.get(followerUsername);
-      
+
       if (!followerTradovate || !followerTradovate.isTokenValid()) {
         return res.status(401).json({
           success: false,
@@ -773,7 +782,7 @@ export function registerRoutes(app: Express): Server {
     try {
       const prices = marketDataService.getAllPrices();
       const pricesArray = Array.from(prices.entries()).map(([_symbol, data]) => data);
-      
+
       return res.json({
         success: true,
         data: pricesArray,
@@ -920,7 +929,7 @@ export function registerRoutes(app: Express): Server {
     if (!apiKey) {
       throw new Error('FMP_API_KEY is not configured');
     }
-    
+
     // FMP gainers/losers endpoints (correct URLs for free tier)
     let url: string;
     if (type === 'gainers') {
@@ -930,24 +939,24 @@ export function registerRoutes(app: Express): Server {
     } else {
       url = `https://financialmodelingprep.com/api/v3/actives?apikey=${apiKey}`;
     }
-    
+
     const response = await fetch(url);
-    
+
     if (!response.ok) {
       throw new Error(`FMP API error: ${response.statusText}`);
     }
-    
+
     const data = await response.json();
-    
+
     // FMP returns an array directly or an error object
     if (data.Error || data['Error Message']) {
       throw new Error(data.Error || data['Error Message'] || 'FMP API error');
     }
-    
+
     if (!Array.isArray(data) || data.length === 0) {
       throw new Error('FMP returned no data');
     }
-    
+
     return data;
   }
 
@@ -955,7 +964,7 @@ export function registerRoutes(app: Express): Server {
   app.get("/api/market-movers", async (req, res) => {
     try {
       const type = (req.query.type as string || 'gainers') as 'gainers' | 'losers' | 'actives';
-      
+
       // Fetch LIVE data from FMP - no fallback
       const movers = await fetchMarketMovers(type);
 
@@ -995,7 +1004,7 @@ export function registerRoutes(app: Express): Server {
     try {
       const { symbol } = req.params;
       const finnhubKey = process.env.FINNHUB_API_KEY;
-      
+
       if (!finnhubKey) {
         return res.status(500).json({
           success: false,
@@ -1062,10 +1071,10 @@ export function registerRoutes(app: Express): Server {
     const basePrice = 250 + Math.random() * 50; // Random base price between 250-300
     const now = Date.now();
     const candles: any[] = [];
-    
+
     let dataPoints = 30;
     let interval = 24 * 60 * 60 * 1000; // 1 day
-    
+
     switch (timeframe) {
       case '1D':
         dataPoints = 78; // Every 5 minutes for 1 day
@@ -1092,10 +1101,10 @@ export function registerRoutes(app: Express): Server {
         interval = 7 * 24 * 60 * 60 * 1000;
         break;
     }
-    
+
     let price = basePrice;
     const volatility = 0.02; // 2% volatility
-    
+
     for (let i = dataPoints; i >= 0; i--) {
       const timestamp = now - (i * interval);
       const changePercent = (Math.random() - 0.5) * volatility * 2;
@@ -1104,7 +1113,7 @@ export function registerRoutes(app: Express): Server {
       const close = open + change;
       const high = Math.max(open, close) + Math.abs(change) * Math.random();
       const low = Math.min(open, close) - Math.abs(change) * Math.random();
-      
+
       candles.push({
         timestamp,
         date: new Date(timestamp).toISOString(),
@@ -1114,10 +1123,10 @@ export function registerRoutes(app: Express): Server {
         close,
         volume: Math.floor(10000000 + Math.random() * 50000000),
       });
-      
+
       price = close;
     }
-    
+
     return res.json({
       success: true,
       data: {
@@ -1134,7 +1143,7 @@ export function registerRoutes(app: Express): Server {
       const { symbol } = req.params;
       const { timeframe = '1M' } = req.query;
       const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
-      
+
       if (!apiKey) {
         return res.status(500).json({
           success: false,
@@ -1196,7 +1205,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       const timeSeries = data[timeSeriesKey];
-      
+
       // Transform data for the chart
       const chartData = Object.entries(timeSeries).map(([dateStr, values]: [string, any]) => ({
         timestamp: new Date(dateStr).getTime(),
@@ -1253,7 +1262,7 @@ export function registerRoutes(app: Express): Server {
     try {
       const { symbol } = req.params;
       const finnhubKey = process.env.FINNHUB_API_KEY;
-      
+
       if (!finnhubKey) {
         return res.status(500).json({
           success: false,
@@ -1302,7 +1311,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       const watchlist = await storage.getWatchlist(req.session.userId);
-      
+
       // Fetch quotes for all watchlist items
       const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
       if (!apiKey) {
@@ -1321,7 +1330,7 @@ export function registerRoutes(app: Express): Server {
             const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${item.ticker}&apikey=${apiKey}`;
             const response = await fetch(url);
             const data = await response.json();
-            
+
             if (data['Global Quote']) {
               const quote = data['Global Quote'];
               return {
@@ -1547,7 +1556,7 @@ remind them that you provide platform assistance only, not financial advice.`;
 
       // ── 1. Stop every active trade-copy engine ───────────────────────────
       const stopped: string[] = [];
-      for (const [uid, engine] of tradeCopyEngines.entries()) {
+        for (const [uid, engine] of Array.from(tradeCopyEngines.entries())) {
         try {
           await engine.disconnect();
           tradeCopyEngines.delete(uid);

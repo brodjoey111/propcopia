@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { Wallet, TrendingUp, Activity, Users, Settings } from "lucide-react";
 import type { Account as AccountType } from "@shared/schema";
-
+import BrokerStatusCard from "@/components/dashboard/BrokerStatusCard";
 interface Account extends Omit<AccountType, 'openPositions' | 'pnl'> {
   openPositions: number | null;
   pnl: string | null;
@@ -246,6 +246,15 @@ export default function Dashboard() {
           <AddAccountDialog onAdd={handleAddAccount} />
         </div>
       </div>
+      <div className="mb-6">
+        <BrokerStatusCard
+          connected={true}
+          brokerName="Rithmic"
+          accounts={accounts.length}
+          lastUpdated="Just now"
+        />
+      </div>
+      
 
       <div>
         <DraggableDashboardGrid
