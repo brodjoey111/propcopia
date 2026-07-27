@@ -61,8 +61,15 @@ export class RithmicBroker implements BrokerInterface {
     }));
   }
 
-  async placeOrder(_order: OrderRequest): Promise<void> {
-    throw new Error("Rithmic order placement is not implemented yet.");
+  async placeOrder(order: OrderRequest): Promise<void> {
+    await this.api.sendOrder({
+      accountId: order.accountId,
+      symbol: order.symbol,
+      side: order.side,
+      quantity: order.quantity,
+      orderType: order.orderType,
+      price: order.price,
+    });
   }
 
   async flatten(accountId: string): Promise<void> {

@@ -125,8 +125,8 @@ const TEMPLATE = {
 
 // ─── Server URIs ──────────────────────────────────────────────────────────────
 const SERVERS: Record<string, string> = {
-  test: 'wss://rituz00100.rithmic.com:443',
-  live: 'wss://rithmic01.rithmic.com:443',
+  test: "wss://rituz00100.rithmic.com:443",
+  live: process.env.RITHMIC_LIVE_URL ?? "",
 };
 
 // ─── Manual protobuf encoder ──────────────────────────────────────────────────
@@ -332,9 +332,22 @@ export class RithmicAPI {
   // ── Public API ─────────────────────────────────────────────────────────────
 
   async authenticate(): Promise<{ success: boolean; message: string }> {
-    const serverUri = SERVERS[this.credentials.environment] ?? SERVERS.test;
-    console.log(`[RithmicAPI] Authenticating ${this.credentials.username} → ${serverUri}`);
+    const serverUri = SERVERS[this.credentials.environment];
+
+    if (!serverUri) {
+      return {
+        success: false,
+        message:
+          "Live Rithmic connection is not configured yet. Use Demo until the RITHMIC_LIVE_URL secret is added.",
+      };
+    }
+
+    console.log(
+      `[RithmicAPI] Authenticating ${this.credentials.username} → ${serverUri}`,
+    );
+
     return this.connectToPlant(serverUri, INFRA_TYPE.TICKER_PLANT);
+   
   }
 
   async testConnection(): Promise<{ success: boolean; message: string; data?: RithmicAccount[] }> {
@@ -350,8 +363,65 @@ export class RithmicAPI {
 
     return { success: true, message: 'Successfully connected to Rithmic', data: placeholder };
   }
+  async sendOrder(order: {
+    accountId: string;
+    symbol: string;
+    side: "BUY" | "SELL";
+    quantity: number;
+    orderType: "MARKET" | "LIMIT" | "STOP";
+    price?: number;
+  }): Promise<void> {
+    if (!order.accountId.trim()) {
+      throw new Error("Rithmic order requires an account ID.");
+    }
 
+    if (!order.symbol.trim()) {
+      throw new Error("Rithmic order requires a symbol.");
+    }
+
+    if (!Number.isInteger(order.quantity) || order.quantity <= 0) {
+      throw new Error("Rithmic order quantity must be a positive whole number.");
+    }
+
+    if (
+      (order.orderType === "LIMIT" || order.orderType === "STOP") &&
+      (order.price === undefined || order.price <= 0)
+    ) {
+      throw new Error(`${order.orderType} orders require a valid price.`);
+    }
+
+    throw new Error(
+      "Rithmic order submission is waiting for the official R | Protocol order-entry specification.",
+    );
+  }
   /**
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   *
+   * 
    * Close all open positions for the given account by connecting to ORDER_PLANT
    * and sending a RequestExitPosition (template 3504).
    *

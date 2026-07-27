@@ -35,7 +35,7 @@ export default function TestConnection() {
     try {
       const response = await apiRequest(
         "POST",
-        "/api/tradovate/test-connection",
+        "/api/rithmic/test-connection",
         formData
       );
       const data = await response.json();
