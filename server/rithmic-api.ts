@@ -636,9 +636,136 @@ export class RithmicAPI {
       throw new Error(`${order.orderType} orders require a valid price.`);
     }
 
-    throw new Error(
-      "Rithmic order submission is waiting for the official R | Protocol order-entry specification.",
-    );
+    if (order.orderType === "STOP") {
+      throw new Error("Rithmic STOP orders are not implemented yet.");
+    }
+
+    const supportedOrderType = order.orderType;
+
+    const serverUri = SERVERS[this.credentials.environment];
+
+    if (!serverUri) {
+      throw new Error(
+        "Live Rithmic connection is not configured yet. Use Demo until the RITHMIC_LIVE_URL secret is added.",
+      );
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      let loginDone = false;
+      let settled = false;
+
+      const ws = new WebSocket(serverUri, this.makeSslOptions());
+
+      const cleanup = () => {
+        clearTimeout(loginTimeout);
+        ws.off('open', onOpen);
+        ws.off('message', onMessage);
+        ws.off('error', onError);
+        ws.off('close', onClose);
+      };
+
+      const finishResolve = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        } else if (ws.readyState === WebSocket.CONNECTING) {
+          ws.terminate();
+        }
+        resolve();
+      };
+
+      const finishReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        } else if (ws.readyState === WebSocket.CONNECTING) {
+          ws.terminate();
+        }
+        reject(error);
+      };
+
+      const loginTimeout = setTimeout(() => {
+        ws.terminate();
+        finishReject(new Error('Connection timed out (15 s)'));
+      }, 15_000);
+
+      const onOpen = () => {
+        ws.send(this.buildLoginRequest(INFRA_TYPE.ORDER_PLANT));
+      };
+
+      const onMessage = async (data: WebSocket.RawData) => {
+        const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
+        const fields = decodeProto(buffer);
+        const templateId = fields.ints.get(FIELD.TEMPLATE_ID)?.[0];
+
+        if (templateId === TEMPLATE.RESPONSE_LOGIN && !loginDone) {
+          loginDone = true;
+          clearTimeout(loginTimeout);
+
+          try {
+            const fcmId = fields.strings.get(FIELD.FCM_ID)?.[0] ?? '';
+            const ibId = fields.strings.get(FIELD.IB_ID)?.[0] ?? '';
+
+            const tradeRoutePromise = this.waitForTradeRoutesResponse(
+              ws,
+              fcmId,
+              ibId,
+              order.exchange,
+              10_000,
+            );
+            ws.send(this.buildTradeRoutesRequest());
+            const { tradeRoute } = await tradeRoutePromise;
+
+            const newOrderPromise = this.waitForNewOrderResponse(ws, 10_000);
+            ws.send(
+              this.buildNewOrderRequest(
+                order.accountId,
+                order.symbol,
+                order.side,
+                order.quantity,
+                supportedOrderType,
+                order.price,
+                fcmId,
+                ibId,
+                order.exchange,
+                tradeRoute,
+              ),
+            );
+            await newOrderPromise;
+
+            finishResolve();
+          } catch (error) {
+            finishReject(error instanceof Error ? error : new Error(String(error)));
+          }
+        } else if (templateId === TEMPLATE.REJECT && !loginDone) {
+          const rpCode = fields.strings.get(FIELD.RP_CODE)?.[0] ?? 'unknown';
+          finishReject(new Error(`Rithmic rejected login (rp_code=${rpCode})`));
+        }
+      };
+
+      const onError = (err: Error) => {
+        finishReject(new Error(`WebSocket error: ${err.message}`));
+      };
+
+      const onClose = (code: number) => {
+        if (!loginDone) {
+          finishReject(
+            new Error(
+              `Connection closed before login response (code=${code}). Check credentials and system_name.`,
+            ),
+          );
+        }
+      };
+
+      ws.on('open', onOpen);
+      ws.on('message', onMessage);
+      ws.on('error', onError);
+      ws.on('close', onClose);
+    });
   }
   /**
    *
