@@ -345,6 +345,71 @@ export class RithmicAPI {
     });
   }
 
+  private buildNewOrderRequest(
+    accountId: string,
+    symbol: string,
+    side: "BUY" | "SELL",
+    quantity: number,
+    orderType: "MARKET" | "LIMIT",
+    price: number | undefined,
+    fcmId: string,
+    ibId: string,
+    exchange: string,
+    tradeRoute: string,
+  ): Buffer {
+    const SYMBOL_FIELD = 110100;
+    const EXCHANGE_FIELD = 110101;
+    const PRICE_FIELD = 110306;
+    const QUANTITY_FIELD = 112004;
+    const TRANSACTION_TYPE_FIELD = 112003;
+    const DURATION_FIELD = 112005;
+    const PRICE_TYPE_FIELD = 112008;
+    const TRADE_ROUTE_FIELD = 112016;
+
+    const BUY = 1;
+    const SELL = 2;
+    const DAY = 1;
+    const LIMIT = 1;
+    const MARKET = 2;
+    const AUTO = 2;
+
+    const pbDouble = (fieldNumber: number, value: number): Buffer => {
+      const tag = writeVarint((fieldNumber << 3) | 1);
+      const val = Buffer.allocUnsafe(8);
+      val.writeDoubleLE(value, 0);
+      return Buffer.concat([tag, val]);
+    };
+
+    if (orderType === "LIMIT" && (price === undefined || price <= 0)) {
+      throw new Error("LIMIT orders require a valid price.");
+    }
+
+    const transactionType = side === "BUY" ? BUY : SELL;
+    const priceType = orderType === "MARKET" ? MARKET : LIMIT;
+
+    const parts: Buffer[] = [
+      pbInt32(FIELD.TEMPLATE_ID, 312),
+      pbString(FIELD.USER_MSG, 'hello'),
+      pbString(FIELD.FCM_ID, fcmId),
+      pbString(FIELD.IB_ID, ibId),
+      pbString(FIELD.ACCOUNT_ID, accountId),
+      pbString(SYMBOL_FIELD, symbol),
+      pbString(EXCHANGE_FIELD, exchange),
+      pbInt32(QUANTITY_FIELD, quantity),
+      pbInt32(TRANSACTION_TYPE_FIELD, transactionType),
+      pbInt32(DURATION_FIELD, DAY),
+      pbInt32(PRICE_TYPE_FIELD, priceType),
+      pbString(TRADE_ROUTE_FIELD, tradeRoute),
+      pbInt32(FIELD.MANUAL_OR_AUTO, AUTO),
+    ];
+
+    if (orderType === "LIMIT") {
+      parts.push(pbDouble(PRICE_FIELD, price!));
+    }
+
+    return Buffer.concat(parts);
+  }
+
   private buildExitPositionRequest(accountId: string, fcmId: string, ibId: string): Buffer {
     const parts: Buffer[] = [
       pbInt32(FIELD.TEMPLATE_ID,    TEMPLATE.REQUEST_EXIT_POSITION),
