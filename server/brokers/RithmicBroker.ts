@@ -65,6 +65,7 @@ export class RithmicBroker implements BrokerInterface {
     await this.api.sendOrder({
       accountId: order.accountId,
       symbol: order.symbol,
+      exchange: order.exchange,
       side: order.side,
       quantity: order.quantity,
       orderType: order.orderType,

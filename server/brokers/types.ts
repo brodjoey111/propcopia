@@ -20,6 +20,7 @@ export interface BrokerAccount {
 export interface OrderRequest {
   accountId: string;
   symbol: string;
+  exchange: string;
   side: "BUY" | "SELL";
   quantity: number;
   orderType: "MARKET" | "LIMIT" | "STOP";

@@ -532,6 +532,7 @@ export class RithmicAPI {
   async sendOrder(order: {
     accountId: string;
     symbol: string;
+    exchange: string;
     side: "BUY" | "SELL";
     quantity: number;
     orderType: "MARKET" | "LIMIT" | "STOP";
@@ -543,6 +544,10 @@ export class RithmicAPI {
 
     if (!order.symbol.trim()) {
       throw new Error("Rithmic order requires a symbol.");
+    }
+
+    if (!order.exchange.trim()) {
+      throw new Error("Rithmic order requires an exchange.");
     }
 
     if (!Number.isInteger(order.quantity) || order.quantity <= 0) {
