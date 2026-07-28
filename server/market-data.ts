@@ -36,7 +36,7 @@ class MarketDataService {
       console.log('[MarketData] Using Finnhub API for real-time data');
       this.connect();
     } else {
-      console.log('[MarketData] No API key configured, using simulated market data');
+      //console.log('[MarketData] No API key configured, using simulated market data');
     }
     this.startSimulatedUpdates();
   }

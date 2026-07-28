@@ -1,4 +1,4 @@
-
+import "dotenv/config";
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
@@ -25,12 +25,14 @@ const tradovateInstances = new Map<string, TradovateAPI>();
 const tradeifyInstances = new Map<string, TradeifyAPI>();
 const rithmicInstances = new Map<string, RithmicAPI>();
 const tradeCopyEngines = new Map<string, TradeCopyEngine>();
-
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
-
+const openai =
+  process.env.AI_INTEGRATIONS_OPENAI_API_KEY &&
+  process.env.AI_INTEGRATIONS_OPENAI_BASE_URL
+    ? new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      })
+    : null;
 export function registerRoutes(app: Express): Server {
   const server = createServer(app);
 
