@@ -244,6 +244,13 @@ export class RithmicAPI {
     return pbInt32(FIELD.TEMPLATE_ID, TEMPLATE.REQUEST_HEARTBEAT);
   }
 
+  private buildTradeRoutesRequest(): Buffer {
+    return Buffer.concat([
+      pbInt32(FIELD.TEMPLATE_ID, 310),
+      pbString(FIELD.USER_MSG, 'hello'),
+    ]);
+  }
+
   private buildExitPositionRequest(accountId: string, fcmId: string, ibId: string): Buffer {
     const parts: Buffer[] = [
       pbInt32(FIELD.TEMPLATE_ID,    TEMPLATE.REQUEST_EXIT_POSITION),
