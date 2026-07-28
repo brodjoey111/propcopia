@@ -251,6 +251,100 @@ export class RithmicAPI {
     ]);
   }
 
+  private waitForTradeRoutesResponse(
+    ws: WebSocket,
+    fcmId: string,
+    ibId: string,
+    exchange: string,
+    timeoutMs: number,
+  ): Promise<{ tradeRoute: string }> {
+    const EXCHANGE_FIELD = 110101;
+    const TRADE_ROUTE_FIELD = 112016;
+
+    return new Promise((resolve, reject) => {
+      const candidates: Array<{
+        fcmId: string;
+        ibId: string;
+        exchange: string;
+        tradeRoute: string;
+      }> = [];
+
+      let settled = false;
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        ws.off('message', onMessage);
+        ws.off('error', onError);
+        ws.off('close', onClose);
+      };
+
+      const finishResolve = (value: { tradeRoute: string }) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(value);
+      };
+
+      const finishReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+
+      const timeout = setTimeout(() => {
+        finishReject(new Error('Timeout waiting for trade route response'));
+      }, timeoutMs);
+
+      const onMessage = (data: WebSocket.RawData) => {
+        const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
+        const fields = decodeProto(buffer);
+
+        const rpCodes = fields.strings.get(FIELD.RP_CODE) ?? [];
+        const messageFcmId = fields.strings.get(FIELD.FCM_ID)?.[0] ?? '';
+        const messageIbId = fields.strings.get(FIELD.IB_ID)?.[0] ?? '';
+        const messageExchange = fields.strings.get(EXCHANGE_FIELD)?.[0] ?? '';
+        const messageTradeRoute = fields.strings.get(TRADE_ROUTE_FIELD)?.[0] ?? '';
+
+        const isMatchingRoute =
+          messageFcmId === fcmId &&
+          messageIbId === ibId &&
+          messageExchange === exchange &&
+          messageTradeRoute.length > 0;
+
+        if (isMatchingRoute) {
+          candidates.push({
+            fcmId: messageFcmId,
+            ibId: messageIbId,
+            exchange: messageExchange,
+            tradeRoute: messageTradeRoute,
+          });
+        }
+
+        if (rpCodes.includes('0')) {
+          const match = candidates[0];
+          if (match) {
+            finishResolve({ tradeRoute: match.tradeRoute });
+          } else {
+            finishReject(new Error(`No matching trade route returned for exchange=${exchange}`));
+          }
+        }
+      };
+
+      const onError = (err: Error) => {
+        finishReject(new Error(`Trade route request failed: ${err.message}`));
+      };
+
+      const onClose = (code: number) => {
+        finishReject(new Error(`Trade route socket closed before completion (code=${code})`));
+      };
+
+      ws.on('message', onMessage);
+      ws.on('error', onError);
+      ws.on('close', onClose);
+    });
+  }
+
   private buildExitPositionRequest(accountId: string, fcmId: string, ibId: string): Buffer {
     const parts: Buffer[] = [
       pbInt32(FIELD.TEMPLATE_ID,    TEMPLATE.REQUEST_EXIT_POSITION),
