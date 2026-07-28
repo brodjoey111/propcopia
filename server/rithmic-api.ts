@@ -345,6 +345,81 @@ export class RithmicAPI {
     });
   }
 
+  private waitForNewOrderResponse(
+    ws: WebSocket,
+    timeoutMs: number,
+  ): Promise<{ basketId?: string }> {
+    const RESPONSE_NEW_ORDER_TEMPLATE = 313;
+    const BASKET_ID_FIELD = 110300;
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        ws.off('message', onMessage);
+        ws.off('error', onError);
+        ws.off('close', onClose);
+      };
+
+      const finishResolve = (value: { basketId?: string }) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(value);
+      };
+
+      const finishReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+
+      const timeout = setTimeout(() => {
+        finishReject(new Error('Timeout waiting for new order response'));
+      }, timeoutMs);
+
+      const onMessage = (data: WebSocket.RawData) => {
+        const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
+        const fields = decodeProto(buffer);
+        const templateId = fields.ints.get(FIELD.TEMPLATE_ID)?.[0];
+        const rpCodes = fields.strings.get(FIELD.RP_CODE) ?? [];
+        const basketId = fields.strings.get(BASKET_ID_FIELD)?.[0];
+
+        if (templateId === TEMPLATE.REJECT) {
+          const rpCode = rpCodes[0] ?? 'unknown';
+          finishReject(new Error(`Rithmic reject: rp_code=${rpCode}`));
+          return;
+        }
+
+        if (templateId !== RESPONSE_NEW_ORDER_TEMPLATE) {
+          return;
+        }
+
+        if (rpCodes.length > 0) {
+          if (rpCodes.includes('0')) {
+            finishResolve({ basketId });
+          } else {
+            finishReject(new Error(`New order failed: rp_code=${rpCodes[0]}`));
+          }
+        }
+      };
+
+      const onError = (err: Error) => {
+        finishReject(new Error(`New order request failed: ${err.message}`));
+      };
+
+      const onClose = (code: number) => {
+        finishReject(new Error(`New order socket closed before completion (code=${code})`));
+      };
+
+      ws.on('message', onMessage);
+      ws.on('error', onError);
+      ws.on('close', onClose);
+    });
+  }
+
   private buildNewOrderRequest(
     accountId: string,
     symbol: string,
