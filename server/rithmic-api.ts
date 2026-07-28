@@ -244,11 +244,90 @@ export class RithmicAPI {
     return pbInt32(FIELD.TEMPLATE_ID, TEMPLATE.REQUEST_HEARTBEAT);
   }
 
+  private buildLoginInfoRequest(): Buffer {
+    return Buffer.concat([
+      pbInt32(FIELD.TEMPLATE_ID, TEMPLATE.REQUEST_LOGIN_INFO),
+      pbString(FIELD.USER_MSG, 'hello'),
+    ]);
+  }
+
   private buildTradeRoutesRequest(): Buffer {
     return Buffer.concat([
       pbInt32(FIELD.TEMPLATE_ID, 310),
       pbString(FIELD.USER_MSG, 'hello'),
     ]);
+  }
+
+  private waitForLoginInfoResponse(
+    ws: WebSocket,
+    timeoutMs: number,
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        ws.off('message', onMessage);
+        ws.off('error', onError);
+        ws.off('close', onClose);
+      };
+
+      const finishResolve = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve();
+      };
+
+      const finishReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+
+      const timeout = setTimeout(() => {
+        finishReject(new Error('Timeout waiting for login info response'));
+      }, timeoutMs);
+
+      const onMessage = (data: WebSocket.RawData) => {
+        const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
+        const fields = decodeProto(buffer);
+        const templateId = fields.ints.get(FIELD.TEMPLATE_ID)?.[0];
+
+        if (templateId === TEMPLATE.REJECT) {
+          const rpCode = fields.strings.get(FIELD.RP_CODE)?.[0] ?? 'unknown';
+          finishReject(new Error(`Rithmic reject: rp_code=${rpCode}`));
+          return;
+        }
+
+        if (templateId !== TEMPLATE.RESPONSE_LOGIN_INFO) {
+          return;
+        }
+
+        const rpCodes = fields.strings.get(FIELD.RP_CODE) ?? [];
+
+        if (rpCodes.includes('0')) {
+          finishResolve();
+        } else {
+          finishReject(
+            new Error(`Login info request failed: rp_code=${rpCodes[0] ?? 'unknown'}`),
+          );
+        }
+      };
+
+      const onError = (err: Error) => {
+        finishReject(new Error(`Login info request failed: ${err.message}`));
+      };
+
+      const onClose = (code: number) => {
+        finishReject(new Error(`Login info socket closed before completion (code=${code})`));
+      };
+
+      ws.on('message', onMessage);
+      ws.on('error', onError);
+      ws.on('close', onClose);
+    });
   }
 
   private waitForTradeRoutesResponse(
