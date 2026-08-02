@@ -66,9 +66,10 @@ export default function Activity() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-8">
       <div>
-        <h1 className="text-3xl font-semibold">Live Activity</h1>
+        <p className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground">Execution feed</p>
+        <h1 className="mt-2 text-3xl font-semibold text-white">Live Activity</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Real-time feed of all trade copier events and notifications
         </p>

@@ -117,11 +117,11 @@ export default function Auth() {
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center p-6">
       {/* Navigation Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b bg-background/80 backdrop-blur-sm">
+      <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[rgba(5,10,20,0.72)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <Link href="/">
             <div className="cursor-pointer hover-elevate rounded-md p-1">
-              <Logo size="md" showText={false} />
+              <Logo size="md" showText={true} />
             </div>
           </Link>
           <div className="flex items-center gap-4">
@@ -135,7 +135,7 @@ export default function Auth() {
         </div>
       </header>
       
-      <Card className="w-full max-w-md mt-20">
+      <Card className="mt-20 w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
           <div className="mx-auto mb-4">
             <Logo size="lg" showText={false} />

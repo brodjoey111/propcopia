@@ -1,166 +1,136 @@
 export function CandlestickBackground() {
   return (
-    <div className="fixed inset-0 -z-10 overflow-hidden">
+    <div className="aurora-shell">
+      <div className="aurora-beam aurora-beam-left" />
+      <div className="aurora-beam aurora-beam-right" />
+      <div className="aurora-grid" />
       <svg
-        className="h-full w-full opacity-[0.04] dark:opacity-[0.12]"
+        className="aurora-data"
         xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 1600 900"
+        preserveAspectRatio="xMidYMid slice"
       >
         <defs>
-          <pattern
-            id="candlestick-pattern"
-            x="0"
-            y="0"
-            width="120"
-            height="200"
-            patternUnits="userSpaceOnUse"
-          >
-            {/* Animated Green bullish candlestick */}
-            <g className="animate-candle-1">
-              <line x1="20" y1="40" x2="20" y2="80" stroke="hsl(var(--chart-2))" strokeWidth="1" />
-              <rect x="15" y="55" width="10" height="20" fill="none" stroke="hsl(var(--chart-2))" strokeWidth="1.5" />
-            </g>
-            
-            {/* Animated Red bearish candlestick */}
-            <g className="animate-candle-2">
-              <line x1="50" y1="30" x2="50" y2="90" stroke="hsl(var(--destructive))" strokeWidth="1" />
-              <rect x="45" y="35" width="10" height="25" fill="hsl(var(--destructive))" opacity="0.3" stroke="hsl(var(--destructive))" strokeWidth="1.5" />
-            </g>
-            
-            {/* Animated Green bullish candlestick */}
-            <g className="animate-candle-3">
-              <line x1="80" y1="50" x2="80" y2="100" stroke="hsl(var(--chart-2))" strokeWidth="1" />
-              <rect x="75" y="65" width="10" height="30" fill="none" stroke="hsl(var(--chart-2))" strokeWidth="1.5" />
-            </g>
-            
-            {/* Animated Red bearish candlestick */}
-            <g className="animate-candle-4">
-              <line x1="110" y1="20" x2="110" y2="70" stroke="hsl(var(--destructive))" strokeWidth="1" />
-              <rect x="105" y="25" width="10" height="20" fill="hsl(var(--destructive))" opacity="0.3" stroke="hsl(var(--destructive))" strokeWidth="1.5" />
-            </g>
-
-            {/* Second row */}
-            <g className="animate-candle-5">
-              <line x1="20" y1="140" x2="20" y2="180" stroke="hsl(var(--destructive))" strokeWidth="1" />
-              <rect x="15" y="145" width="10" height="30" fill="hsl(var(--destructive))" opacity="0.3" stroke="hsl(var(--destructive))" strokeWidth="1.5" />
-            </g>
-            
-            <g className="animate-candle-6">
-              <line x1="50" y1="130" x2="50" y2="190" stroke="hsl(var(--chart-2))" strokeWidth="1" />
-              <rect x="45" y="150" width="10" height="35" fill="none" stroke="hsl(var(--chart-2))" strokeWidth="1.5" />
-            </g>
-            
-            <g className="animate-candle-7">
-              <line x1="80" y1="125" x2="80" y2="175" stroke="hsl(var(--chart-2))" strokeWidth="1" />
-              <rect x="75" y="135" width="10" height="35" fill="none" stroke="hsl(var(--chart-2))" strokeWidth="1.5" />
-            </g>
-            
-            <g className="animate-candle-8">
-              <line x1="110" y1="120" x2="110" y2="180" stroke="hsl(var(--destructive))" strokeWidth="1" />
-              <rect x="105" y="130" width="10" height="40" fill="hsl(var(--destructive))" opacity="0.3" stroke="hsl(var(--destructive))" strokeWidth="1.5" />
-            </g>
-          </pattern>
-          
-          {/* Moving pattern container */}
-          <g id="chart-movement">
-            <rect width="100%" height="100%" fill="url(#candlestick-pattern)" />
-          </g>
+          <linearGradient id="aurora-wave" x1="0%" x2="100%" y1="0%" y2="0%">
+            <stop offset="0%" stopColor="rgba(18, 58, 188, 0)" />
+            <stop offset="18%" stopColor="rgba(56, 189, 248, 0.5)" />
+            <stop offset="50%" stopColor="rgba(59, 130, 246, 0.85)" />
+            <stop offset="82%" stopColor="rgba(34, 211, 238, 0.45)" />
+            <stop offset="100%" stopColor="rgba(18, 58, 188, 0)" />
+          </linearGradient>
+          <linearGradient id="aurora-wave-soft" x1="0%" x2="100%" y1="0%" y2="0%">
+            <stop offset="0%" stopColor="rgba(18, 58, 188, 0)" />
+            <stop offset="50%" stopColor="rgba(96, 165, 250, 0.45)" />
+            <stop offset="100%" stopColor="rgba(18, 58, 188, 0)" />
+          </linearGradient>
+          <linearGradient id="market-trace" x1="0%" x2="100%" y1="0%" y2="0%">
+            <stop offset="0%" stopColor="rgba(34, 211, 238, 0)" />
+            <stop offset="50%" stopColor="rgba(52, 211, 153, 0.82)" />
+            <stop offset="100%" stopColor="rgba(34, 211, 238, 0)" />
+          </linearGradient>
+          <linearGradient id="market-trace-red" x1="0%" x2="100%" y1="0%" y2="0%">
+            <stop offset="0%" stopColor="rgba(244, 63, 94, 0)" />
+            <stop offset="50%" stopColor="rgba(248, 113, 113, 0.7)" />
+            <stop offset="100%" stopColor="rgba(244, 63, 94, 0)" />
+          </linearGradient>
+          <filter id="aurora-blur">
+            <feGaussianBlur stdDeviation="18" />
+          </filter>
+          <filter id="data-blur">
+            <feGaussianBlur stdDeviation="1.8" />
+          </filter>
         </defs>
-        
-        <use href="#chart-movement" className="animate-chart-scroll" />
+
+        <g filter="url(#aurora-blur)">
+          <path
+            d="M-120 250 C 120 180, 300 330, 520 250 S 930 130, 1160 220 S 1450 330, 1720 240"
+            fill="none"
+            stroke="url(#aurora-wave)"
+            strokeWidth="90"
+            strokeLinecap="round"
+          >
+            <animateTransform
+              attributeName="transform"
+              type="translate"
+              values="-40 0; 30 -18; -40 0"
+              dur="20s"
+              repeatCount="indefinite"
+            />
+          </path>
+          <path
+            d="M-160 430 C 100 350, 320 500, 540 410 S 920 280, 1160 380 S 1450 520, 1760 420"
+            fill="none"
+            stroke="url(#aurora-wave-soft)"
+            strokeWidth="120"
+            strokeLinecap="round"
+          >
+            <animateTransform
+              attributeName="transform"
+              type="translate"
+              values="35 0; -30 24; 35 0"
+              dur="26s"
+              repeatCount="indefinite"
+            />
+          </path>
+        </g>
+        <g filter="url(#data-blur)" opacity="0.72">
+          <path
+            d="M-40 720 L 140 690 L 250 705 L 390 642 L 480 655 L 620 590 L 760 618 L 910 560 L 1040 592 L 1180 500 L 1290 525 L 1420 450 L 1560 472"
+            fill="none"
+            stroke="url(#market-trace)"
+            strokeWidth="3"
+            strokeLinecap="round"
+          >
+            <animate
+              attributeName="opacity"
+              values="0.35;0.82;0.4"
+              dur="8s"
+              repeatCount="indefinite"
+            />
+          </path>
+          <path
+            d="M1110 760 L 1180 710 L 1230 735 L 1290 662 L 1340 684 L 1400 598 L 1460 642"
+            fill="none"
+            stroke="url(#market-trace-red)"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+          >
+            <animate
+              attributeName="opacity"
+              values="0.1;0.6;0.12"
+              dur="9.5s"
+              repeatCount="indefinite"
+            />
+          </path>
+        </g>
+        <g opacity="0.45">
+          <g fill="rgba(56, 189, 248, 0.82)">
+            <rect x="1110" y="410" width="4" height="48" rx="2">
+              <animate attributeName="height" values="42;82;42" dur="6s" repeatCount="indefinite" />
+              <animate attributeName="y" values="416;376;416" dur="6s" repeatCount="indefinite" />
+            </rect>
+            <rect x="1142" y="392" width="4" height="76" rx="2">
+              <animate attributeName="height" values="56;96;56" dur="7.5s" repeatCount="indefinite" />
+              <animate attributeName="y" values="412;372;412" dur="7.5s" repeatCount="indefinite" />
+            </rect>
+            <rect x="1200" y="430" width="4" height="56" rx="2">
+              <animate attributeName="height" values="38;68;38" dur="5.5s" repeatCount="indefinite" />
+              <animate attributeName="y" values="448;418;448" dur="5.5s" repeatCount="indefinite" />
+            </rect>
+          </g>
+          <g fill="rgba(248, 113, 113, 0.75)">
+            <rect x="1260" y="456" width="4" height="44" rx="2">
+              <animate attributeName="height" values="28;64;28" dur="6.8s" repeatCount="indefinite" />
+              <animate attributeName="y" values="472;436;472" dur="6.8s" repeatCount="indefinite" />
+            </rect>
+            <rect x="1324" y="428" width="4" height="68" rx="2">
+              <animate attributeName="height" values="34;84;34" dur="8.2s" repeatCount="indefinite" />
+              <animate attributeName="y" values="462;412;462" dur="8.2s" repeatCount="indefinite" />
+            </rect>
+          </g>
+        </g>
       </svg>
-      
-      <style>{`
-        @keyframes candleFlicker1 {
-          0%, 100% { transform: translateY(0); }
-          25% { transform: translateY(-2px); }
-          50% { transform: translateY(1px); }
-          75% { transform: translateY(-1px); }
-        }
-        
-        @keyframes candleFlicker2 {
-          0%, 100% { transform: translateY(0); }
-          33% { transform: translateY(2px); }
-          66% { transform: translateY(-2px); }
-        }
-        
-        @keyframes candleFlicker3 {
-          0%, 100% { transform: translateY(0); }
-          20% { transform: translateY(-1px); }
-          40% { transform: translateY(2px); }
-          60% { transform: translateY(-2px); }
-          80% { transform: translateY(1px); }
-        }
-        
-        @keyframes candleFlicker4 {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-3px); }
-        }
-        
-        @keyframes candleFlicker5 {
-          0%, 100% { transform: translateY(0); }
-          30% { transform: translateY(1px); }
-          70% { transform: translateY(-1px); }
-        }
-        
-        @keyframes candleFlicker6 {
-          0%, 100% { transform: translateY(0); }
-          40% { transform: translateY(-2px); }
-          80% { transform: translateY(1px); }
-        }
-        
-        @keyframes candleFlicker7 {
-          0%, 100% { transform: translateY(0); }
-          25% { transform: translateY(2px); }
-          75% { transform: translateY(-1px); }
-        }
-        
-        @keyframes candleFlicker8 {
-          0%, 100% { transform: translateY(0); }
-          35% { transform: translateY(-1px); }
-          65% { transform: translateY(2px); }
-        }
-        
-        @keyframes chartScroll {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-120px); }
-        }
-        
-        .animate-candle-1 {
-          animation: candleFlicker1 3.5s ease-in-out infinite;
-        }
-        
-        .animate-candle-2 {
-          animation: candleFlicker2 4s ease-in-out infinite;
-        }
-        
-        .animate-candle-3 {
-          animation: candleFlicker3 4.5s ease-in-out infinite;
-        }
-        
-        .animate-candle-4 {
-          animation: candleFlicker4 3s ease-in-out infinite;
-        }
-        
-        .animate-candle-5 {
-          animation: candleFlicker5 3.8s ease-in-out infinite;
-        }
-        
-        .animate-candle-6 {
-          animation: candleFlicker6 4.2s ease-in-out infinite;
-        }
-        
-        .animate-candle-7 {
-          animation: candleFlicker7 3.3s ease-in-out infinite;
-        }
-        
-        .animate-candle-8 {
-          animation: candleFlicker8 4.7s ease-in-out infinite;
-        }
-        
-        .animate-chart-scroll {
-          animation: chartScroll 25s linear infinite;
-        }
-      `}</style>
+      <div className="aurora-vignette" />
     </div>
   );
 }

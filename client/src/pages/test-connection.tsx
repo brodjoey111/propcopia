@@ -51,9 +51,10 @@ export default function TestConnection() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-8">
       <div>
-        <h1 className="text-3xl font-semibold">Login to Trading Platform</h1>
+        <p className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground">Broker access</p>
+        <h1 className="mt-2 text-3xl font-semibold text-white">Login to Trading Platform</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Connect to Tradovate or NinjaTrader with just your username and password
         </p>
@@ -155,7 +156,7 @@ export default function TestConnection() {
                   )}
                 </div>
 
-                <div className="rounded-md bg-muted p-4">
+                <div className="rounded-xl border border-border bg-white/[0.03] p-4">
                   <p className="text-sm">{result.message}</p>
                 </div>
 

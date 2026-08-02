@@ -57,14 +57,20 @@ function AppLayout() {
         <div className="flex h-screen w-full">
           <AppSidebar />
           <div className="flex flex-1 flex-col min-w-0">
-            <header className="flex items-center justify-between border-b p-3 md:p-4 flex-shrink-0">
-              <SidebarTrigger data-testid="button-sidebar-toggle" className="h-11 w-11 touch-manipulation" />
+            <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/5 bg-[rgba(5,10,20,0.72)] px-3 py-3 backdrop-blur-xl md:px-5 md:py-4 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <SidebarTrigger data-testid="button-sidebar-toggle" className="h-11 w-11 touch-manipulation" />
+                <div className="hidden md:block">
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-muted-foreground">Trading workspace</p>
+                  <p className="text-sm font-semibold text-white">PropCopia Control Center</p>
+                </div>
+              </div>
               <ThemeToggle />
             </header>
             <KillSwitchBanner />
             <LeaderboardTicker />
             <main className="flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4 md:p-6 min-w-0">
-              <div className="mx-auto max-w-7xl">
+              <div className="mx-auto max-w-[1440px]">
                 <AppRouter />
               </div>
             </main>

@@ -43,12 +43,12 @@ export function AccountCard({
   const isUsingGlobalSettings = riskMode === 'global';
 
   return (
-    <Card className="card-3d shimmer p-4" data-testid={`card-account-${id}`}>
+    <Card className="card-3d shimmer rounded-[1.4rem] p-5" data-testid={`card-account-${id}`}>
       <div className="space-y-4">
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-semibold" data-testid={`text-account-name-${id}`}>{name}</h3>
+              <h3 className="font-semibold text-white" data-testid={`text-account-name-${id}`}>{name}</h3>
               <Badge variant={accountType === "master" ? "default" : "secondary"} className="text-xs">
                 {accountType}
               </Badge>
@@ -59,10 +59,10 @@ export function AccountCard({
                 </Badge>
               )}
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">{platform}</p>
+            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-muted-foreground">{platform}</p>
           </div>
           <div className="flex items-center gap-1">
-            <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-status-online' : 'bg-status-offline'}`} />
+            <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.7)]' : 'bg-rose-400 shadow-[0_0_14px_rgba(251,113,133,0.35)]'}`} />
             <span className="text-xs text-muted-foreground">
               {isConnected ? 'Connected' : 'Disconnected'}
             </span>
@@ -72,13 +72,13 @@ export function AccountCard({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <p className="text-xs text-muted-foreground">Balance</p>
-            <p className="mt-1 text-base font-semibold tabular-nums" data-testid={`text-balance-${id}`}>
+            <p className="mt-1 text-base font-semibold tabular-nums text-white" data-testid={`text-balance-${id}`}>
               ${balance.toLocaleString()}
             </p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Positions</p>
-            <p className="mt-1 text-base font-semibold tabular-nums" data-testid={`text-positions-${id}`}>
+            <p className="mt-1 text-base font-semibold tabular-nums text-white" data-testid={`text-positions-${id}`}>
               {openPositions}
             </p>
           </div>

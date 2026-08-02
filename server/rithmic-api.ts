@@ -231,6 +231,7 @@ export class RithmicAPI {
     return Buffer.concat([
       pbInt32(FIELD.TEMPLATE_ID,      TEMPLATE.REQUEST_LOGIN),
       pbString(FIELD.TEMPLATE_VERSION, '3.9'),
+      pbString(FIELD.USER_MSG,         'hello'),
       pbString(FIELD.USER,             this.credentials.username),
       pbString(FIELD.PASSWORD,         this.credentials.password),
       pbString(FIELD.APP_NAME,         this.credentials.appName),
@@ -780,14 +781,26 @@ export class RithmicAPI {
         const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
         const fields = decodeProto(buffer);
         const templateId = fields.ints.get(FIELD.TEMPLATE_ID)?.[0];
+        const rpCodes = fields.strings.get(FIELD.RP_CODE) ?? [];
 
         if (templateId === TEMPLATE.RESPONSE_LOGIN && !loginDone) {
+          if (!rpCodes.includes('0')) {
+            finishReject(
+              new Error(`Rithmic login failed: rp_code=${rpCodes[0] ?? 'unknown'}`),
+            );
+            return;
+          }
+
           loginDone = true;
           clearTimeout(loginTimeout);
 
           try {
             const fcmId = fields.strings.get(FIELD.FCM_ID)?.[0] ?? '';
             const ibId = fields.strings.get(FIELD.IB_ID)?.[0] ?? '';
+
+            const loginInfoPromise = this.waitForLoginInfoResponse(ws, 10_000);
+            ws.send(this.buildLoginInfoRequest());
+            await loginInfoPromise;
 
             const tradeRoutePromise = this.waitForTradeRoutesResponse(
               ws,

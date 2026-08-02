@@ -684,6 +684,9 @@ export function registerRoutes(app: Express): Server {
           openPositions: 0,
           pnl: null,
           riskMode: 'custom',
+          copySizingMode: "MULTIPLIER",
+          fixedQuantity: null,
+          reverseCopying: false,
           maxOpenPositions: null,
           allowedDirections: null,
           maxDailyLoss: null,
@@ -1477,8 +1480,15 @@ This is a trading platform that helps users:
 - Access economic calendars and social trading features
 
 Be concise, friendly, and helpful. Focus on explaining features, answering questions about the platform, 
-and helping users navigate the application. If users ask about specific trading strategies or financial advice, 
-remind them that you provide platform assistance only, not financial advice.`;
+      and helping users navigate the application. If users ask about specific trading strategies or financial advice, 
+      remind them that you provide platform assistance only, not financial advice.`;
+
+      if (!openai) {
+        return res.status(503).json({
+          success: false,
+          message: "AI assistant is not configured."
+        });
+      }
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",

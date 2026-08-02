@@ -175,9 +175,10 @@ function StockList({ type, title, icon: Icon }: { type: string; title: string; i
 export default function MarketMovers() {
   return (
     <div className="h-full overflow-auto">
-      <div className="mx-auto max-w-6xl p-6 space-y-6">
+      <div className="mx-auto max-w-6xl space-y-6 pb-8">
         <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight" data-testid="heading-market-movers">
+          <p className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground">Equity scanner</p>
+          <h1 className="text-3xl font-semibold tracking-tight text-white" data-testid="heading-market-movers">
             Market Movers
           </h1>
           <p className="text-muted-foreground" data-testid="text-description">

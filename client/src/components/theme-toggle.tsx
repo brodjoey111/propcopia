@@ -3,11 +3,11 @@ import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null;
-    const initialTheme = savedTheme || "light";
+    const initialTheme = savedTheme || "dark";
     setTheme(initialTheme);
     document.documentElement.classList.toggle("dark", initialTheme === "dark");
   }, []);
@@ -21,11 +21,12 @@ export function ThemeToggle() {
 
   return (
     <Button
-      variant="ghost"
+      variant="outline"
       size="icon"
       onClick={toggleTheme}
       aria-label={theme === "light" ? "Activate dark mode" : "Activate light mode"}
       data-testid="button-theme-toggle"
+      className="bg-white/[0.03]"
     >
       {theme === "light" ? (
         <Moon className="h-4 w-4" />

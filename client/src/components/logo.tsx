@@ -17,9 +17,9 @@ export function Logo({ className = "", size = "md", showText = true, variant = "
   // Sidebar variant needs to be inverted in light mode (since sidebar is dark)
   // and normal in dark mode
   // Default variant adds contrast/saturation in light mode, inverts in dark mode
-  const filterClasses = variant === "sidebar" 
-    ? "brightness-0 invert dark:brightness-100 dark:invert-0" 
-    : "contrast-125 saturate-150 dark:invert dark:contrast-100 dark:saturate-100";
+  const filterClasses = variant === "sidebar"
+    ? "brightness-0 invert opacity-95"
+    : "brightness-0 invert opacity-95";
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
@@ -29,7 +29,12 @@ export function Logo({ className = "", size = "md", showText = true, variant = "
         className={`${sizeClasses[size]} w-auto ${filterClasses}`}
         data-testid="logo-image"
       />
-      {!showText && <span className="sr-only">Propcopia</span>}
+      {showText && (
+        <span className="text-lg font-semibold tracking-[-0.04em] text-white">
+          PropCopia
+        </span>
+      )}
+      {!showText && <span className="sr-only">PropCopia</span>}
     </div>
   );
 }

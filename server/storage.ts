@@ -50,6 +50,7 @@ export class MemStorage implements IStorage {
       ...insertUser, 
       id,
       bio: null,
+      title: null,
       profilePicture: null,
       globalPositionScaling: 100,
       globalMaxContracts: null,

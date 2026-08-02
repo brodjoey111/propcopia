@@ -202,10 +202,11 @@ export default function Accounts() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 pb-8">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold">Accounts</h1>
+          <p className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground">Account command</p>
+          <h1 className="mt-2 text-3xl font-semibold text-white">Accounts</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Manage your master and follower trading accounts
           </p>
@@ -216,7 +217,7 @@ export default function Accounts() {
       </div>
 
       {/* ── Global Risk Defaults panel ───────────────────────────── */}
-      <div className="rounded-xl border bg-card p-4 flex flex-col sm:flex-row sm:items-center gap-4">
+      <div className="panel-surface rounded-[1.4rem] p-4 flex flex-col gap-4 sm:flex-row sm:items-center">
         <div className="rounded-lg bg-primary/10 p-2.5 shrink-0 w-fit">
           <ShieldAlert className="h-5 w-5 text-primary" />
         </div>
@@ -265,7 +266,7 @@ export default function Accounts() {
         </RiskSettingsDialog>
       </div>
 
-      <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
+      <div className="flex gap-1 rounded-xl border border-border bg-muted/80 p-1 w-fit">
         {hasAccounts && (
           <>
             <Button
@@ -377,7 +378,7 @@ export default function Accounts() {
                 return (
                   <div
                     key={account.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover-elevate"
+                    className="panel-surface flex items-center justify-between rounded-[1.2rem] p-4 hover-elevate"
                     data-testid={`account-list-item-${account.id}`}
                   >
                     <div className="flex items-center gap-4 flex-1">
@@ -392,7 +393,7 @@ export default function Accounts() {
                           </Badge>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <div className={`h-2 w-2 rounded-full ${account.isConnected ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                          <div className={`h-2 w-2 rounded-full ${account.isConnected ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]' : 'bg-muted-foreground'}`} />
                           <span>{account.isConnected ? 'Connected' : 'Disconnected'}</span>
                         </div>
                       </div>
@@ -464,10 +465,10 @@ export default function Accounts() {
           )}
 
           {viewMode === 'table' && (
-            <div className="border rounded-lg overflow-hidden">
+            <div className="panel-surface overflow-hidden rounded-[1.4rem]">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-muted/50 border-b">
+                  <thead className="border-b border-white/6 bg-white/[0.03]">
                     <tr>
                       <th className="text-left p-3 text-xs font-semibold uppercase tracking-wide">Account</th>
                       <th className="text-left p-3 text-xs font-semibold uppercase tracking-wide">Type</th>
@@ -507,7 +508,7 @@ export default function Accounts() {
                           </td>
                           <td className="p-3">
                             <div className="flex items-center gap-2">
-                              <div className={`h-2 w-2 rounded-full ${account.isConnected ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                              <div className={`h-2 w-2 rounded-full ${account.isConnected ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]' : 'bg-muted-foreground'}`} />
                               <span className="text-sm">{account.isConnected ? 'Connected' : 'Disconnected'}</span>
                             </div>
                           </td>

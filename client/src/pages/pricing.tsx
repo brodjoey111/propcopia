@@ -70,12 +70,12 @@ export default function Pricing() {
   return (
     <div className="relative min-h-screen bg-background">
       {/* Navigation Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b bg-background/80 backdrop-blur-sm">
+      <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[rgba(5,10,20,0.72)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Link href="/">
               <div className="cursor-pointer hover-elevate rounded-md p-1">
-                <Logo size="md" showText={false} />
+                <Logo size="md" showText={true} />
               </div>
             </Link>
             <Link href="/auth">
@@ -111,7 +111,7 @@ export default function Pricing() {
           {pricingTiers.map((tier) => (
             <Card
               key={tier.name}
-              className={`relative flex flex-col ${tier.popular ? "border-primary shadow-lg" : ""}`}
+              className={`relative flex flex-col ${tier.popular ? "border-primary shadow-lg shadow-[0_18px_40px_rgba(19,78,216,0.18)]" : ""}`}
               data-testid={`card-tier-${tier.name.toLowerCase()}`}
             >
               {tier.popular && (
@@ -213,7 +213,7 @@ export default function Pricing() {
         </div>
 
         {/* CTA Section */}
-        <div className="mt-24 rounded-lg border bg-card p-8 text-center">
+        <div className="panel-surface mt-24 rounded-[1.5rem] p-8 text-center">
           <h2 className="mb-4 text-2xl font-bold" data-testid="text-cta-title">
             Ready to get started?
           </h2>

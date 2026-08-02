@@ -1,12 +1,66 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 import type { Account } from '@shared/schema';
+import { TradeIntentManager } from './trade-intent-manager';
+import type { TradeSide } from './trading-domain';
+
+export type FollowerSizingMode = 'MULTIPLIER' | 'FIXED';
+
+export interface FollowerSizingInput {
+  masterAction: TradeSide;
+  masterQuantity: number;
+  positionScaling: number | null | undefined;
+  maxContracts: number | null | undefined;
+  copySizingMode: FollowerSizingMode | null | undefined;
+  fixedQuantity: number | null | undefined;
+  reverseCopying: boolean | null | undefined;
+}
+
+export interface FollowerSizingResult {
+  action: TradeSide;
+  quantity: number;
+  skipped: boolean;
+  skipReason?: 'zero_quantity';
+}
+
+export function calculateFollowerOrder(
+  input: FollowerSizingInput
+): FollowerSizingResult {
+  const action: TradeSide = input.reverseCopying
+    ? (input.masterAction === 'BUY' ? 'SELL' : 'BUY')
+    : input.masterAction;
+
+  const sizingMode: FollowerSizingMode = input.copySizingMode ?? 'MULTIPLIER';
+
+  let quantity = sizingMode === 'FIXED'
+    ? Math.floor(input.fixedQuantity ?? 0)
+    : Math.floor(input.masterQuantity * ((input.positionScaling ?? 100) / 100));
+
+  if (input.maxContracts != null && quantity > input.maxContracts) {
+    quantity = input.maxContracts;
+  }
+
+  if (quantity <= 0) {
+    return {
+      action,
+      quantity: 0,
+      skipped: true,
+      skipReason: 'zero_quantity',
+    };
+  }
+
+  return {
+    action,
+    quantity,
+    skipped: false,
+  };
+}
 
 // Trade notification structure
 interface TradeNotification {
   accountId: string;
   symbol: string;
-  action: 'BUY' | 'SELL';
+  action: TradeSide;
   quantity: number;
   price: number;
   timestamp: number;
@@ -16,8 +70,11 @@ interface TradeNotification {
 // Follower account connection state
 interface FollowerConnection {
   accountId: string;
-  positionMultiplier: number; // Pre-calculated scaling ratio
+  positionScaling?: number;
   maxContracts?: number;
+  copySizingMode: FollowerSizingMode;
+  fixedQuantity?: number;
+  reverseCopying: boolean;
   blockedTickers: string[];
   ws: WebSocket | null;
   accessToken: string | null;
@@ -43,6 +100,7 @@ export class TradeCopyEngine extends EventEmitter {
   private masterAccountId: string | null = null;
   private masterWebSocket: WebSocket | null = null;
   private followerConnections: Map<string, FollowerConnection> = new Map();
+  private tradeIntentManager: TradeIntentManager;
   private processedFills: Set<string> = new Set(); // Idempotency cache
   private positionScalingCache: Map<string, number> = new Map(); // In-memory scaling cache
   private latencyMetrics: LatencyMetrics[] = [];
@@ -51,8 +109,12 @@ export class TradeCopyEngine extends EventEmitter {
   private reconnectTimeouts: Set<NodeJS.Timeout> = new Set(); // Track reconnect timers
   private failedSends: number = 0; // Track send failures
 
-  constructor(environment: 'demo' | 'live' = 'demo') {
+  constructor(
+    environment: 'demo' | 'live' = 'demo',
+    tradeIntentManager?: TradeIntentManager
+  ) {
     super();
+    this.tradeIntentManager = tradeIntentManager ?? new TradeIntentManager();
     this.baseUrl = environment === 'demo'
       ? 'https://demo.tradovateapi.com/v1'
       : 'https://live.tradovateapi.com/v1';
@@ -145,15 +207,17 @@ export class TradeCopyEngine extends EventEmitter {
   ): Promise<void> {
     const startTime = performance.now();
     
-    // Calculate final position multiplier
-    const accountScaling = (account.positionScaling || 100) / 100;
-    const globalMultiplier = globalScaling ? globalScaling / 100 : 1;
-    const finalMultiplier = accountScaling * globalMultiplier;
+    const accountScaling = account.positionScaling ?? 100;
+    const globalScalingPercent = globalScaling ?? 100;
+    const normalizedPositionScaling = (accountScaling * globalScalingPercent) / 100;
     
     const connection: FollowerConnection = {
       accountId: account.id,
-      positionMultiplier: finalMultiplier,
-      maxContracts: account.maxContracts || undefined,
+      positionScaling: normalizedPositionScaling,
+      maxContracts: account.maxContracts ?? undefined,
+      copySizingMode: (account.copySizingMode as FollowerSizingMode | null | undefined) ?? 'MULTIPLIER',
+      fixedQuantity: account.fixedQuantity ?? undefined,
+      reverseCopying: account.reverseCopying ?? false,
       blockedTickers: account.blockedTickers || [],
       ws: null,
       accessToken: accessToken,
@@ -288,20 +352,34 @@ export class TradeCopyEngine extends EventEmitter {
           return { success: false, reason: 'blocked' };
         }
         
-        // Calculate scaled quantity
-        let scaledQuantity = Math.floor(trade.quantity * follower.positionMultiplier);
-        
-        // Apply max contracts limit
-        if (follower.maxContracts && scaledQuantity > follower.maxContracts) {
-          scaledQuantity = follower.maxContracts;
-        }
-        
-        if (scaledQuantity === 0) {
+        const followerOrder = calculateFollowerOrder({
+          masterAction: trade.action,
+          masterQuantity: trade.quantity,
+          positionScaling: follower.positionScaling,
+          maxContracts: follower.maxContracts,
+          copySizingMode: follower.copySizingMode,
+          fixedQuantity: follower.fixedQuantity,
+          reverseCopying: follower.reverseCopying,
+        });
+
+        if (followerOrder.skipped) {
           return { success: false, reason: 'zero_quantity' }; // Skip if quantity rounds down to zero
         }
+
+        const intent = this.tradeIntentManager.createIntent({
+          masterAccountId: trade.accountId,
+          masterFillId: trade.fillId,
+          followerAccountId: follower.accountId,
+          symbol: trade.symbol,
+          side: followerOrder.action,
+          quantity: followerOrder.quantity,
+        });
+        this.tradeIntentManager.markValidated(intent.intentId);
+        this.tradeIntentManager.markReadyToSend(intent.intentId);
         
         // Validate WebSocket connection state
         if (!follower.isReady || !follower.ws || follower.ws.readyState !== WebSocket.OPEN) {
+          this.tradeIntentManager.markFailed(intent.intentId);
           console.error(`[TradeCopy] ${follower.accountId} WebSocket not ready (readyState: ${follower.ws?.readyState})`);
           this.failedSends++;
           return { success: false, reason: 'ws_not_ready' };
@@ -312,16 +390,19 @@ export class TradeCopyEngine extends EventEmitter {
           follower.ws.send(JSON.stringify({
             type: 'placeOrder',
             symbol: trade.symbol,
-            action: trade.action,
-            quantity: scaledQuantity,
+            action: followerOrder.action,
+            quantity: followerOrder.quantity,
             orderType: 'Market',
             timestamp: Date.now()
           }));
+
+          this.tradeIntentManager.markSent(intent.intentId);
           
           const followerLatency = performance.now() - followerStartTime;
           metrics.followerLatencies.set(follower.accountId, followerLatency);
           return { success: true, latency: followerLatency };
         } catch (sendError) {
+          this.tradeIntentManager.markFailed(intent.intentId);
           console.error(`[TradeCopy] Failed to send to ${follower.accountId}:`, sendError);
           this.failedSends++;
           return { success: false, reason: 'send_error', error: sendError };
@@ -430,7 +511,7 @@ export class TradeCopyEngine extends EventEmitter {
     this.isActive = false;
     
     // Clear all reconnect timeouts
-    for (const timeout of this.reconnectTimeouts) {
+    for (const timeout of Array.from(this.reconnectTimeouts)) {
       clearTimeout(timeout);
     }
     this.reconnectTimeouts.clear();

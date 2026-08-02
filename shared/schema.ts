@@ -73,6 +73,9 @@ export const accounts = pgTable("accounts", {
   riskMode: text("risk_mode").default("global"),   // 'global' | 'custom'
   // ── Position limits ──────────────────────────────────────────────────
   positionScaling: integer("position_scaling").default(100),
+  copySizingMode: text("copy_sizing_mode").default("MULTIPLIER"),
+  fixedQuantity: integer("fixed_quantity"),
+  reverseCopying: boolean("reverse_copying").default(false),
   maxContracts: integer("max_contracts"),
   maxOpenPositions: integer("max_open_positions"),
   allowedDirections: text("allowed_directions").default("both"), // 'both'|'long_only'|'short_only'

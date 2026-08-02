@@ -130,12 +130,12 @@ export default function Landing() {
   ];
 
   return (
-    <div className="relative min-h-screen">
+    <div className="relative min-h-screen overflow-hidden">
       {/* Navigation Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b bg-background/80 backdrop-blur-sm">
+      <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[rgba(5,10,20,0.72)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
-            <Logo size="lg" showText={false} />
+            <Logo size="lg" showText={true} />
             <Link href="/auth">
               <Button variant="default" data-testid="button-signin">
                 Sign In
@@ -157,6 +157,11 @@ export default function Landing() {
       <section className="relative pt-20">
         <div className="mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8">
           <div className="mx-auto max-w-3xl text-center">
+            <div className="mb-6 flex justify-center">
+              <Badge variant="outline" className="bg-white/[0.03] text-sky-200">
+                Institutional-grade futures copier
+              </Badge>
+            </div>
             <h1 className="mb-8 text-6xl font-black tracking-tight sm:text-8xl bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent" data-testid="heading-hero">
               Propcopia
             </h1>
@@ -186,7 +191,7 @@ export default function Landing() {
       </section>
 
       {/* Stats Section */}
-      <section className="relative border-y bg-card/50 backdrop-blur-sm">
+      <section className="relative border-y border-white/5 bg-card/30 backdrop-blur-sm">
         <div className="mx-auto max-w-7xl px-6 py-12 lg:px-8">
           <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
             {stats.map((stat, index) => (
@@ -232,7 +237,7 @@ export default function Landing() {
       </section>
 
       {/* Benefits Section */}
-      <section className="relative border-y bg-card/50 backdrop-blur-sm">
+      <section className="relative border-y border-white/5 bg-card/30 backdrop-blur-sm">
         <div className="mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8">
           <div className="grid gap-16 lg:grid-cols-2 lg:gap-8">
             <div>

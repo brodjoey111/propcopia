@@ -29,10 +29,11 @@ export default function Trades() {
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 pb-8">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold">Trading Calendar</h1>
+          <p className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground">Trade history</p>
+          <h1 className="mt-2 text-3xl font-semibold text-white">Trading Calendar</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             View P&L by day, week, and month
           </p>

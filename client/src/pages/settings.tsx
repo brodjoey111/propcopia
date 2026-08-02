@@ -86,9 +86,10 @@ export default function Settings() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-8">
       <div>
-        <h1 className="text-3xl font-semibold">Settings</h1>
+        <p className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground">Preferences</p>
+        <h1 className="mt-2 text-3xl font-semibold text-white">Settings</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Configure your trade copier preferences and account settings
         </p>

@@ -79,7 +79,7 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
-          <Logo size="sm" showText={false} variant="sidebar" />
+          <Logo size="sm" showText={true} variant="sidebar" />
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -101,9 +101,9 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="space-y-2 p-4">
+      <SidebarFooter className="space-y-3 p-4">
         <KillSwitchButton />
-        <div className="flex items-center gap-2 rounded-lg border p-3">
+        <div className="flex items-center gap-3 rounded-2xl border border-sidebar-border bg-white/[0.03] p-3">
           <Avatar className="h-8 w-8">
             <AvatarImage src={user?.profilePicture || undefined} alt={user?.username} />
             <AvatarFallback>
@@ -121,7 +121,7 @@ export function AppSidebar() {
         </div>
         <Button
           variant="outline"
-          className="w-full gap-2"
+          className="w-full gap-2 bg-white/[0.02]"
           onClick={logout}
           data-testid="button-logout"
         >

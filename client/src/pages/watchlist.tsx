@@ -114,9 +114,10 @@ export default function Watchlist() {
   const watchlist = watchlistData?.data || [];
 
   return (
-    <div className="container mx-auto p-6 max-w-6xl">
+    <div className="mx-auto max-w-6xl space-y-6 pb-8">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2" data-testid="text-page-title">Watchlist</h1>
+        <p className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground">Market radar</p>
+        <h1 className="mt-2 mb-2 text-3xl font-semibold text-white" data-testid="text-page-title">Watchlist</h1>
         <p className="text-muted-foreground">Track your favorite stocks with real-time data</p>
       </div>
 
