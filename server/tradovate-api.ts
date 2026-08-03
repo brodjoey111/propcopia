@@ -13,6 +13,34 @@ interface TradovateAuthResponse {
   userStatus?: string;
 }
 
+export interface TradovatePlaceOrderParams {
+  accountSpec: string;
+  accountId: number | string;
+  action: 'Buy' | 'Sell';
+  symbol: string;
+  orderQty: number;
+  orderType: 'Market' | 'Limit' | 'Stop' | 'StopLimit';
+  price?: number;
+  stopPrice?: number;
+  timeInForce?: 'Day' | 'GTC' | 'IOC' | 'FOK';
+  clOrdId?: string;
+  isAutomated: true;
+}
+
+export interface TradovatePlaceOrderAccepted {
+  orderId: number | string;
+}
+
+export interface TradovatePlaceOrderRejected {
+  failureReason?: string;
+  failureText?: string;
+  commandId?: number;
+}
+
+export type TradovatePlaceOrderResult =
+  | TradovatePlaceOrderAccepted
+  | TradovatePlaceOrderRejected;
+
 export class TradovateAPI {
   private baseUrl: string;
   private accessToken: string | null = null;
@@ -125,6 +153,65 @@ export class TradovateAPI {
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`Failed to fetch positions: ${response.status} - ${errorText}`);
+    }
+
+    return await response.json();
+  }
+
+  async placeOrder(
+    params: TradovatePlaceOrderParams
+  ): Promise<TradovatePlaceOrderResult> {
+    if (!this.accessToken) {
+      throw new Error('Not authenticated');
+    }
+
+    if (!params.accountSpec.trim()) {
+      throw new Error('Tradovate placeOrder requires accountSpec.');
+    }
+
+    if (
+      (typeof params.accountId === 'string' && params.accountId.trim().length === 0) ||
+      (typeof params.accountId === 'number' && !Number.isFinite(params.accountId))
+    ) {
+      throw new Error('Tradovate placeOrder requires accountId.');
+    }
+
+    if (!params.symbol.trim()) {
+      throw new Error('Tradovate placeOrder requires symbol.');
+    }
+
+    if (!Number.isInteger(params.orderQty) || params.orderQty <= 0) {
+      throw new Error('Tradovate placeOrder requires a positive integer orderQty.');
+    }
+
+    if (params.orderType === 'Limit' && params.price === undefined) {
+      throw new Error('Tradovate LIMIT orders require price.');
+    }
+
+    if (params.orderType === 'Stop' && params.stopPrice === undefined) {
+      throw new Error('Tradovate STOP orders require stopPrice.');
+    }
+
+    if (
+      params.orderType === 'StopLimit' &&
+      (params.price === undefined || params.stopPrice === undefined)
+    ) {
+      throw new Error('Tradovate STOP_LIMIT orders require both price and stopPrice.');
+    }
+
+    const response = await fetch(`${this.baseUrl}/order/placeorder`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(params),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Tradovate place order failed: ${response.status} - ${errorText}`);
     }
 
     return await response.json();

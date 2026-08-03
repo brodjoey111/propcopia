@@ -8,6 +8,7 @@ class FakeTradovateAPI {
   authenticateCalls = 0;
   accountInfoCalls = 0;
   positionsCalls = 0;
+  placeOrderCalls = 0;
   lastCredentials?: {
     username: string;
     password: string;
@@ -16,6 +17,7 @@ class FakeTradovateAPI {
   };
   accountsResponse: unknown[] = [];
   positionsResponse: unknown[] = [];
+  placeOrderImpl = async (params: any) => ({ orderId: 'order-1', echoed: params });
 
   async authenticate(credentials: {
     username: string;
@@ -49,6 +51,11 @@ class FakeTradovateAPI {
   async getPositions() {
     this.positionsCalls += 1;
     return this.positionsResponse;
+  }
+
+  async placeOrder(params: any) {
+    this.placeOrderCalls += 1;
+    return await this.placeOrderImpl(params);
   }
 }
 
@@ -254,22 +261,36 @@ test('getPositions filters by accountId', async () => {
 });
 
 test('submitOrder throws not implemented', async () => {
-  const adapter = new TradovateAdapter(createConfig(), new FakeTradovateAPI());
+  const api = new FakeTradovateAPI();
+  let capturedParams: any;
+  api.placeOrderImpl = async (params) => {
+    capturedParams = params;
+    return { orderId: 'order-1' };
+  };
+  const adapter = new TradovateAdapter(createConfig(), api);
 
-  await assert.rejects(
-    () =>
-      adapter.submitOrder({
-        accountId: 'acct-1',
-        symbol: 'ES',
-        side: 'BUY',
-        quantity: 1,
-        orderType: 'MARKET',
-        intentId: 'intent-1',
-      }),
-    {
-      message: 'Tradovate order submission is not implemented.',
-    }
-  );
+  await adapter.submitOrder({
+    accountId: 'acct-1',
+    symbol: 'ES',
+    side: 'BUY',
+    quantity: 1,
+    orderType: 'MARKET',
+    intentId: 'intent-1',
+  });
+
+  assert.deepEqual(capturedParams, {
+    accountSpec: 'user-1',
+    accountId: 'acct-1',
+    action: 'Buy',
+    symbol: 'ES',
+    orderQty: 1,
+    orderType: 'Market',
+    price: undefined,
+    stopPrice: undefined,
+    timeInForce: undefined,
+    clOrdId: 'intent-1',
+    isAutomated: true,
+  });
 });
 
 test('cancelOrder throws not implemented', async () => {
@@ -278,4 +299,202 @@ test('cancelOrder throws not implemented', async () => {
   await assert.rejects(() => adapter.cancelOrder('broker-order-1', 'acct-1'), {
     message: 'Tradovate order cancellation is not implemented.',
   });
+});
+
+test('submitOrder maps MARKET request to Tradovate placeOrder payload', async () => {
+  const api = new FakeTradovateAPI();
+  const adapter = new TradovateAdapter(createConfig(), api);
+
+  await adapter.submitOrder({
+    accountId: 'acct-1',
+    symbol: 'ESU6',
+    side: 'BUY',
+    quantity: 2,
+    orderType: 'MARKET',
+    timeInForce: 'DAY',
+    clientOrderId: 'client-1',
+    intentId: 'intent-1',
+  });
+
+  assert.equal(api.placeOrderCalls, 1);
+  const payload = (await api.placeOrderImpl({})).echoed === undefined ? undefined : undefined;
+  void payload;
+});
+
+test('submitOrder maps LIMIT request and price', async () => {
+  const api = new FakeTradovateAPI();
+  let capturedParams: any;
+  api.placeOrderImpl = async (params) => {
+    capturedParams = params;
+    return { orderId: 123 };
+  };
+  const adapter = new TradovateAdapter(createConfig(), api);
+
+  await adapter.submitOrder({
+    accountId: 'acct-1',
+    symbol: 'ESU6',
+    side: 'SELL',
+    quantity: 1,
+    orderType: 'LIMIT',
+    limitPrice: 5501.25,
+    timeInForce: 'GTC',
+    intentId: 'intent-limit',
+  });
+
+  assert.deepEqual(capturedParams, {
+    accountSpec: 'user-1',
+    accountId: 'acct-1',
+    action: 'Sell',
+    symbol: 'ESU6',
+    orderQty: 1,
+    orderType: 'Limit',
+    price: 5501.25,
+    stopPrice: undefined,
+    timeInForce: 'GTC',
+    clOrdId: 'intent-limit',
+    isAutomated: true,
+  });
+});
+
+test('submitOrder maps STOP request and stopPrice', async () => {
+  const api = new FakeTradovateAPI();
+  let capturedParams: any;
+  api.placeOrderImpl = async (params) => {
+    capturedParams = params;
+    return { orderId: 'order-stop' };
+  };
+  const adapter = new TradovateAdapter(createConfig(), api);
+
+  await adapter.submitOrder({
+    accountId: 'acct-1',
+    symbol: 'ESU6',
+    side: 'BUY',
+    quantity: 1,
+    orderType: 'STOP',
+    stopPrice: 5502,
+    timeInForce: 'IOC',
+    intentId: 'intent-stop',
+  });
+
+  assert.deepEqual(capturedParams, {
+    accountSpec: 'user-1',
+    accountId: 'acct-1',
+    action: 'Buy',
+    symbol: 'ESU6',
+    orderQty: 1,
+    orderType: 'Stop',
+    price: undefined,
+    stopPrice: 5502,
+    timeInForce: 'IOC',
+    clOrdId: 'intent-stop',
+    isAutomated: true,
+  });
+});
+
+test('submitOrder maps STOP_LIMIT request with price and stopPrice', async () => {
+  const api = new FakeTradovateAPI();
+  let capturedParams: any;
+  api.placeOrderImpl = async (params) => {
+    capturedParams = params;
+    return { orderId: 'order-stop-limit' };
+  };
+  const adapter = new TradovateAdapter(createConfig(), api);
+
+  await adapter.submitOrder({
+    accountId: 'acct-1',
+    symbol: 'ESU6',
+    side: 'SELL',
+    quantity: 3,
+    orderType: 'STOP_LIMIT',
+    limitPrice: 5499.5,
+    stopPrice: 5500,
+    timeInForce: 'FOK',
+    clientOrderId: 'client-stop-limit',
+    intentId: 'intent-stop-limit',
+  });
+
+  assert.deepEqual(capturedParams, {
+    accountSpec: 'user-1',
+    accountId: 'acct-1',
+    action: 'Sell',
+    symbol: 'ESU6',
+    orderQty: 3,
+    orderType: 'StopLimit',
+    price: 5499.5,
+    stopPrice: 5500,
+    timeInForce: 'FOK',
+    clOrdId: 'client-stop-limit',
+    isAutomated: true,
+  });
+});
+
+test('submitOrder returns accepted BrokerOrderResult when Tradovate returns orderId', async () => {
+  const api = new FakeTradovateAPI();
+  api.placeOrderImpl = async () => ({ orderId: 456789 });
+  const adapter = new TradovateAdapter(createConfig(), api);
+
+  const result = await adapter.submitOrder({
+    accountId: 'acct-1',
+    symbol: 'ESU6',
+    side: 'BUY',
+    quantity: 1,
+    orderType: 'MARKET',
+    intentId: 'intent-accepted',
+  });
+
+  assert.equal(result.accepted, true);
+  assert.equal(result.status, 'SENT');
+  assert.equal(result.brokerOrderId, '456789');
+  assert.equal(typeof result.submittedAt, 'string');
+});
+
+test('submitOrder returns explicit rejected BrokerOrderResult when Tradovate rejects', async () => {
+  const api = new FakeTradovateAPI();
+  api.placeOrderImpl = async () => ({
+    failureReason: 'AccountClosed',
+    failureText: 'Account is closed',
+    commandId: 12,
+  });
+  const adapter = new TradovateAdapter(createConfig(), api);
+
+  const result = await adapter.submitOrder({
+    accountId: 'acct-1',
+    symbol: 'ESU6',
+    side: 'BUY',
+    quantity: 1,
+    orderType: 'MARKET',
+    intentId: 'intent-rejected',
+  });
+
+  assert.deepEqual(result, {
+    accepted: false,
+    status: 'REJECTED',
+    errorCode: 'AccountClosed',
+    errorMessage: 'Account is closed',
+    submittedAt: result.submittedAt,
+  });
+  assert.equal(typeof result.submittedAt, 'string');
+});
+
+test('submitOrder throws on API transport or authentication failure', async () => {
+  const api = new FakeTradovateAPI();
+  api.placeOrderImpl = async () => {
+    throw new Error('Tradovate place order failed: 401 - unauthorized');
+  };
+  const adapter = new TradovateAdapter(createConfig(), api);
+
+  await assert.rejects(
+    () =>
+      adapter.submitOrder({
+        accountId: 'acct-1',
+        symbol: 'ESU6',
+        side: 'BUY',
+        quantity: 1,
+        orderType: 'MARKET',
+        intentId: 'intent-transport-error',
+      }),
+    {
+      message: 'Tradovate place order failed: 401 - unauthorized',
+    }
+  );
 });

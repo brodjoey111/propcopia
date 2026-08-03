@@ -1,4 +1,7 @@
-import { TradovateAPI } from '../tradovate-api';
+import {
+  TradovateAPI,
+  type TradovatePlaceOrderResult,
+} from '../tradovate-api';
 import type {
   BrokerAdapter,
   BrokerAdapterConnectionState,
@@ -9,6 +12,7 @@ import type {
   BrokerOrderResult,
   BrokerPosition,
 } from '../execution-types';
+import { TradovateOrderMapper } from './TradovateOrderMapper';
 
 export interface TradovateAdapterConfig {
   brokerKey: string;
@@ -23,7 +27,7 @@ export interface TradovateAdapterConfig {
 
 type TradovateApiLike = Pick<
   TradovateAPI,
-  'authenticate' | 'getAccountInfo' | 'getPositions' | 'isTokenValid'
+  'authenticate' | 'getAccountInfo' | 'getPositions' | 'isTokenValid' | 'placeOrder'
 >;
 
 type TradovateApiFactory = (environment: 'demo' | 'live') => TradovateApiLike;
@@ -47,8 +51,13 @@ function toStringOrUndefined(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+function hasOrderId(result: TradovatePlaceOrderResult): result is { orderId: number | string } {
+  return 'orderId' in result;
+}
+
 export class TradovateAdapter implements BrokerAdapter {
   private api: TradovateApiLike;
+  private orderMapper: TradovateOrderMapper;
   private connected = false;
   private authenticated = false;
   private brokerAccountIds: string[] = [];
@@ -60,6 +69,10 @@ export class TradovateAdapter implements BrokerAdapter {
     private config: TradovateAdapterConfig,
     apiOrFactory?: TradovateApiLike | TradovateApiFactory
   ) {
+    this.orderMapper = new TradovateOrderMapper({
+      accountSpec: config.credentials.username,
+    });
+
     if (typeof apiOrFactory === 'function') {
       this.api = apiOrFactory(config.environment);
       return;
@@ -114,8 +127,27 @@ export class TradovateAdapter implements BrokerAdapter {
     };
   }
 
-  async submitOrder(_request: BrokerOrderRequest): Promise<BrokerOrderResult> {
-    throw new Error('Tradovate order submission is not implemented.');
+  async submitOrder(request: BrokerOrderRequest): Promise<BrokerOrderResult> {
+    const result = await this.api.placeOrder(this.orderMapper.mapOrder(request));
+
+    const submittedAt = new Date().toISOString();
+
+    if (hasOrderId(result)) {
+      return {
+        accepted: true,
+        brokerOrderId: String(result.orderId),
+        status: 'SENT',
+        submittedAt,
+      };
+    }
+
+    return {
+      accepted: false,
+      status: 'REJECTED',
+      errorCode: result.failureReason,
+      errorMessage: result.failureText ?? result.failureReason ?? 'Tradovate rejected order.',
+      submittedAt,
+    };
   }
 
   async cancelOrder(_brokerOrderId: string, _accountId: string): Promise<void> {
