@@ -1,7 +1,17 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 import type { Account } from '@shared/schema';
+import type {
+  BrokerAdapter,
+  BrokerAdapterConnectionState,
+} from './brokers/BrokerAdapter';
+import { evaluateFollowerTradeRule } from './follower-trade-rule-engine';
+import { ExecutionManager } from './execution-manager';
 import { TradeIntentManager } from './trade-intent-manager';
+import type {
+  BrokerOrderRequest,
+  BrokerOrderResult,
+} from './execution-types';
 import type { TradeSide } from './trading-domain';
 
 export type FollowerSizingMode = 'MULTIPLIER' | 'FIXED';
@@ -81,6 +91,59 @@ interface FollowerConnection {
   isReady: boolean;
 }
 
+class FollowerWebSocketBrokerAdapter implements BrokerAdapter {
+  constructor(private follower: FollowerConnection) {}
+
+  async connect(): Promise<void> {}
+
+  async disconnect(): Promise<void> {}
+
+  isConnected(): boolean {
+    const ws = this.follower.ws;
+    return this.follower.isReady === true && ws !== null && ws.readyState === WebSocket.OPEN;
+  }
+
+  getConnectionState(): BrokerAdapterConnectionState {
+    return {
+      connected: this.isConnected(),
+      authenticated: this.isConnected(),
+      brokerAccountIds: [this.follower.accountId],
+    };
+  }
+
+  async submitOrder(request: BrokerOrderRequest): Promise<BrokerOrderResult> {
+    const ws = this.follower.ws;
+    if (!this.follower.isReady || !ws || ws.readyState !== WebSocket.OPEN) {
+      throw new Error(`Follower WebSocket not ready: ${this.follower.accountId}`);
+    }
+
+    ws.send(JSON.stringify({
+      type: 'placeOrder',
+      symbol: request.symbol,
+      action: request.side,
+      quantity: request.quantity,
+      orderType: 'Market',
+      timestamp: Date.now(),
+    }));
+
+    return {
+      accepted: true,
+      status: 'SENT',
+      submittedAt: new Date().toISOString(),
+    };
+  }
+
+  async cancelOrder(_brokerOrderId: string, _accountId: string): Promise<void> {}
+
+  async getAccounts(): Promise<[]> {
+    return [];
+  }
+
+  async getPositions(): Promise<[]> {
+    return [];
+  }
+}
+
 // Latency metrics
 // IMPORTANT: These metrics measure "dispatch latency" (time to send order via WebSocket)
 // not "execution latency" (time until order is filled). True execution latency would require
@@ -101,6 +164,7 @@ export class TradeCopyEngine extends EventEmitter {
   private masterWebSocket: WebSocket | null = null;
   private followerConnections: Map<string, FollowerConnection> = new Map();
   private tradeIntentManager: TradeIntentManager;
+  private executionManager: ExecutionManager;
   private processedFills: Set<string> = new Set(); // Idempotency cache
   private positionScalingCache: Map<string, number> = new Map(); // In-memory scaling cache
   private latencyMetrics: LatencyMetrics[] = [];
@@ -115,6 +179,9 @@ export class TradeCopyEngine extends EventEmitter {
   ) {
     super();
     this.tradeIntentManager = tradeIntentManager ?? new TradeIntentManager();
+    this.executionManager = new ExecutionManager(this.tradeIntentManager, {
+      maxConcurrency: 8,
+    });
     this.baseUrl = environment === 'demo'
       ? 'https://demo.tradovateapi.com/v1'
       : 'https://live.tradovateapi.com/v1';
@@ -228,6 +295,10 @@ export class TradeCopyEngine extends EventEmitter {
     await this.connectFollowerWebSocket(connection);
     
     this.followerConnections.set(account.id, connection);
+    this.executionManager.registerBrokerAdapter(
+      this.getFollowerBrokerKey(connection.accountId),
+      new FollowerWebSocketBrokerAdapter(connection),
+    );
     
     const setupTime = performance.now() - startTime;
     console.log(`[TradeCopy] Follower ${account.name} added in ${setupTime.toFixed(2)}ms`);
@@ -346,24 +417,53 @@ export class TradeCopyEngine extends EventEmitter {
       const followerStartTime = performance.now();
       
       try {
-        // Check if ticker is blocked
-        if (follower.blockedTickers.includes(trade.symbol)) {
-          console.log(`[TradeCopy] ${follower.accountId} blocks ${trade.symbol}`);
-          return { success: false, reason: 'blocked' };
-        }
-        
-        const followerOrder = calculateFollowerOrder({
-          masterAction: trade.action,
-          masterQuantity: trade.quantity,
-          positionScaling: follower.positionScaling,
-          maxContracts: follower.maxContracts,
-          copySizingMode: follower.copySizingMode,
-          fixedQuantity: follower.fixedQuantity,
-          reverseCopying: follower.reverseCopying,
+        const tradeTimestamp = new Date(trade.timestamp).toISOString();
+        const ruleResult = evaluateFollowerTradeRule({
+          trade: {
+            symbol: trade.symbol,
+            side: trade.action,
+            quantity: trade.quantity,
+            timestamp: tradeTimestamp,
+          },
+          follower: {
+            enabled: true,
+            allowedSymbols: null,
+            blockedSymbols: follower.blockedTickers,
+            allowedDirections: null,
+            tradingDays: null,
+            tradingStartTime: null,
+            tradingEndTime: null,
+            maxTradesPerDay: null,
+            maxContracts: follower.maxContracts ?? null,
+            minAccountBalance: null,
+            maxOpenPositions: null,
+            cooldownAfterLoss: null,
+            sizingMode: follower.copySizingMode,
+            fixedQuantity: follower.fixedQuantity ?? null,
+            multiplier: follower.positionScaling != null ? follower.positionScaling / 100 : null,
+            reverseCopy: follower.reverseCopying,
+          },
+          runtime: {
+            tradesToday: 0,
+            currentBalance: null,
+            currentOpenPositions: 0,
+            lastLossAt: null,
+            now: tradeTimestamp,
+          },
         });
 
-        if (followerOrder.skipped) {
-          return { success: false, reason: 'zero_quantity' }; // Skip if quantity rounds down to zero
+        if (ruleResult.decision === 'SKIPPED') {
+          console.log(
+            `[TradeCopy] Skipping ${follower.accountId} for ${trade.symbol}: ${ruleResult.reasonCode}`
+          );
+          return { success: false, reason: 'rule_skipped' };
+        }
+
+        if (ruleResult.decision === 'REJECTED') {
+          console.warn(
+            `[TradeCopy] Rejecting ${follower.accountId} for ${trade.symbol}: ${ruleResult.reasonCode}`
+          );
+          return { success: false, reason: 'rule_rejected' };
         }
 
         const intent = this.tradeIntentManager.createIntent({
@@ -371,41 +471,57 @@ export class TradeCopyEngine extends EventEmitter {
           masterFillId: trade.fillId,
           followerAccountId: follower.accountId,
           symbol: trade.symbol,
-          side: followerOrder.action,
-          quantity: followerOrder.quantity,
+          side: ruleResult.side,
+          quantity: ruleResult.quantity,
         });
         this.tradeIntentManager.markValidated(intent.intentId);
         this.tradeIntentManager.markReadyToSend(intent.intentId);
-        
-        // Validate WebSocket connection state
-        if (!follower.isReady || !follower.ws || follower.ws.readyState !== WebSocket.OPEN) {
-          this.tradeIntentManager.markFailed(intent.intentId);
-          console.error(`[TradeCopy] ${follower.accountId} WebSocket not ready (readyState: ${follower.ws?.readyState})`);
-          this.failedSends++;
-          return { success: false, reason: 'ws_not_ready' };
-        }
-        
-        // Send order via WebSocket (fastest method)
-        try {
-          follower.ws.send(JSON.stringify({
-            type: 'placeOrder',
-            symbol: trade.symbol,
-            action: followerOrder.action,
-            quantity: followerOrder.quantity,
-            orderType: 'Market',
-            timestamp: Date.now()
-          }));
 
-          this.tradeIntentManager.markSent(intent.intentId);
-          
-          const followerLatency = performance.now() - followerStartTime;
+        try {
+          await this.executionManager.enqueue({
+            intent,
+            brokerKey: this.getFollowerBrokerKey(follower.accountId),
+            request: {
+              accountId: follower.accountId,
+              symbol: trade.symbol,
+              side: ruleResult.side,
+              quantity: ruleResult.quantity,
+              orderType: 'MARKET',
+              intentId: intent.intentId,
+              clientOrderId: intent.intentId,
+            },
+            retryPolicy: {
+              maxRetries: 0,
+              retryDelayMs: 1000,
+              timeoutMs: 5000,
+            },
+          });
+        } catch (enqueueError) {
+          console.error(`[TradeCopy] Failed to enqueue for ${follower.accountId}:`, enqueueError);
+          this.failedSends++;
+          return { success: false, reason: 'enqueue_error', error: enqueueError };
+        }
+
+        const executionResult = await this.executionManager.waitForExecution(intent.intentId);
+
+        if (executionResult.success) {
+          const followerLatency = executionResult.elapsedMs;
           metrics.followerLatencies.set(follower.accountId, followerLatency);
           return { success: true, latency: followerLatency };
-        } catch (sendError) {
-          this.tradeIntentManager.markFailed(intent.intentId);
-          console.error(`[TradeCopy] Failed to send to ${follower.accountId}:`, sendError);
+        }
+
+        if (executionResult.status === 'FAILED') {
+          console.error(
+            `[TradeCopy] Execution failed for ${follower.accountId}: ${executionResult.errorMessage ?? 'unknown error'}`
+          );
           this.failedSends++;
-          return { success: false, reason: 'send_error', error: sendError };
+          return { success: false, reason: 'execution_failed', error: executionResult.errorMessage };
+        }
+
+        if (executionResult.status === 'CANCELLED') {
+          console.error(`[TradeCopy] Execution cancelled for ${follower.accountId}`);
+          this.failedSends++;
+          return { success: false, reason: 'execution_cancelled' };
         }
       } catch (error) {
         console.error(`[TradeCopy] Error copying to ${follower.accountId}:`, error);
@@ -509,6 +625,13 @@ export class TradeCopyEngine extends EventEmitter {
   async disconnect(): Promise<void> {
     // Set inactive flag to prevent reconnections
     this.isActive = false;
+
+    const followerAccountIds = Array.from(this.followerConnections.keys());
+    for (const followerAccountId of followerAccountIds) {
+      await this.executionManager.unregisterBrokerAdapter(
+        this.getFollowerBrokerKey(followerAccountId)
+      );
+    }
     
     // Clear all reconnect timeouts
     for (const timeout of Array.from(this.reconnectTimeouts)) {
@@ -533,5 +656,9 @@ export class TradeCopyEngine extends EventEmitter {
     
     this.followerConnections.clear();
     console.log('[TradeCopy] All connections closed, engine stopped');
+  }
+
+  private getFollowerBrokerKey(accountId: string): string {
+    return `follower-ws:${accountId}`;
   }
 }

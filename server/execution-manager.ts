@@ -1,11 +1,14 @@
 import { propCopiaEventBus } from './event-bus';
+import type { BrokerAdapter } from './brokers/BrokerAdapter';
 import { TradeIntentManager } from './trade-intent-manager';
 import type {
-  BrokerAdapter,
   BrokerOrderRequest,
   BrokerOrderResult,
   ExecutionContext,
+  ExecutionManagerOptions,
   ExecutionRecord,
+  ExecutionStatus,
+  ExecutionWaitResult,
   RetryPolicy,
 } from './execution-types';
 
@@ -27,12 +30,25 @@ export class ExecutionManager {
   private executions = new Map<string, ExecutionRecord>();
   private queue: string[] = [];
   private retryTimers = new Map<string, NodeJS.Timeout>();
+  private waiters = new Map<
+    string,
+    Set<{
+      resolve: (result: ExecutionWaitResult) => void;
+      reject: (error: Error) => void;
+    }>
+  >();
   private paused = false;
   private killSwitchActive = false;
   private killSwitchReason?: string;
-  private activeExecutionIntentId: string | null = null;
+  private activeExecutionIntentIds = new Set<string>();
+  private maxConcurrency: number;
 
-  constructor(private tradeIntentManager: TradeIntentManager) {}
+  constructor(
+    private tradeIntentManager: TradeIntentManager,
+    options?: ExecutionManagerOptions
+  ) {
+    this.maxConcurrency = options?.maxConcurrency ?? 1;
+  }
 
   registerBrokerAdapter(brokerKey: string, adapter: BrokerAdapter): void {
     this.adapters.set(brokerKey, adapter);
@@ -191,6 +207,29 @@ export class ExecutionManager {
     return Array.from(this.executions.values());
   }
 
+  waitForExecution(intentId: string): Promise<ExecutionWaitResult> {
+    const record = this.executions.get(intentId);
+    if (!record) {
+      return Promise.reject(new Error(`Execution not found for intent ${intentId}.`));
+    }
+
+    if (this.isTerminalStatus(record.status)) {
+      return Promise.resolve(this.buildWaitResult(record));
+    }
+
+    return new Promise<ExecutionWaitResult>((resolve, reject) => {
+      const existingWaiters = this.waiters.get(intentId);
+      const waiter = { resolve, reject };
+
+      if (existingWaiters) {
+        existingWaiters.add(waiter);
+        return;
+      }
+
+      this.waiters.set(intentId, new Set([waiter]));
+    });
+  }
+
   private resolveRetryPolicy(policy?: Partial<RetryPolicy>): RetryPolicy {
     return {
       maxRetries: policy?.maxRetries ?? DEFAULT_RETRY_POLICY.maxRetries,
@@ -200,29 +239,28 @@ export class ExecutionManager {
   }
 
   private processQueue(): void {
-    if (this.paused || this.killSwitchActive || this.activeExecutionIntentId !== null) {
+    if (this.paused || this.killSwitchActive) {
       return;
     }
 
-    const nextIntentId = this.queue.shift();
-    if (!nextIntentId) {
-      return;
-    }
-
-    const record = this.executions.get(nextIntentId);
-    if (!record || record.status !== 'QUEUED') {
-      this.processQueue();
-      return;
-    }
-
-    this.activeExecutionIntentId = nextIntentId;
-
-    void this.runExecution(record).finally(() => {
-      if (this.activeExecutionIntentId === nextIntentId) {
-        this.activeExecutionIntentId = null;
+    while (this.activeExecutionIntentIds.size < this.maxConcurrency) {
+      const nextIntentId = this.queue.shift();
+      if (!nextIntentId) {
+        return;
       }
-      this.processQueue();
-    });
+
+      const record = this.executions.get(nextIntentId);
+      if (!record || record.status !== 'QUEUED') {
+        continue;
+      }
+
+      this.activeExecutionIntentIds.add(nextIntentId);
+
+      void this.runExecution(record).finally(() => {
+        this.activeExecutionIntentIds.delete(nextIntentId);
+        this.processQueue();
+      });
+    }
   }
 
   private async runExecution(record: ExecutionRecord): Promise<void> {
@@ -291,6 +329,8 @@ export class ExecutionManager {
       brokerOrderId: result.brokerOrderId,
       submittedAt: result.submittedAt,
     });
+
+    this.resolveWaiters(record.intentId);
   }
 
   private rejectRecord(record: ExecutionRecord, result: BrokerOrderResult): void {
@@ -312,6 +352,8 @@ export class ExecutionManager {
       errorMessage: record.lastErrorMessage,
       failedAt: record.failedAt,
     });
+
+    this.resolveWaiters(record.intentId);
   }
 
   private failRecord(record: ExecutionRecord, errorMessage: string, errorCode?: string): void {
@@ -331,6 +373,8 @@ export class ExecutionManager {
       errorMessage,
       failedAt: record.failedAt,
     });
+
+    this.resolveWaiters(record.intentId);
   }
 
   private scheduleRetry(record: ExecutionRecord, errorMessage: string): void {
@@ -364,6 +408,7 @@ export class ExecutionManager {
     record.cancelledAt = record.updatedAt;
     record.nextRetryAt = undefined;
     this.tradeIntentManager.markCancelled(record.intentId);
+    this.resolveWaiters(record.intentId);
   }
 
   private removeFromQueue(intentId: string): void {
@@ -387,5 +432,68 @@ export class ExecutionManager {
         clearTimeout(timer);
       }
     }
+  }
+
+  private resolveWaiters(intentId: string): void {
+    const waiters = this.waiters.get(intentId);
+    if (!waiters) {
+      return;
+    }
+
+    const record = this.executions.get(intentId);
+    this.waiters.delete(intentId);
+
+    if (!record || !this.isTerminalStatus(record.status)) {
+      const error = new Error(`Execution not found for intent ${intentId}.`);
+      for (const waiter of Array.from(waiters)) {
+        waiter.reject(error);
+      }
+      return;
+    }
+
+    const result = this.buildWaitResult(record);
+    for (const waiter of Array.from(waiters)) {
+      waiter.resolve(result);
+    }
+  }
+
+  private buildWaitResult(record: ExecutionRecord): ExecutionWaitResult {
+    const status = record.status;
+    if (!this.isTerminalStatus(status)) {
+      throw new Error(`Execution is not terminal for intent ${record.intentId}.`);
+    }
+
+    let terminalAt: string | undefined;
+
+    switch (status) {
+      case 'COMPLETED':
+        terminalAt = record.completedAt;
+        break;
+      case 'FAILED':
+        terminalAt = record.failedAt;
+        break;
+      case 'CANCELLED':
+        terminalAt = record.cancelledAt;
+        break;
+    }
+
+    const queuedAtMs = new Date(record.queuedAt).getTime();
+    const terminalAtMs = new Date(terminalAt ?? record.updatedAt).getTime();
+
+    return {
+      intentId: record.intentId,
+      status,
+      success: status === 'COMPLETED',
+      elapsedMs: terminalAtMs - queuedAtMs,
+      brokerResult: record.lastResult,
+      errorCode: record.lastErrorCode,
+      errorMessage: record.lastErrorMessage,
+    };
+  }
+
+  private isTerminalStatus(
+    status: ExecutionStatus
+  ): status is 'COMPLETED' | 'FAILED' | 'CANCELLED' {
+    return status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED';
   }
 }

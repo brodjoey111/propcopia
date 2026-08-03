@@ -1,16 +1,6 @@
 import type { TradeIntent } from './trade-intent-types';
 import type { OrderType, TimeInForce, TradeSide } from './trading-domain';
 
-export interface BrokerAdapter {
-  connect(): Promise<void>;
-  disconnect(): Promise<void>;
-  isConnected(): boolean;
-  submitOrder(request: BrokerOrderRequest): Promise<BrokerOrderResult>;
-  cancelOrder(brokerOrderId: string, accountId: string): Promise<void>;
-  getAccounts(): Promise<BrokerAccount[]>;
-  getPositions(accountId?: string): Promise<BrokerPosition[]>;
-}
-
 export interface BrokerOrderRequest {
   accountId: string;
   symbol: string;
@@ -65,6 +55,10 @@ export interface RetryPolicy {
   timeoutMs: number;
 }
 
+export interface ExecutionManagerOptions {
+  maxConcurrency?: number;
+}
+
 export interface ExecutionContext {
   intent: TradeIntent;
   brokerKey: string;
@@ -92,4 +86,14 @@ export interface ExecutionRecord {
   lastResult?: BrokerOrderResult;
   lastErrorCode?: string;
   lastErrorMessage?: string;
+}
+
+export interface ExecutionWaitResult {
+  intentId: string;
+  status: 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  success: boolean;
+  elapsedMs: number;
+  brokerResult?: BrokerOrderResult;
+  errorCode?: string;
+  errorMessage?: string;
 }
