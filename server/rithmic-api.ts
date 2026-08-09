@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { EventEmitter } from 'events';
 
 /**
  * Rithmic R|Protocol API Client — corrected to v0.87.0.0 spec
@@ -26,6 +27,18 @@ export interface RithmicAccount {
   accountType: string;
   balance?: number;
   active?: boolean;
+  currency?: string;
+}
+
+export interface RithmicOrderFillEvent {
+  accountId: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  quantity: number;
+  price: number;
+  timestamp: number;
+  fillId: string;
+  exchange?: string;
 }
 
 // ─── SSL cert for Rithmic WSS connections ────────────────────────────────────
@@ -72,6 +85,7 @@ const FIELD = {
   // Shared across all messages
   TEMPLATE_ID:      154467,  // PB_OFFSET + MNM_TEMPLATE_ID  (was 154489 — incorrect)
   USER_MSG:         132760,  // PB_OFFSET + MNM_USER_MSG
+  RQ_HANDLER_RP_CODE: 132764,
 
   // request_login.proto specific fields
   TEMPLATE_VERSION: 153634,
@@ -86,6 +100,9 @@ const FIELD = {
   FCM_ID:           154013,  // fcm_id  (same field across order msgs)
   IB_ID:            154014,  // ib_id   (same field across order msgs)
   ACCOUNT_ID:       154008,  // account_id
+  ACCOUNT_NAME:     154002,
+  ACCOUNT_CURRENCY: 154383,
+  USER_TYPE:        154036,
   MANUAL_OR_AUTO:   154710,  // OrderPlacement enum (1=MANUAL, 2=AUTO)
 
   // response fields
@@ -166,10 +183,11 @@ function pbInt32(fieldNumber: number, value: number): Buffer {
 interface ProtoFields {
   ints:    Map<number, number[]>;
   strings: Map<number, string[]>;
+  doubles: Map<number, number[]>;
 }
 
 function decodeProto(data: Buffer): ProtoFields {
-  const result: ProtoFields = { ints: new Map(), strings: new Map() };
+  const result: ProtoFields = { ints: new Map(), strings: new Map(), doubles: new Map() };
   let offset = 0;
 
   const readVarint = (): number => {
@@ -198,6 +216,11 @@ function decodeProto(data: Buffer): ProtoFields {
       offset += len;
       if (!result.strings.has(fieldNumber)) result.strings.set(fieldNumber, []);
       result.strings.get(fieldNumber)!.push(bytes.toString('utf8'));
+    } else if (wireType === 1) {
+      const value = data.readDoubleLE(offset);
+      offset += 8;
+      if (!result.doubles.has(fieldNumber)) result.doubles.set(fieldNumber, []);
+      result.doubles.get(fieldNumber)!.push(value);
     } else {
       break; // unknown wire type — stop
     }
@@ -208,13 +231,15 @@ function decodeProto(data: Buffer): ProtoFields {
 
 // ─── RithmicAPI class ─────────────────────────────────────────────────────────
 
-export class RithmicAPI {
+export class RithmicAPI extends EventEmitter {
   private credentials: Required<RithmicCredentials>;
   private ws: WebSocket | null = null;
+  private orderUpdateWs: WebSocket | null = null;
   private authenticated = false;
   private heartbeatInterval: NodeJS.Timeout | null = null;
 
   constructor(credentials: RithmicCredentials) {
+    super();
     this.credentials = {
       username:    credentials.username,
       password:    credentials.password,
@@ -256,6 +281,34 @@ export class RithmicAPI {
     return Buffer.concat([
       pbInt32(FIELD.TEMPLATE_ID, 310),
       pbString(FIELD.USER_MSG, 'hello'),
+    ]);
+  }
+
+  private buildAccountListRequest(
+    fcmId: string,
+    ibId: string,
+    userType: number,
+  ): Buffer {
+    return Buffer.concat([
+      pbInt32(FIELD.TEMPLATE_ID, TEMPLATE.REQUEST_ACCOUNT_LIST),
+      pbString(FIELD.USER_MSG, 'hello'),
+      pbString(FIELD.FCM_ID, fcmId),
+      pbString(FIELD.IB_ID, ibId),
+      pbInt32(FIELD.USER_TYPE, userType),
+    ]);
+  }
+
+  private buildSubscribeForOrderUpdatesRequest(
+    accountId: string,
+    fcmId: string,
+    ibId: string,
+  ): Buffer {
+    return Buffer.concat([
+      pbInt32(FIELD.TEMPLATE_ID, 308),
+      pbString(FIELD.USER_MSG, 'hello'),
+      pbString(FIELD.FCM_ID, fcmId),
+      pbString(FIELD.IB_ID, ibId),
+      pbString(FIELD.ACCOUNT_ID, accountId),
     ]);
   }
 
@@ -323,6 +376,170 @@ export class RithmicAPI {
 
       const onClose = (code: number) => {
         finishReject(new Error(`Login info socket closed before completion (code=${code})`));
+      };
+
+      ws.on('message', onMessage);
+      ws.on('error', onError);
+      ws.on('close', onClose);
+    });
+  }
+
+  private waitForLoginInfoDetails(
+    ws: WebSocket,
+    timeoutMs: number,
+  ): Promise<{ fcmId: string; ibId: string; userType: number }> {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        ws.off('message', onMessage);
+        ws.off('error', onError);
+        ws.off('close', onClose);
+      };
+
+      const finishResolve = (value: { fcmId: string; ibId: string; userType: number }) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(value);
+      };
+
+      const finishReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+
+      const timeout = setTimeout(() => {
+        finishReject(new Error('Timeout waiting for login info response'));
+      }, timeoutMs);
+
+      const onMessage = (data: WebSocket.RawData) => {
+        const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
+        const fields = decodeProto(buffer);
+        const templateId = fields.ints.get(FIELD.TEMPLATE_ID)?.[0];
+
+        if (templateId === TEMPLATE.REJECT) {
+          const rpCode = fields.strings.get(FIELD.RP_CODE)?.[0] ?? 'unknown';
+          finishReject(new Error(`Rithmic reject: rp_code=${rpCode}`));
+          return;
+        }
+
+        if (templateId !== TEMPLATE.RESPONSE_LOGIN_INFO) {
+          return;
+        }
+
+        const rpCodes = fields.strings.get(FIELD.RP_CODE) ?? [];
+
+        if (rpCodes.includes('0')) {
+          finishResolve({
+            fcmId: fields.strings.get(FIELD.FCM_ID)?.[0] ?? '',
+            ibId: fields.strings.get(FIELD.IB_ID)?.[0] ?? '',
+            userType: fields.ints.get(FIELD.USER_TYPE)?.[0] ?? 3,
+          });
+        } else {
+          finishReject(
+            new Error(`Login info request failed: rp_code=${rpCodes[0] ?? 'unknown'}`),
+          );
+        }
+      };
+
+      const onError = (err: Error) => {
+        finishReject(new Error(`Login info request failed: ${err.message}`));
+      };
+
+      const onClose = (code: number) => {
+        finishReject(new Error(`Login info socket closed before completion (code=${code})`));
+      };
+
+      ws.on('message', onMessage);
+      ws.on('error', onError);
+      ws.on('close', onClose);
+    });
+  }
+
+  private waitForAccountListResponse(
+    ws: WebSocket,
+    timeoutMs: number,
+  ): Promise<RithmicAccount[]> {
+    return new Promise((resolve, reject) => {
+      const accounts = new Map<string, RithmicAccount>();
+      let settled = false;
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        ws.off('message', onMessage);
+        ws.off('error', onError);
+        ws.off('close', onClose);
+      };
+
+      const finishResolve = (value: RithmicAccount[]) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(value);
+      };
+
+      const finishReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+
+      const timeout = setTimeout(() => {
+        finishReject(new Error('Timeout waiting for account list response'));
+      }, timeoutMs);
+
+      const onMessage = (data: WebSocket.RawData) => {
+        const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
+        const fields = decodeProto(buffer);
+        const templateId = fields.ints.get(FIELD.TEMPLATE_ID)?.[0];
+
+        if (templateId === TEMPLATE.REJECT) {
+          const rpCode = fields.strings.get(FIELD.RP_CODE)?.[0] ?? 'unknown';
+          finishReject(new Error(`Rithmic reject: rp_code=${rpCode}`));
+          return;
+        }
+
+        if (templateId !== TEMPLATE.RESPONSE_ACCOUNT_LIST) {
+          return;
+        }
+
+        const rqHandlerCodes = fields.strings.get(FIELD.RQ_HANDLER_RP_CODE) ?? [];
+        const rpCodes = fields.strings.get(FIELD.RP_CODE) ?? [];
+        const accountId = fields.strings.get(FIELD.ACCOUNT_ID)?.[0] ?? '';
+        const accountName = fields.strings.get(FIELD.ACCOUNT_NAME)?.[0] ?? '';
+        const currency = fields.strings.get(FIELD.ACCOUNT_CURRENCY)?.[0] ?? undefined;
+
+        if (rqHandlerCodes.includes('0') && accountId.length > 0) {
+          accounts.set(accountId, {
+            id: accountId,
+            name: accountName || accountId,
+            accountType: 'futures',
+            balance: undefined,
+            active: true,
+            currency,
+          });
+        }
+
+        if (rpCodes.length > 0) {
+          if (rpCodes.includes('0')) {
+            finishResolve(Array.from(accounts.values()));
+          } else {
+            finishReject(new Error(`Account list request failed: rp_code=${rpCodes[0]}`));
+          }
+        }
+      };
+
+      const onError = (err: Error) => {
+        finishReject(new Error(`Account list request failed: ${err.message}`));
+      };
+
+      const onClose = (code: number) => {
+        finishReject(new Error(`Account list socket closed before completion (code=${code})`));
       };
 
       ws.on('message', onMessage);
@@ -582,6 +799,47 @@ export class RithmicAPI {
     return { ca: RITHMIC_SSL_CERT, rejectUnauthorized: true };
   }
 
+  private buildOrderFillEvent(
+    fields: ProtoFields,
+    fallbackTimestamp: number,
+  ): RithmicOrderFillEvent | null {
+    const notifyType = fields.ints.get(153625)?.[0];
+    const accountId = fields.strings.get(FIELD.ACCOUNT_ID)?.[0];
+    const symbol = fields.strings.get(110100)?.[0];
+    const exchange = fields.strings.get(110101)?.[0];
+    const transactionType = fields.ints.get(112003)?.[0];
+    const totalFillSize = fields.ints.get(154111)?.[0];
+    const fillSize = fields.ints.get(110308)?.[0];
+    const quantity = fillSize ?? totalFillSize ?? 0;
+    const avgFillPrice = fields.doubles.get(110322)?.[0];
+    const fillPrice = fields.doubles.get(110307)?.[0];
+    const price = fillPrice ?? avgFillPrice ?? fields.doubles.get(110306)?.[0] ?? 0;
+    const rawFillId = fields.strings.get(110311)?.[0];
+
+    if (!accountId || !symbol || quantity <= 0 || price <= 0) {
+      return null;
+    }
+
+    const isExchangeFill = notifyType === 5;
+    const isRithmicComplete = notifyType === 15 && (totalFillSize ?? 0) > 0;
+    if (!isExchangeFill && !isRithmicComplete) {
+      return null;
+    }
+
+    const side = transactionType === 2 ? 'SELL' : 'BUY';
+
+    return {
+      accountId,
+      symbol,
+      side,
+      quantity,
+      price,
+      timestamp: fallbackTimestamp,
+      fillId: rawFillId ?? `${accountId}:${symbol}:${fallbackTimestamp}:${quantity}:${side}`,
+      exchange,
+    };
+  }
+
   // ── Low-level: connect to a plant, authenticate, run action ───────────────
 
   private connectToPlant(
@@ -674,15 +932,252 @@ export class RithmicAPI {
   async testConnection(): Promise<{ success: boolean; message: string; data?: RithmicAccount[] }> {
     const authResult = await this.authenticate();
     if (!authResult.success) return authResult;
+    try {
+      const accounts = await this.fetchAccountList();
+      return { success: true, message: 'Successfully connected to Rithmic', data: accounts };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
 
-    const placeholder: RithmicAccount[] = [{
-      id:          `${this.credentials.username}-primary`,
-      name:        `${this.credentials.username} — ${this.credentials.systemName}`,
-      accountType: 'futures',
-      active:      true,
-    }];
+  private async fetchAccountList(): Promise<RithmicAccount[]> {
+    const serverUri = SERVERS[this.credentials.environment];
 
-    return { success: true, message: 'Successfully connected to Rithmic', data: placeholder };
+    if (!serverUri) {
+      throw new Error(
+        "Live Rithmic connection is not configured yet. Use Demo until the RITHMIC_LIVE_URL secret is added.",
+      );
+    }
+
+    return new Promise<RithmicAccount[]>((resolve, reject) => {
+      let loginDone = false;
+      let settled = false;
+      const ws = new WebSocket(serverUri, this.makeSslOptions());
+
+      const cleanup = () => {
+        clearTimeout(loginTimeout);
+        ws.off('open', onOpen);
+        ws.off('message', onMessage);
+        ws.off('error', onError);
+        ws.off('close', onClose);
+      };
+
+      const finishResolve = (value: RithmicAccount[]) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        } else if (ws.readyState === WebSocket.CONNECTING) {
+          ws.terminate();
+        }
+        resolve(value);
+      };
+
+      const finishReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        } else if (ws.readyState === WebSocket.CONNECTING) {
+          ws.terminate();
+        }
+        reject(error);
+      };
+
+      const loginTimeout = setTimeout(() => {
+        ws.terminate();
+        finishReject(new Error('Connection timed out (15 s)'));
+      }, 15_000);
+
+      const onOpen = () => {
+        ws.send(this.buildLoginRequest(INFRA_TYPE.ORDER_PLANT));
+      };
+
+      const onMessage = async (data: WebSocket.RawData) => {
+        const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
+        const fields = decodeProto(buffer);
+        const templateId = fields.ints.get(FIELD.TEMPLATE_ID)?.[0];
+        const rpCodes = fields.strings.get(FIELD.RP_CODE) ?? [];
+
+        if (templateId === TEMPLATE.RESPONSE_LOGIN && !loginDone) {
+          if (!rpCodes.includes('0')) {
+            finishReject(
+              new Error(`Rithmic login failed: rp_code=${rpCodes[0] ?? 'unknown'}`),
+            );
+            return;
+          }
+
+          loginDone = true;
+          clearTimeout(loginTimeout);
+
+          try {
+            const loginInfoPromise = this.waitForLoginInfoDetails(ws, 10_000);
+            ws.send(this.buildLoginInfoRequest());
+            const loginInfo = await loginInfoPromise;
+
+            const accountListPromise = this.waitForAccountListResponse(ws, 10_000);
+            ws.send(
+              this.buildAccountListRequest(
+                loginInfo.fcmId,
+                loginInfo.ibId,
+                loginInfo.userType,
+              ),
+            );
+            finishResolve(await accountListPromise);
+          } catch (error) {
+            finishReject(error instanceof Error ? error : new Error(String(error)));
+          }
+        } else if (templateId === TEMPLATE.REJECT && !loginDone) {
+          const rpCode = fields.strings.get(FIELD.RP_CODE)?.[0] ?? 'unknown';
+          finishReject(new Error(`Rithmic rejected login (rp_code=${rpCode})`));
+        }
+      };
+
+      const onError = (err: Error) => {
+        finishReject(new Error(`WebSocket error: ${err.message}`));
+      };
+
+      const onClose = (code: number) => {
+        if (!settled && !loginDone) {
+          finishReject(
+            new Error(
+              `Connection closed before login response (code=${code}). Check credentials and system_name.`,
+            ),
+          );
+        }
+      };
+
+      ws.on('open', onOpen);
+      ws.on('message', onMessage);
+      ws.on('error', onError);
+      ws.on('close', onClose);
+    });
+  }
+
+  async subscribeToOrderFills(
+    accountId: string,
+    onFill: (fill: RithmicOrderFillEvent) => void,
+  ): Promise<void> {
+    const serverUri = SERVERS[this.credentials.environment];
+
+    if (!serverUri) {
+      throw new Error(
+        "Live Rithmic connection is not configured yet. Use Demo until the RITHMIC_LIVE_URL secret is added.",
+      );
+    }
+
+    await this.stopOrderFillStream();
+
+    await new Promise<void>((resolve, reject) => {
+      let loginDone = false;
+      let settled = false;
+      const ws = new WebSocket(serverUri, this.makeSslOptions());
+      this.orderUpdateWs = ws;
+
+      const finishResolve = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve();
+      };
+
+      const finishReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.terminate();
+        }
+        if (this.orderUpdateWs === ws) {
+          this.orderUpdateWs = null;
+        }
+        reject(error);
+      };
+
+      const timeout = setTimeout(() => {
+        finishReject(new Error('Timeout waiting for Rithmic order update subscription.'));
+      }, 15_000);
+
+      ws.on('open', () => {
+        ws.send(this.buildLoginRequest(INFRA_TYPE.ORDER_PLANT));
+      });
+
+      ws.on('message', (data: WebSocket.RawData) => {
+        const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
+        const fields = decodeProto(buffer);
+        const templateId = fields.ints.get(FIELD.TEMPLATE_ID)?.[0];
+        const rpCodes = fields.strings.get(FIELD.RP_CODE) ?? [];
+
+        if (templateId === TEMPLATE.REJECT && !loginDone) {
+          finishReject(new Error(`Rithmic rejected login (rp_code=${rpCodes[0] ?? 'unknown'})`));
+          return;
+        }
+
+        if (templateId === TEMPLATE.RESPONSE_LOGIN && !loginDone) {
+          loginDone = true;
+          if (!rpCodes.includes('0')) {
+            finishReject(new Error(`Rithmic login failed: rp_code=${rpCodes[0] ?? 'unknown'}`));
+            return;
+          }
+
+          const fcmId = fields.strings.get(FIELD.FCM_ID)?.[0] ?? '';
+          const ibId = fields.strings.get(FIELD.IB_ID)?.[0] ?? '';
+          ws.send(this.buildSubscribeForOrderUpdatesRequest(accountId, fcmId, ibId));
+          finishResolve();
+          return;
+        }
+
+        const fillEvent = this.buildOrderFillEvent(fields, Date.now());
+        if (fillEvent) {
+          if (fillEvent.accountId === accountId) {
+            onFill(fillEvent);
+            this.emit('orderFill', fillEvent);
+          } else {
+            console.warn(
+              `[RithmicAPI] Ignoring fill for account=${fillEvent.accountId}; subscribed account=${accountId}; symbol=${fillEvent.symbol}; fillId=${fillEvent.fillId}`,
+            );
+          }
+        }
+      });
+
+      ws.on('error', (err) => {
+        if (!settled) {
+          finishReject(new Error(`WebSocket error: ${err.message}`));
+          return;
+        }
+        this.emit('orderFillError', err);
+      });
+
+      ws.on('close', (code) => {
+        if (this.orderUpdateWs === ws) {
+          this.orderUpdateWs = null;
+        }
+        if (!settled && !loginDone) {
+          finishReject(
+            new Error(
+              `Connection closed before order update subscription completed (code=${code}).`,
+            ),
+          );
+        }
+      });
+    });
+  }
+
+  async stopOrderFillStream(): Promise<void> {
+    if (!this.orderUpdateWs) {
+      return;
+    }
+
+    const ws = this.orderUpdateWs;
+    this.orderUpdateWs = null;
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close();
+    }
   }
   async sendOrder(order: {
     accountId: string;
@@ -981,6 +1476,7 @@ export class RithmicAPI {
   }
 
   async disconnect(): Promise<void> {
+    await this.stopOrderFillStream();
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;

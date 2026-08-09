@@ -73,6 +73,28 @@ export interface ExecutionFailedEvent {
   failedAt: string;
 }
 
+export interface ExecutionAcknowledgedEvent {
+  intentId: string;
+  groupId?: string;
+  followerAccountId: string;
+  brokerKey: string;
+  brokerOrderId?: string;
+  acknowledgedAt: string;
+  brokerStatus?: string;
+}
+
+export interface ExecutionFilledEvent {
+  intentId: string;
+  groupId?: string;
+  followerAccountId: string;
+  brokerKey: string;
+  brokerOrderId?: string;
+  fillId?: string;
+  filledQuantity?: number;
+  averageFillPrice?: number;
+  filledAt: string;
+}
+
 export interface CopyGroupStartedEvent {
   group: CopyGroup;
   runtime: CopyGroupRuntimeState;
@@ -114,6 +136,8 @@ export interface PropCopiaEventMap {
   'execution.queued': ExecutionQueuedEvent;
   'execution.sent': ExecutionSentEvent;
   'execution.failed': ExecutionFailedEvent;
+  'execution.acknowledged': ExecutionAcknowledgedEvent;
+  'execution.filled': ExecutionFilledEvent;
   'copy_group.started': CopyGroupStartedEvent;
   'copy_group.stopped': CopyGroupStoppedEvent;
   'copy_group.paused': CopyGroupPausedEvent;

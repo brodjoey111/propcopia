@@ -1,10 +1,13 @@
+import { EventEmitter } from 'events';
 import { propCopiaEventBus } from './event-bus';
 import type { BrokerAdapter } from './brokers/BrokerAdapter';
 import { TradeIntentManager } from './trade-intent-manager';
 import type {
+  ExecutionAcknowledgement,
   BrokerOrderRequest,
   BrokerOrderResult,
   ExecutionContext,
+  ExecutionFill,
   ExecutionManagerOptions,
   ExecutionRecord,
   ExecutionStatus,
@@ -25,7 +28,7 @@ class ExecutionTimeoutError extends Error {
   }
 }
 
-export class ExecutionManager {
+export class ExecutionManager extends EventEmitter {
   private adapters = new Map<string, BrokerAdapter>();
   private executions = new Map<string, ExecutionRecord>();
   private queue: string[] = [];
@@ -47,6 +50,7 @@ export class ExecutionManager {
     private tradeIntentManager: TradeIntentManager,
     options?: ExecutionManagerOptions
   ) {
+    super();
     this.maxConcurrency = options?.maxConcurrency ?? 1;
   }
 
@@ -109,6 +113,7 @@ export class ExecutionManager {
       brokerKey: record.brokerKey,
       queuedAt: record.queuedAt,
     });
+    this.emit('executionQueued', record);
 
     this.processQueue();
   }
@@ -205,6 +210,103 @@ export class ExecutionManager {
 
   getAllExecutions(): ExecutionRecord[] {
     return Array.from(this.executions.values());
+  }
+
+  acknowledge(intentId: string, acknowledgement?: Partial<ExecutionAcknowledgement>): ExecutionRecord {
+    const record = this.executions.get(intentId);
+    if (!record) {
+      throw new Error(`Execution not found for intent ${intentId}.`);
+    }
+
+    if (record.status !== 'COMPLETED') {
+      throw new Error(`Execution must be COMPLETED before acknowledgement: ${intentId}`);
+    }
+
+    if (record.filledAt) {
+      throw new Error(`Execution already filled for intent ${intentId}.`);
+    }
+
+    const currentIntent = this.tradeIntentManager.getIntent(intentId);
+    if (!currentIntent) {
+      throw new Error(`Trade intent not found: ${intentId}`);
+    }
+
+    if (currentIntent.status === 'SENT') {
+      this.tradeIntentManager.markAcknowledged(intentId);
+    } else if (currentIntent.status !== 'ACKNOWLEDGED') {
+      throw new Error(`Cannot acknowledge intent from status ${currentIntent.status}: ${intentId}`);
+    }
+
+    record.acknowledgedAt = acknowledgement?.acknowledgedAt ?? new Date().toISOString();
+    record.brokerOrderId = acknowledgement?.brokerOrderId ?? record.brokerOrderId;
+    record.updatedAt = record.acknowledgedAt;
+
+    propCopiaEventBus.publish('execution.acknowledged', {
+      intentId: record.intentId,
+      followerAccountId: record.intent.followerAccountId,
+      brokerKey: record.brokerKey,
+      brokerOrderId: record.brokerOrderId,
+      acknowledgedAt: record.acknowledgedAt,
+      brokerStatus: acknowledgement?.brokerStatus,
+    });
+    this.emit('executionAcknowledged', record);
+
+    return record;
+  }
+
+  recordFill(intentId: string, fill: Partial<ExecutionFill> = {}): ExecutionRecord {
+    const record = this.executions.get(intentId);
+    if (!record) {
+      throw new Error(`Execution not found for intent ${intentId}.`);
+    }
+
+    if (record.status !== 'COMPLETED') {
+      throw new Error(`Execution must be COMPLETED before fill recording: ${intentId}`);
+    }
+
+    const currentIntent = this.tradeIntentManager.getIntent(intentId);
+    if (!currentIntent) {
+      throw new Error(`Trade intent not found: ${intentId}`);
+    }
+
+    if (currentIntent.status === 'SENT') {
+      this.acknowledge(intentId, {
+        acknowledgedAt: fill.filledAt ?? new Date().toISOString(),
+        brokerOrderId: fill.brokerOrderId,
+      });
+    } else if (currentIntent.status === 'ACKNOWLEDGED') {
+      // continue
+    } else if (currentIntent.status === 'FILLED') {
+      if (record.fillId && fill.fillId && record.fillId !== fill.fillId) {
+        throw new Error(`Execution already filled with a different fill ID for intent ${intentId}.`);
+      }
+      return record;
+    } else {
+      throw new Error(`Cannot record fill from intent status ${currentIntent.status}: ${intentId}`);
+    }
+
+    this.tradeIntentManager.markFilled(intentId);
+
+    record.filledAt = fill.filledAt ?? new Date().toISOString();
+    record.fillId = fill.fillId ?? record.fillId;
+    record.filledQuantity = fill.filledQuantity ?? record.filledQuantity ?? record.request.quantity;
+    record.averageFillPrice = fill.averageFillPrice ?? record.averageFillPrice;
+    record.brokerOrderId = fill.brokerOrderId ?? record.brokerOrderId;
+    record.updatedAt = record.filledAt;
+
+    propCopiaEventBus.publish('execution.filled', {
+      intentId: record.intentId,
+      followerAccountId: record.intent.followerAccountId,
+      brokerKey: record.brokerKey,
+      brokerOrderId: record.brokerOrderId,
+      fillId: record.fillId,
+      filledQuantity: record.filledQuantity,
+      averageFillPrice: record.averageFillPrice,
+      filledAt: record.filledAt,
+    });
+    this.emit('executionFilled', record);
+
+    return record;
   }
 
   waitForExecution(intentId: string): Promise<ExecutionWaitResult> {
@@ -329,6 +431,7 @@ export class ExecutionManager {
       brokerOrderId: result.brokerOrderId,
       submittedAt: result.submittedAt,
     });
+    this.emit('executionSent', record);
 
     this.resolveWaiters(record.intentId);
   }
@@ -352,6 +455,7 @@ export class ExecutionManager {
       errorMessage: record.lastErrorMessage,
       failedAt: record.failedAt,
     });
+    this.emit('executionFailed', record);
 
     this.resolveWaiters(record.intentId);
   }
@@ -373,6 +477,7 @@ export class ExecutionManager {
       errorMessage,
       failedAt: record.failedAt,
     });
+    this.emit('executionFailed', record);
 
     this.resolveWaiters(record.intentId);
   }
@@ -408,6 +513,7 @@ export class ExecutionManager {
     record.cancelledAt = record.updatedAt;
     record.nextRetryAt = undefined;
     this.tradeIntentManager.markCancelled(record.intentId);
+    this.emit('executionCancelled', record);
     this.resolveWaiters(record.intentId);
   }
 

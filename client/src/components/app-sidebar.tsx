@@ -1,4 +1,4 @@
-import { LayoutDashboard, Wallet, History, Settings, Activity, Plug, LogOut, User, Users, Calendar, TrendingUp, Star } from "lucide-react";
+import { LayoutDashboard, Wallet, History, Settings, Activity, Plug, LogOut, User, Users, Calendar, TrendingUp, Star, Bell } from "lucide-react";
 import { KillSwitchButton } from "@/components/kill-switch";
 import { Link, useLocation } from "wouter";
 import { useUser } from "@/contexts/user-context";
@@ -12,11 +12,13 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
+import { useNotifications } from "@/hooks/use-notifications";
 
 const menuItems = [
   {
@@ -38,6 +40,11 @@ const menuItems = [
     title: "Live Activity",
     url: "/activity",
     icon: Activity,
+  },
+  {
+    title: "Notifications",
+    url: "/notifications",
+    icon: Bell,
   },
   {
     title: "Social",
@@ -74,6 +81,8 @@ const menuItems = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout } = useUser();
+  const { data: notificationsData } = useNotifications();
+  const unreadEstimate = notificationsData?.unreadEstimate ?? 0;
 
   return (
     <Sidebar>
@@ -95,6 +104,11 @@ export function AppSidebar() {
                       <span>{item.title}</span>
                     </Link>
                   </SidebarMenuButton>
+                  {item.url === "/notifications" && unreadEstimate > 0 ? (
+                    <SidebarMenuBadge data-testid="badge-notifications-unread">
+                      {unreadEstimate > 99 ? "99+" : unreadEstimate}
+                    </SidebarMenuBadge>
+                  ) : null}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>

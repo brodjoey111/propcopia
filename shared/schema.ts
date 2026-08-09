@@ -63,6 +63,8 @@ export const accounts = pgTable("accounts", {
   rithmicAccountId: text("rithmic_account_id"),
   rithmicPassword: text("rithmic_password"),
   rithmicEnvironment: text("rithmic_environment"),
+  rithmicSystemName: text("rithmic_system_name"),
+  rithmicExchange: text("rithmic_exchange"),
   apiKey: text("api_key"),
   apiSecret: text("api_secret"),
   isConnected: boolean("is_connected").default(false),

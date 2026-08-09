@@ -23,6 +23,20 @@ export interface BrokerOrderResult {
   submittedAt: string;
 }
 
+export interface ExecutionAcknowledgement {
+  acknowledgedAt: string;
+  brokerOrderId?: string;
+  brokerStatus?: string;
+}
+
+export interface ExecutionFill {
+  filledAt: string;
+  fillId?: string;
+  brokerOrderId?: string;
+  filledQuantity?: number;
+  averageFillPrice?: number;
+}
+
 export interface BrokerAccount {
   accountId: string;
   broker: string;
@@ -83,6 +97,11 @@ export interface ExecutionRecord {
   failedAt?: string;
   nextRetryAt?: string;
   brokerOrderId?: string;
+  acknowledgedAt?: string;
+  filledAt?: string;
+  fillId?: string;
+  filledQuantity?: number;
+  averageFillPrice?: number;
   lastResult?: BrokerOrderResult;
   lastErrorCode?: string;
   lastErrorMessage?: string;

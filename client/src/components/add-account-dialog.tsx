@@ -26,9 +26,13 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import {
+  buildFetchedAccountCreatePayload,
+  type AccountCreatePayload,
+} from "@/lib/account-create-payload";
 
 interface AddAccountDialogProps {
-  onAdd?: (account: any) => void;
+  onAdd?: (account: AccountCreatePayload) => Promise<void> | void;
 }
 
 interface TradingAccount {
@@ -46,8 +50,6 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>('credentials');
   const [platform, setPlatform] = useState<"tradovate" | "tradeify" | "rithmic">("tradovate");
-  const [rithmicSystemName, setRithmicSystemName] = useState("Rithmic Test");
-  const [rithmicEnvironment, setRithmicEnvironment] = useState<"test" | "live">("test");
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isAddingAccounts, setIsAddingAccounts] = useState(false);
   const [fetchedAccounts, setFetchedAccounts] = useState<TradingAccount[]>([]);
@@ -61,6 +63,13 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
     secret: "",
     apiKey: "",
     environment: "demo" as 'demo' | 'live',
+  });
+  const [rithmicConfig, setRithmicConfig] = useState({
+    environment: "test" as 'test' | 'live',
+    exchange: "",
+    systemName: "",
+    appName: "",
+    appVersion: "",
   });
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -80,8 +89,11 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
           ? {
               username: formData.username,
               password: formData.password,
-              systemName: rithmicSystemName,
-              environment: rithmicEnvironment,
+              environment: rithmicConfig.environment,
+              exchange: rithmicConfig.exchange || undefined,
+              systemName: rithmicConfig.systemName || undefined,
+              appName: rithmicConfig.appName || undefined,
+              appVersion: rithmicConfig.appVersion || undefined,
             }
           : {
               username: formData.username,
@@ -149,36 +161,36 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
       const addPromises = Array.from(selectedAccounts).map(async accountId => {
         const account = fetchedAccounts.find(a => a.id === accountId);
         if (account && onAdd) {
-          const baseData = {
-            name: account.name,
-            platform: platform === 'tradeify' ? 'Tradeify' : platform === 'rithmic' ? 'Rithmic' : 'Tradovate',
-            accountType: accountRoles.get(accountId) || 'follower',
-          };
-
-          const platformData =
+          const accountType = accountRoles.get(accountId) || 'follower';
+          const accountPayload =
             platform === 'tradeify'
-              ? {
-                  ...baseData,
-                  tradeifyUsername: formData.username,
-                  tradeifyAccountId: String(account.id),
-                  tradeifyApiKey: formData.apiKey,
-                }
+              ? buildFetchedAccountCreatePayload({
+                  account,
+                  platform: 'tradeify',
+                  accountType,
+                  username: formData.username,
+                  apiKey: formData.apiKey,
+                })
               : platform === 'rithmic'
-              ? {
-                  ...baseData,
-                  rithmicUsername: formData.username,
-                  rithmicAccountId: String(account.id),
-                  rithmicPassword: formData.password,
-                  rithmicEnvironment: rithmicEnvironment,
-                }
-              : {
-                  ...baseData,
-                  tradovateAccountId: String(account.id),
-                  tradovateUsername: formData.username,
-                  tradovateEnvironment: formData.environment,
-                };
-          
-          await onAdd(platformData);
+              ? buildFetchedAccountCreatePayload({
+                  account,
+                  platform: 'rithmic',
+                  accountType,
+                  username: formData.username,
+                  password: formData.password,
+                  environment: rithmicConfig.environment,
+                  systemName: rithmicConfig.systemName || undefined,
+                  exchange: rithmicConfig.exchange || undefined,
+                })
+              : buildFetchedAccountCreatePayload({
+                  account,
+                  platform: 'tradovate',
+                  accountType,
+                  username: formData.username,
+                  environment: formData.environment,
+                });
+
+          await onAdd(accountPayload);
         }
       });
 
@@ -215,8 +227,13 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
       apiKey: "",
       environment: "demo",
     });
-    setRithmicSystemName("Rithmic Test");
-    setRithmicEnvironment("test");
+    setRithmicConfig({
+      environment: "test",
+      exchange: "",
+      systemName: "",
+      appName: "",
+      appVersion: "",
+    });
   };
 
   return (
@@ -225,7 +242,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
       if (!isOpen) resetDialog();
     }}>
       <DialogTrigger asChild>
-        <Button data-testid="button-add-account">
+        <Button type="button" data-testid="button-add-account">
           <Plus className="mr-2 h-4 w-4" />
           Add Account
         </Button>
@@ -353,10 +370,9 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
                     id="rithmic-system"
                     type="text"
                     placeholder="e.g. Rithmic Test"
-                    value={rithmicSystemName}
-                    onChange={(e) => setRithmicSystemName(e.target.value)}
+                    value={rithmicConfig.systemName}
+                    onChange={(e) => setRithmicConfig({ ...rithmicConfig, systemName: e.target.value })}
                     data-testid="input-rithmic-system"
-                    required
                   />
                   <p className="text-xs text-muted-foreground">
                     The system name assigned to your account by your broker (e.g. "Rithmic Test", "Rithmic 01").
@@ -366,17 +382,54 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
                 <div className="space-y-2">
                   <Label htmlFor="rithmic-env">Environment</Label>
                   <Select
-                    value={rithmicEnvironment}
-                    onValueChange={(value: 'test' | 'live') => setRithmicEnvironment(value)}
+                    value={rithmicConfig.environment}
+                    onValueChange={(value: 'test' | 'live') => setRithmicConfig({ ...rithmicConfig, environment: value })}
                   >
                     <SelectTrigger id="rithmic-env" data-testid="select-rithmic-env">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="test">Test / Paper Trading</SelectItem>
+                      <SelectItem value="test">Test</SelectItem>
                       <SelectItem value="live">Live</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="rithmic-exchange">Exchange</Label>
+                  <Input
+                    id="rithmic-exchange"
+                    type="text"
+                    placeholder="e.g. CME"
+                    value={rithmicConfig.exchange}
+                    onChange={(e) => setRithmicConfig({ ...rithmicConfig, exchange: e.target.value })}
+                    data-testid="input-rithmic-exchange"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="rithmic-app-name">App Name</Label>
+                  <Input
+                    id="rithmic-app-name"
+                    type="text"
+                    placeholder="Optional app name"
+                    value={rithmicConfig.appName}
+                    onChange={(e) => setRithmicConfig({ ...rithmicConfig, appName: e.target.value })}
+                    data-testid="input-rithmic-app-name"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="rithmic-app-version">App Version</Label>
+                  <Input
+                    id="rithmic-app-version"
+                    type="text"
+                    placeholder="Optional app version"
+                    value={rithmicConfig.appVersion}
+                    onChange={(e) => setRithmicConfig({ ...rithmicConfig, appVersion: e.target.value })}
+                    data-testid="input-rithmic-app-version"
+                  />
                 </div>
 
                 <p className="text-xs text-muted-foreground">
@@ -498,6 +551,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
                     Back
                   </Button>
                   <Button 
+                    type="button"
                     onClick={handleAddSelectedAccounts}
                     disabled={selectedAccounts.size === 0 || isAddingAccounts}
                     data-testid="button-add-selected"

@@ -4,6 +4,7 @@ import connectPgSimple from "connect-pg-simple";
 import pg from "pg";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { buildSessionCookieSettings } from "./session-config";
 
 const app = express();
 
@@ -32,15 +33,7 @@ const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-// Session cookie configuration for Replit environment
-// Replit always uses HTTPS, so we can use secure cookies
-// Use 'none' sameSite for cross-origin access (required when opening in new tab)
-const cookieSettings = {
-  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-  httpOnly: true,
-  secure: true, // Replit always uses HTTPS
-  sameSite: 'none' as const, // Required for cross-origin cookies (new tab access)
-};
+const cookieSettings = buildSessionCookieSettings(app.get("env"));
 
 app.use(
   session({

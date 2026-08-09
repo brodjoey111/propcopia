@@ -15,7 +15,13 @@ import type {
   ExecutionStatus,
 } from './execution-types';
 import type { BrokerAdapter } from './brokers/BrokerAdapter';
-import type { ExecutionFailedEvent, ExecutionQueuedEvent, ExecutionSentEvent } from './event-bus-types';
+import type {
+  ExecutionAcknowledgedEvent,
+  ExecutionFailedEvent,
+  ExecutionFilledEvent,
+  ExecutionQueuedEvent,
+  ExecutionSentEvent,
+} from './event-bus-types';
 import type { TradeIntent } from './trade-intent-types';
 
 const SHORT_RETRY_DELAY_MS = 10;
@@ -169,6 +175,8 @@ function createHarness(options?: ExecutionManagerOptions) {
   const queuedEvents: ExecutionQueuedEvent[] = [];
   const sentEvents: ExecutionSentEvent[] = [];
   const failedEvents: ExecutionFailedEvent[] = [];
+  const acknowledgedEvents: ExecutionAcknowledgedEvent[] = [];
+  const filledEvents: ExecutionFilledEvent[] = [];
 
   propCopiaEventBus.subscribe('execution.queued', (event) => {
     queuedEvents.push(event);
@@ -179,6 +187,12 @@ function createHarness(options?: ExecutionManagerOptions) {
   propCopiaEventBus.subscribe('execution.failed', (event) => {
     failedEvents.push(event);
   });
+  propCopiaEventBus.subscribe('execution.acknowledged', (event) => {
+    acknowledgedEvents.push(event);
+  });
+  propCopiaEventBus.subscribe('execution.filled', (event) => {
+    filledEvents.push(event);
+  });
 
   return {
     tradeIntentManager,
@@ -187,6 +201,8 @@ function createHarness(options?: ExecutionManagerOptions) {
     queuedEvents,
     sentEvents,
     failedEvents,
+    acknowledgedEvents,
+    filledEvents,
     cleanup() {
       propCopiaEventBus.removeAllListeners();
     },
@@ -746,6 +762,52 @@ test('ExecutionManager', { concurrency: false }, async (t) => {
     assert.equal(harness.queuedEvents[0].intentId, intent.intentId);
     assert.equal(harness.queuedEvents[0].followerAccountId, intent.followerAccountId);
     assert.equal(harness.queuedEvents[0].brokerKey, 'fake-broker');
+  });
+
+  await t.test('acknowledge moves a SENT intent to ACKNOWLEDGED and publishes an event', async () => {
+    const harness = createHarness();
+    t.after(harness.cleanup);
+
+    harness.adapter.queueAccepted({ brokerOrderId: 'broker-order-ack' });
+    const intent = createReadyIntent(harness.tradeIntentManager, 'acknowledge-intent');
+
+    await harness.executionManager.enqueue(createContext(intent));
+    await waitForStatus(harness.executionManager, intent.intentId, 'COMPLETED');
+
+    const record = harness.executionManager.acknowledge(intent.intentId, {
+      acknowledgedAt: '2026-08-04T12:00:03.000Z',
+      brokerStatus: 'WORKING',
+    });
+
+    assert.equal(harness.tradeIntentManager.getIntent(intent.intentId)?.status, 'ACKNOWLEDGED');
+    assert.equal(record.acknowledgedAt, '2026-08-04T12:00:03.000Z');
+    assert.equal(harness.acknowledgedEvents.length, 1);
+    assert.equal(harness.acknowledgedEvents[0].brokerStatus, 'WORKING');
+  });
+
+  await t.test('recordFill auto-acknowledges SENT intents and publishes a fill event', async () => {
+    const harness = createHarness();
+    t.after(harness.cleanup);
+
+    harness.adapter.queueAccepted({ brokerOrderId: 'broker-order-fill' });
+    const intent = createReadyIntent(harness.tradeIntentManager, 'fill-intent');
+
+    await harness.executionManager.enqueue(createContext(intent));
+    await waitForStatus(harness.executionManager, intent.intentId, 'COMPLETED');
+
+    const record = harness.executionManager.recordFill(intent.intentId, {
+      filledAt: '2026-08-04T12:00:04.000Z',
+      fillId: 'fill-follow-1',
+      filledQuantity: 1,
+      averageFillPrice: 6401.25,
+    });
+
+    assert.equal(harness.tradeIntentManager.getIntent(intent.intentId)?.status, 'FILLED');
+    assert.equal(record.fillId, 'fill-follow-1');
+    assert.equal(record.averageFillPrice, 6401.25);
+    assert.equal(harness.acknowledgedEvents.length, 1);
+    assert.equal(harness.filledEvents.length, 1);
+    assert.equal(harness.filledEvents[0].fillId, 'fill-follow-1');
   });
 
   await t.test('waitForExecution resolves immediately for already COMPLETED execution', async () => {

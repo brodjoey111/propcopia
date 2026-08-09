@@ -15,16 +15,123 @@ import {
   insertAccountSchema,
   accounts,
 } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { marketDataService, type MarketPrice } from "./market-data";
 import OpenAI from "openai";
 import { TradeCopyEngine } from "./trade-copy-engine";
+import { updateAccountConnectionState } from "./account-connection-service";
+import { copyGroupManager } from "./copy-group-manager";
+import { resolveRithmicSystemName } from "./rithmic-system-name";
+import { findBestMatchingRithmicAccount } from "./rithmic-account-reconciliation";
+import {
+  resolveTradeCopyFollowerConnection,
+  resolveTradeCopyFollowerConnections,
+  resolveTradeCopyMasterConnection,
+} from "./trade-copy-account-resolver";
+import { serializeTradeHistoryCsv } from "./trade-history-export";
+import {
+  tradeHistoryStore,
+  type TradeHistoryLifecycleStatus,
+} from "./trade-history-store";
 import { tradeLogger } from "./trade-logger";
 import { DashboardController } from "./controllers/DashboardController";
+import { buildAccountLiveMetrics } from "./account-live-metrics-service";
+import { buildOperationsOverview } from "./operations-overview-service";
+import { buildNotifications } from "./notifications-service";
+import { buildPositionSnapshots } from "./position-snapshot-service";
+import { getOrCreateRuntimeSnapshot } from "./runtime-snapshot-cache";
+import {
+  buildAccountsRuntimeOverview,
+  buildDashboardRuntimeOverview,
+} from "./runtime-overview-service";
+
+const RUNTIME_SNAPSHOT_TTL_MS = 3_000;
 const tradovateInstances = new Map<string, TradovateAPI>();
 const tradeifyInstances = new Map<string, TradeifyAPI>();
 const rithmicInstances = new Map<string, RithmicAPI>();
 const tradeCopyEngines = new Map<string, TradeCopyEngine>();
+
+const tradeHistoryStatuses = new Set<TradeHistoryLifecycleStatus>([
+  "RULE_SKIPPED",
+  "RULE_REJECTED",
+  "INTENT_CREATED",
+  "QUEUED",
+  "SENT",
+  "ACKNOWLEDGED",
+  "FILLED",
+  "FAILED",
+  "CANCELLED",
+]);
+
+function parseTradeHistoryStatuses(value: unknown): TradeHistoryLifecycleStatus[] | undefined {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return undefined;
+  }
+
+  const statuses = value
+    .split(",")
+    .map((status) => status.trim().toUpperCase())
+    .filter((status): status is TradeHistoryLifecycleStatus => tradeHistoryStatuses.has(status as TradeHistoryLifecycleStatus));
+
+  return statuses.length > 0 ? statuses : undefined;
+}
+
+async function refreshRithmicAccountIdentity(
+  account: typeof accounts.$inferSelect,
+  userId: string,
+  rithmicApi?: RithmicAPI,
+): Promise<typeof accounts.$inferSelect> {
+  if (
+    account.platform !== "Rithmic" ||
+    !account.rithmicUsername ||
+    !account.rithmicPassword
+  ) {
+    return account;
+  }
+
+  const api =
+    rithmicApi ??
+    rithmicInstances.get(account.rithmicUsername) ??
+    new RithmicAPI({
+      username: account.rithmicUsername,
+      password: account.rithmicPassword,
+      environment: (account.rithmicEnvironment as "test" | "live") ?? "test",
+      systemName: resolveRithmicSystemName(account),
+    });
+
+  const connectionTest = await api.testConnection();
+  if (!connectionTest.success) {
+    throw new Error(connectionTest.message || "Rithmic account refresh failed.");
+  }
+
+  rithmicInstances.set(account.rithmicUsername, api);
+
+  const discoveredAccounts = (connectionTest.data ?? []).map((discovered) => ({
+    id: String(discovered.id),
+    name: discovered.name,
+  }));
+
+  const matchedAccount = findBestMatchingRithmicAccount({
+    savedAccountId: account.rithmicAccountId,
+    savedAccountName: account.name,
+    discoveredAccounts,
+  });
+
+  if (!matchedAccount || matchedAccount.id === account.rithmicAccountId) {
+    return account;
+  }
+
+  const [updatedAccount] = await db
+    .update(accounts)
+    .set({
+      rithmicAccountId: matchedAccount.id,
+    })
+    .where(and(eq(accounts.id, account.id), eq(accounts.userId, userId)))
+    .returning();
+
+  return updatedAccount ?? account;
+}
+
 const openai =
   process.env.AI_INTEGRATIONS_OPENAI_API_KEY &&
   process.env.AI_INTEGRATIONS_OPENAI_BASE_URL
@@ -37,6 +144,614 @@ export function registerRoutes(app: Express): Server {
   const server = createServer(app);
 
   app.get("/api/dashboard", DashboardController.getDashboard);
+
+  app.get("/api/copy-groups", (_req, res) => {
+    return res.json({
+      success: true,
+      groups: copyGroupManager.getAllGroups(),
+      runningGroups: copyGroupManager.getRunningGroups().map((runtime) => runtime.group.groupId),
+    });
+  });
+
+  app.get("/api/copy-groups/snapshot", (req, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Not authenticated",
+      });
+    }
+
+    const groups = copyGroupManager
+      .getAllGroups()
+      .filter((registeredGroup) => registeredGroup.group.userId === req.session.userId)
+      .map((registeredGroup) => {
+        const runtime = copyGroupManager.getRuntime(registeredGroup.group.groupId);
+
+        return {
+          group: registeredGroup,
+          runtime: runtime
+            ? {
+                state: runtime.state,
+                statistics: runtime.statistics,
+                health: runtime.health,
+              }
+            : undefined,
+          activity: runtime ? copyGroupManager.getRecentActivity(registeredGroup.group.groupId) : [],
+        };
+      });
+
+    return res.json({
+      success: true,
+      groups,
+      runningGroups: copyGroupManager
+        .getRunningGroups()
+        .filter((runtime) => runtime.group.userId === req.session.userId)
+        .map((runtime) => runtime.group.groupId),
+      generatedAt: new Date().toISOString(),
+    });
+  });
+
+  app.get("/api/copy-groups/:groupId", (req, res) => {
+    const { groupId } = req.params;
+    const group = copyGroupManager.getGroup(groupId);
+
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: `Copy group not found: ${groupId}`,
+      });
+    }
+
+    return res.json({
+      success: true,
+      group,
+      runtime: copyGroupManager.getRuntime(groupId),
+    });
+  });
+
+  app.get("/api/copy-groups/:groupId/activity", (req, res) => {
+    const { groupId } = req.params;
+    const group = copyGroupManager.getGroup(groupId);
+
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: `Copy group not found: ${groupId}`,
+      });
+    }
+
+    return res.json({
+      success: true,
+      groupId,
+      activity: copyGroupManager.getRecentActivity(groupId),
+    });
+  });
+
+  app.get("/api/trades/history", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const limitParam = Number(req.query.limit ?? 100);
+      const limit = Number.isFinite(limitParam)
+        ? Math.max(1, Math.min(Math.floor(limitParam), 500))
+        : 100;
+      const statuses = parseTradeHistoryStatuses(req.query.status);
+      const query = typeof req.query.q === "string" ? req.query.q : undefined;
+
+      const userAccounts = await db
+        .select({
+          id: accounts.id,
+          name: accounts.name,
+        })
+        .from(accounts)
+        .where(eq(accounts.userId, req.session.userId));
+
+      const accountIds = userAccounts.map((account) => account.id);
+      const accountNameById = new Map(userAccounts.map((account) => [account.id, account.name]));
+      const records = tradeHistoryStore.listRecent({
+        accountIds,
+        limit,
+        statuses,
+        query,
+      });
+
+      return res.json({
+        success: true,
+        records: records.map((record) => ({
+          ...record,
+          masterAccountName: record.masterAccountId
+            ? (accountNameById.get(record.masterAccountId) ?? null)
+            : null,
+          followerAccountName: accountNameById.get(record.followerAccountId) ?? null,
+        })),
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.get("/api/positions/snapshot", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const snapshot = await getOrCreateRuntimeSnapshot({
+        scope: "positions",
+        userId: req.session.userId,
+        ttlMs: RUNTIME_SNAPSHOT_TTL_MS,
+        loader: async () => {
+          const userAccounts = await db
+            .select()
+            .from(accounts)
+            .where(eq(accounts.userId, req.session.userId!));
+
+          return buildPositionSnapshots(userAccounts, {
+            tradovateInstances,
+            tradeifyInstances,
+          });
+        },
+      });
+
+      return res.json({
+        success: true,
+        ...snapshot,
+      });
+    } catch (error) {
+      console.error("Error building position snapshot:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.get("/api/accounts/live-metrics", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const snapshot = await getOrCreateRuntimeSnapshot({
+        scope: "account-live-metrics",
+        userId: req.session.userId,
+        ttlMs: RUNTIME_SNAPSHOT_TTL_MS,
+        loader: async () => {
+          const userAccounts = await db
+            .select()
+            .from(accounts)
+            .where(eq(accounts.userId, req.session.userId!));
+
+          return buildAccountLiveMetrics(userAccounts, {
+            tradovateInstances,
+            tradeifyInstances,
+            rithmicInstances,
+          });
+        },
+      });
+
+      return res.json({
+        success: true,
+        ...snapshot,
+      });
+    } catch (error) {
+      console.error("Error building account live metrics snapshot:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.get("/api/runtime/accounts-overview", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const overview = await getOrCreateRuntimeSnapshot({
+        scope: "runtime-accounts-overview",
+        userId: req.session.userId,
+        ttlMs: RUNTIME_SNAPSHOT_TTL_MS,
+        loader: async () => {
+          const userAccounts = await db
+            .select()
+            .from(accounts)
+            .where(eq(accounts.userId, req.session.userId!));
+
+          return buildAccountsRuntimeOverview({
+            userAccounts,
+            positionSnapshotDependencies: {
+              tradovateInstances,
+              tradeifyInstances,
+            },
+            accountLiveMetricsDependencies: {
+              tradovateInstances,
+              tradeifyInstances,
+              rithmicInstances,
+            },
+          });
+        },
+      });
+
+      return res.json({
+        success: true,
+        ...overview,
+      });
+    } catch (error) {
+      console.error("Error building accounts runtime overview:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.get("/api/runtime/dashboard-overview", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const overview = await getOrCreateRuntimeSnapshot({
+        scope: "runtime-dashboard-overview",
+        userId: req.session.userId,
+        ttlMs: RUNTIME_SNAPSHOT_TTL_MS,
+        loader: async () => {
+          const userAccounts = await db
+            .select()
+            .from(accounts)
+            .where(eq(accounts.userId, req.session.userId!));
+
+          const registeredGroups = copyGroupManager
+            .getAllGroups()
+            .filter((registeredGroup) => registeredGroup.group.userId === req.session.userId);
+
+          return buildDashboardRuntimeOverview({
+            userAccounts,
+            registeredGroups,
+            getRunningGroups: () => copyGroupManager.getRunningGroups(),
+            getRuntime: (groupId) => copyGroupManager.getRuntime(groupId),
+            getRecentActivity: (groupId) => copyGroupManager.getRecentActivity(groupId),
+            positionSnapshotDependencies: {
+              tradovateInstances,
+              tradeifyInstances,
+            },
+            accountLiveMetricsDependencies: {
+              tradovateInstances,
+              tradeifyInstances,
+              rithmicInstances,
+            },
+          });
+        },
+      });
+
+      return res.json({
+        success: true,
+        ...overview,
+      });
+    } catch (error) {
+      console.error("Error building dashboard runtime overview:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.get("/api/operations/overview", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const overview = await getOrCreateRuntimeSnapshot({
+        scope: "operations-overview",
+        userId: req.session.userId,
+        ttlMs: RUNTIME_SNAPSHOT_TTL_MS,
+        loader: async () => {
+          const userAccounts = await db
+            .select()
+            .from(accounts)
+            .where(eq(accounts.userId, req.session.userId!));
+
+          const registeredGroups = copyGroupManager
+            .getAllGroups()
+            .filter((registeredGroup) => registeredGroup.group.userId === req.session.userId);
+
+          return buildOperationsOverview({
+            userAccounts,
+            registeredGroups,
+            getRuntime: (groupId) => copyGroupManager.getRuntime(groupId),
+            getRecentActivity: (groupId) => copyGroupManager.getRecentActivity(groupId),
+            positionSnapshotDependencies: {
+              tradovateInstances,
+              tradeifyInstances,
+            },
+          });
+        },
+      });
+
+      return res.json({
+        success: true,
+        ...overview,
+      });
+    } catch (error) {
+      console.error("Error building operations overview:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.get("/api/notifications", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const notifications = await getOrCreateRuntimeSnapshot({
+        scope: "notifications",
+        userId: req.session.userId,
+        ttlMs: RUNTIME_SNAPSHOT_TTL_MS,
+        loader: async () => {
+          const userAccounts = await db
+            .select()
+            .from(accounts)
+            .where(eq(accounts.userId, req.session.userId!));
+
+          const registeredGroups = copyGroupManager
+            .getAllGroups()
+            .filter((registeredGroup) => registeredGroup.group.userId === req.session.userId);
+
+          return buildNotifications({
+            userAccounts,
+            registeredGroups,
+            getRecentActivity: (groupId) => copyGroupManager.getRecentActivity(groupId),
+            positionSnapshotDependencies: {
+              tradovateInstances,
+              tradeifyInstances,
+            },
+          });
+        },
+      });
+
+      return res.json({
+        success: true,
+        ...notifications,
+      });
+    } catch (error) {
+      console.error("Error building notifications feed:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.get("/api/trades/history/export.csv", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const userAccounts = await db
+        .select({
+          id: accounts.id,
+        })
+        .from(accounts)
+        .where(eq(accounts.userId, req.session.userId));
+
+      const statuses = parseTradeHistoryStatuses(req.query.status);
+      const query = typeof req.query.q === "string" ? req.query.q : undefined;
+      const records = tradeHistoryStore.listRecent({
+        accountIds: userAccounts.map((account) => account.id),
+        limit: 1000,
+        statuses,
+        query,
+      });
+
+      const csv = serializeTradeHistoryCsv(records);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="propcopia-trade-history-${new Date().toISOString().slice(0, 10)}.csv"`,
+      );
+      return res.send(csv);
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.post("/api/copy-groups/register", (req, res) => {
+    try {
+      const { group, followers } = req.body ?? {};
+
+      if (!group || !Array.isArray(followers)) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing required payload: group and followers[]",
+        });
+      }
+
+      const runtime = copyGroupManager.registerGroup(group, followers);
+
+      return res.json({
+        success: true,
+        group: copyGroupManager.getGroup(group.groupId),
+        runtime,
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.post("/api/copy-groups/start", async (req, res) => {
+    try {
+      const { groupId } = req.body ?? {};
+      if (!groupId) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing required parameter: groupId",
+        });
+      }
+
+      await copyGroupManager.start(groupId);
+      return res.json({
+        success: true,
+        runtime: copyGroupManager.getRuntime(groupId),
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.post("/api/copy-groups/stop", async (req, res) => {
+    try {
+      const { groupId } = req.body ?? {};
+      if (!groupId) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing required parameter: groupId",
+        });
+      }
+
+      await copyGroupManager.stop(groupId);
+      return res.json({
+        success: true,
+        runtime: copyGroupManager.getRuntime(groupId),
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.post("/api/copy-groups/pause", (req, res) => {
+    try {
+      const { groupId } = req.body ?? {};
+      if (!groupId) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing required parameter: groupId",
+        });
+      }
+
+      copyGroupManager.pause(groupId);
+      return res.json({
+        success: true,
+        runtime: copyGroupManager.getRuntime(groupId),
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.post("/api/copy-groups/resume", (req, res) => {
+    try {
+      const { groupId } = req.body ?? {};
+      if (!groupId) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing required parameter: groupId",
+        });
+      }
+
+      copyGroupManager.resume(groupId);
+      return res.json({
+        success: true,
+        runtime: copyGroupManager.getRuntime(groupId),
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.post("/api/copy-groups/emergency-stop", async (req, res) => {
+    try {
+      const { groupId, reason } = req.body ?? {};
+      if (!groupId) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing required parameter: groupId",
+        });
+      }
+
+      await copyGroupManager.emergencyStop(groupId, reason);
+      return res.json({
+        success: true,
+        runtime: copyGroupManager.getRuntime(groupId),
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.delete("/api/copy-groups/:groupId", async (req, res) => {
+    try {
+      const { groupId } = req.params;
+      await copyGroupManager.unregisterGroup(groupId);
+      return res.json({
+        success: true,
+        message: `Copy group unregistered: ${groupId}`,
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
 
   // Authentication routes
   app.post("/api/auth/signup", async (req, res) => {
@@ -116,11 +831,20 @@ export function registerRoutes(app: Express): Server {
       // Set session (will be automatically saved)
       req.session.userId = user.id;
       req.session.username = user.username;
+      req.session.save((error) => {
+        if (error) {
+          console.error('Login session save error:', error);
+          return res.status(500).json({
+            success: false,
+            message: "Failed to persist login session",
+          });
+        }
 
-      return res.json({
-        success: true,
-        message: "Login successful",
-        user: { id: user.id, username: user.username },
+        return res.json({
+          success: true,
+          message: "Login successful",
+          user: { id: user.id, username: user.username },
+        });
       });
     } catch (error) {
       console.error('Login error:', error);
@@ -493,6 +1217,260 @@ export function registerRoutes(app: Express): Server {
   });
 
   // ── Risk settings per-account ────────────────────────────────────────────
+  app.post("/api/accounts/:id/connect", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const { id } = req.params;
+      let [existing] = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, id), eq(accounts.userId, req.session.userId)));
+
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          message: "Account not found",
+        });
+      }
+
+      if (existing.platform === "Rithmic") {
+        if (!existing.rithmicUsername || !existing.rithmicPassword) {
+          return res.status(400).json({
+            success: false,
+            message: "Rithmic credentials are missing for this saved account.",
+          });
+        }
+
+        const rithmicAPI = new RithmicAPI({
+          username: existing.rithmicUsername,
+          password: existing.rithmicPassword,
+          environment: (existing.rithmicEnvironment as "test" | "live") ?? "test",
+          systemName: resolveRithmicSystemName(existing),
+        });
+        const connectionTest = await rithmicAPI.testConnection();
+
+        if (!connectionTest.success) {
+          await rithmicAPI.disconnect();
+          return res.status(400).json({
+            success: false,
+            message: connectionTest.message,
+          });
+        }
+
+        rithmicInstances.set(existing.rithmicUsername, rithmicAPI);
+        existing = await refreshRithmicAccountIdentity(existing, req.session.userId, rithmicAPI);
+      }
+
+      const updated = await updateAccountConnectionState({
+        accountId: id,
+        userId: req.session.userId,
+        isConnected: true,
+      });
+
+      if (!updated) {
+        return res.status(404).json({
+          success: false,
+          message: "Account not found",
+        });
+      }
+
+      return res.json({
+        success: true,
+        account: updated,
+      });
+    } catch (error) {
+      console.error('Error connecting account:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.post("/api/accounts/:id/disconnect", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const { id } = req.params;
+      const [existing] = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, id), eq(accounts.userId, req.session.userId)));
+
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          message: "Account not found",
+        });
+      }
+
+      if (existing.platform === "Rithmic" && existing.rithmicUsername) {
+        const instance = rithmicInstances.get(existing.rithmicUsername);
+        if (instance) {
+          await instance.disconnect();
+          rithmicInstances.delete(existing.rithmicUsername);
+        }
+      }
+
+      const updated = await updateAccountConnectionState({
+        accountId: id,
+        userId: req.session.userId,
+        isConnected: false,
+      });
+
+      if (!updated) {
+        return res.status(404).json({
+          success: false,
+          message: "Account not found",
+        });
+      }
+
+      return res.json({
+        success: true,
+        account: updated,
+      });
+    } catch (error) {
+      console.error('Error disconnecting account:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.patch("/api/accounts/:id/broker-settings", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const { id } = req.params;
+      const [existing] = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, id), eq(accounts.userId, req.session.userId)));
+
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          message: "Account not found",
+        });
+      }
+
+      if (existing.platform !== "Rithmic") {
+        return res.status(400).json({
+          success: false,
+          message: "Broker settings updates are currently supported only for Rithmic accounts.",
+        });
+      }
+
+      const rithmicExchange = req.body?.rithmicExchange?.trim()?.toUpperCase();
+      const rithmicSystemName = req.body?.rithmicSystemName?.trim() || null;
+      const rithmicEnvironment = req.body?.rithmicEnvironment === "live" ? "live" : "test";
+
+      if (!rithmicExchange) {
+        return res.status(400).json({
+          success: false,
+          message: "Rithmic exchange is required.",
+        });
+      }
+
+      const [updated] = await db
+        .update(accounts)
+        .set({
+          rithmicExchange,
+          rithmicSystemName,
+          rithmicEnvironment,
+        })
+        .where(and(eq(accounts.id, id), eq(accounts.userId, req.session.userId)))
+        .returning();
+
+      return res.json({
+        success: true,
+        account: updated,
+      });
+    } catch (error) {
+      console.error('Error updating broker settings:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.patch("/api/accounts/:id/account-type", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const { id } = req.params;
+      const requestedAccountType = req.body?.accountType;
+
+      if (requestedAccountType !== "master" && requestedAccountType !== "follower") {
+        return res.status(400).json({
+          success: false,
+          message: "Account type must be either master or follower.",
+        });
+      }
+
+      const [existing] = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, id), eq(accounts.userId, req.session.userId)));
+
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          message: "Account not found",
+        });
+      }
+
+      if (existing.isConnected) {
+        return res.status(409).json({
+          success: false,
+          message: "Disconnect this account before changing it between master and follower.",
+        });
+      }
+
+      const [updated] = await db
+        .update(accounts)
+        .set({
+          accountType: requestedAccountType,
+        })
+        .where(and(eq(accounts.id, id), eq(accounts.userId, req.session.userId)))
+        .returning();
+
+      return res.json({
+        success: true,
+        account: updated,
+      });
+    } catch (error) {
+      console.error('Error updating account type:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
   app.patch("/api/accounts/:id/risk-settings", async (req, res) => {
     try {
       if (!req.session.userId) {
@@ -579,34 +1557,153 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // Get master account Tradovate API instance (must be authenticated first)
-      const masterUsername = req.body.masterUsername;
-      const masterTradovate = tradovateInstances.get(masterUsername);
+      const [masterAccount] = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, masterAccountId), eq(accounts.userId, userId)));
 
-      if (!masterTradovate || !masterTradovate.isTokenValid()) {
-        return res.status(401).json({
+      if (!masterAccount) {
+        return res.status(404).json({
           success: false,
-          message: "Master account not authenticated or token expired",
+          message: "Master account not found",
         });
       }
 
-      // Connect to master account WebSocket
-      const masterToken = masterTradovate.getAccessToken();
-      if (!masterToken) {
-        return res.status(401).json({
+      const followerAccounts = followerAccountIds.length > 0
+        ? await db
+            .select()
+            .from(accounts)
+            .where(
+              and(
+                inArray(accounts.id, followerAccountIds),
+                eq(accounts.userId, userId),
+              ),
+            )
+        : [];
+
+      const refreshedMasterAccount = await refreshRithmicAccountIdentity(masterAccount, userId);
+      const refreshedFollowerAccounts = await Promise.all(
+        followerAccounts.map((account) => refreshRithmicAccountIdentity(account, userId)),
+      );
+
+      let followerConnections;
+      try {
+        followerConnections = resolveTradeCopyFollowerConnections({
+          accounts: refreshedFollowerAccounts,
+          followerAccountIds,
+          defaultOverrides: {
+            exchange: req.body.exchange,
+          },
+          overridesByAccountId: req.body.followerConfigs,
+          providedFollowerUsernames: req.body.followerUsernames,
+          tradovateInstances,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error occurred';
+        const status =
+          message.includes('not authenticated') || message.includes('token')
+            ? 401
+            : message.includes('not found')
+              ? 404
+              : 400;
+
+        return res.status(status).json({
           success: false,
-          message: "No access token for master account",
+          message,
         });
       }
 
-      await engine.connectMasterAccount(masterAccountId, masterToken);
+      let masterConnection;
+      try {
+        masterConnection = resolveTradeCopyMasterConnection({
+          account: refreshedMasterAccount,
+          providedUsername: req.body.masterUsername,
+          tradovateInstances,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error occurred';
+        const status =
+          message.includes('not authenticated') || message.includes('token')
+            ? 401
+            : 400;
+
+        return res.status(status).json({
+          success: false,
+          message,
+        });
+      }
+
+      if (masterConnection.platform === 'Tradovate') {
+        await engine.connectMasterAccount(masterAccountId, masterConnection.accessToken!);
+      } else {
+        if (!refreshedMasterAccount.rithmicAccountId) {
+          return res.status(400).json({
+            success: false,
+            message: 'Saved Rithmic account ID is missing for the selected master account. Re-add or reconnect this account.',
+          });
+        }
+
+        const credentials = masterConnection.rithmicCredentials!;
+        const existingInstance = rithmicInstances.get(credentials.username);
+        const rithmicApi =
+          existingInstance ??
+          new RithmicAPI({
+            username: credentials.username,
+            password: credentials.password,
+            environment: credentials.environment,
+            systemName: credentials.systemName,
+          });
+
+        if (!existingInstance) {
+          const connectionTest = await rithmicApi.testConnection();
+          if (!connectionTest.success) {
+            await rithmicApi.disconnect();
+            return res.status(400).json({
+              success: false,
+              message: connectionTest.message,
+            });
+          }
+
+          rithmicInstances.set(credentials.username, rithmicApi);
+        }
+
+        engine.setRithmicMasterBrokerAccountId(refreshedMasterAccount.rithmicAccountId);
+        await engine.connectRithmicMasterAccount(masterAccountId, rithmicApi);
+      }
+
+      for (const followerConnection of followerConnections) {
+        await engine.addFollowerAccount(
+          followerConnection.account,
+          followerConnection.brokerConfig,
+        );
+      }
+
+      console.log(
+        '[TradeCopy] Session wiring ready',
+        JSON.stringify({
+          userId,
+          masterAccountId,
+          masterPlatform: masterConnection.platform,
+          masterBrokerAccountId:
+            masterConnection.platform === 'Rithmic'
+              ? refreshedMasterAccount.rithmicAccountId
+              : refreshedMasterAccount.tradovateAccountId ?? masterAccountId,
+          followerAccountIds: followerConnections.map((connection) => connection.account.id),
+          followerBrokerKinds: followerConnections.map((connection) => connection.brokerConfig.kind),
+          followerBrokerAccountIds: followerConnections.map((connection) =>
+            connection.account.platform === 'Rithmic'
+              ? connection.account.rithmicAccountId
+              : connection.account.tradovateAccountId ?? connection.account.id,
+          ),
+        }),
+      );
 
       return res.json({
         success: true,
         message: "Trade copying started successfully",
         data: {
           masterAccountId,
-          followerCount: followerAccountIds.length,
+          followerCount: followerConnections.length,
         },
       });
     } catch (error) {
@@ -620,7 +1717,7 @@ export function registerRoutes(app: Express): Server {
 
   app.post("/api/trade-copy/add-follower", async (req, res) => {
     try {
-      const { userId, accountId, accountName, positionScaling = 100, maxContracts, blockedTickers = [] } = req.body;
+      const { userId, accountId, positionScaling = 100, maxContracts, blockedTickers = [], exchange } = req.body;
 
       if (!userId || !accountId) {
         return res.status(400).json({
@@ -637,75 +1734,49 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // Get follower account Tradovate API instance
-      const followerUsername = req.body.followerUsername;
-      const followerTradovate = tradovateInstances.get(followerUsername);
+      const [savedAccount] = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, accountId), eq(accounts.userId, userId)));
 
-      if (!followerTradovate || !followerTradovate.isTokenValid()) {
-        return res.status(401).json({
+      if (!savedAccount) {
+        return res.status(404).json({
           success: false,
-          message: "Follower account not authenticated or token expired",
+          message: "Follower account not found",
         });
       }
 
-      const followerToken = followerTradovate.getAccessToken();
-      if (!followerToken) {
-        return res.status(401).json({
+      let followerConnection;
+      try {
+        followerConnection = resolveTradeCopyFollowerConnection({
+          account: savedAccount,
+          overrides: {
+            positionScaling,
+            maxContracts,
+            blockedTickers,
+            exchange,
+          },
+          providedFollowerUsername: req.body.followerUsername,
+          tradovateInstances,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error occurred';
+        const status =
+          message.includes('not authenticated') || message.includes('token')
+            ? 401
+            : message.includes('not found')
+              ? 404
+              : 400;
+
+        return res.status(status).json({
           success: false,
-          message: "No access token for follower account",
+          message,
         });
       }
 
-      // Add follower to engine
       await engine.addFollowerAccount(
-        {
-          id: accountId,
-          userId: userId,
-          name: accountName,
-          platform: 'Tradovate',
-          accountType: 'follower',
-          isConnected: true,
-          positionScaling,
-          maxContracts,
-          blockedTickers,
-          tradovateUsername: followerUsername,
-          tradovateAccountId: accountId,
-          tradovateEnvironment: null,
-          tradeifyUsername: null,
-          tradeifyAccountId: null,
-          tradeifyApiKey: null,
-          rithmicUsername: null,
-          rithmicAccountId: null,
-          rithmicPassword: null,
-          rithmicEnvironment: null,
-          apiKey: null,
-          apiSecret: null,
-          balance: null,
-          openPositions: 0,
-          pnl: null,
-          riskMode: 'custom',
-          copySizingMode: "MULTIPLIER",
-          fixedQuantity: null,
-          reverseCopying: false,
-          maxOpenPositions: null,
-          allowedDirections: null,
-          maxDailyLoss: null,
-          maxDailyLossPct: null,
-          maxWeeklyLoss: null,
-          maxWeeklyLossPct: null,
-          maxDrawdownPct: null,
-          maxConsecutiveLosses: null,
-          allowedTickers: null,
-          maxTradesPerDay: null,
-          minAccountBalance: null,
-          tradingStartTime: null,
-          tradingEndTime: null,
-          tradingDays: null,
-          cooldownAfterLoss: null,
-          onBreachAction: null,
-          lastSync: null,
-        },
-        followerToken
+        followerConnection.account,
+        followerConnection.brokerConfig,
       );
 
       return res.json({
@@ -776,6 +1847,31 @@ export function registerRoutes(app: Express): Server {
       });
     } catch (error) {
       console.error('Error fetching trade copy stats:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.get("/api/trade-copy/status/:userId", (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      const engine = tradeCopyEngines.get(userId);
+      if (!engine) {
+        return res.status(404).json({
+          success: false,
+          message: "No active trade copying session",
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: engine.getStatus(),
+      });
+    } catch (error) {
+      console.error('Error fetching trade copy status:', error);
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Unknown error occurred',

@@ -1,4 +1,5 @@
 import { AccountCard } from '../account-card';
+import { Button } from '../ui/button';
 
 export default function AccountCardExample() {
   return (
@@ -12,8 +13,8 @@ export default function AccountCardExample() {
         balance={52340}
         openPositions={3}
         pnl={1240}
-        onConfigure={() => console.log('Configure clicked')}
         onDisconnect={() => console.log('Disconnect clicked')}
+        configureButton={<Button variant="outline" size="sm" className="w-full">Configure</Button>}
       />
       <AccountCard
         id="2"
@@ -25,8 +26,8 @@ export default function AccountCardExample() {
         openPositions={3}
         pnl={620}
         positionScaling={50}
-        onConfigure={() => console.log('Configure clicked')}
         onDisconnect={() => console.log('Disconnect clicked')}
+        configureButton={<Button variant="outline" size="sm" className="w-full">Configure</Button>}
       />
       <AccountCard
         id="3"
@@ -38,8 +39,8 @@ export default function AccountCardExample() {
         openPositions={0}
         pnl={-230}
         positionScaling={100}
-        onConfigure={() => console.log('Configure clicked')}
         onDisconnect={() => console.log('Disconnect clicked')}
+        configureButton={<Button variant="outline" size="sm" className="w-full">Configure</Button>}
       />
     </div>
   );

@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { NotificationCenter } from "@/components/notification-center";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CandlestickBackground } from "@/components/candlestick-background";
 import { UserProvider } from "@/contexts/user-context";
@@ -12,6 +13,7 @@ import { ProtectedRoute } from "@/components/protected-route";
 import { HelpChat } from "@/components/help-chat";
 import { LeaderboardTicker } from "@/components/leaderboard-ticker";
 import { KillSwitchBanner } from "@/components/kill-switch";
+import { TopNotificationBanner } from "@/components/top-notification-banner";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Auth from "@/pages/auth";
@@ -19,6 +21,7 @@ import Dashboard from "@/pages/dashboard";
 import Accounts from "@/pages/accounts";
 import Trades from "@/pages/trades";
 import Activity from "@/pages/activity";
+import Notifications from "@/pages/notifications";
 import Social from "@/pages/social";
 import EconomicCalendar from "@/pages/economic-calendar";
 import MarketMovers from "@/pages/market-movers";
@@ -34,6 +37,7 @@ function AppRouter() {
       <Route path="/accounts" component={Accounts} />
       <Route path="/trades" component={Trades} />
       <Route path="/activity" component={Activity} />
+      <Route path="/notifications" component={Notifications} />
       <Route path="/social" component={Social} />
       <Route path="/economic-calendar" component={EconomicCalendar} />
       <Route path="/market-movers" component={MarketMovers} />
@@ -65,9 +69,13 @@ function AppLayout() {
                   <p className="text-sm font-semibold text-white">PropCopia Control Center</p>
                 </div>
               </div>
-              <ThemeToggle />
+              <div className="flex items-center gap-2">
+                <NotificationCenter />
+                <ThemeToggle />
+              </div>
             </header>
             <KillSwitchBanner />
+            <TopNotificationBanner />
             <LeaderboardTicker />
             <main className="flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4 md:p-6 min-w-0">
               <div className="mx-auto max-w-[1440px]">

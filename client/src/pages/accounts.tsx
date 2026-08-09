@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AccountCard } from "@/components/account-card";
 import { AddAccountDialog } from "@/components/add-account-dialog";
+import { BrokerSettingsDialog } from "@/components/broker-settings-dialog";
 import { RiskSettingsDialog, type RiskSettings, DEFAULT_RISK_SETTINGS } from "@/components/risk-settings-dialog";
 import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
 import { EmptyState } from "@/components/empty-state";
@@ -9,16 +10,67 @@ import { AccountGroupsView } from "@/components/account-groups";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { apiRequest, getQueryFn, queryClient } from "@/lib/queryClient";
+import type { AccountCreatePayload } from "@/lib/account-create-payload";
+import {
+  connectAccount,
+  disconnectAccount,
+  updateAccountConnectionInQueryData,
+} from "@/lib/account-connection-api";
+import {
+  buildAccountLiveMetricsById,
+  type PositionSnapshotResponse,
+} from "@/lib/positions";
+import {
+  buildAccountBalanceMetricsById,
+} from "@/lib/account-live-metrics";
+import {
+  LIVE_QUERY_POLL_MS,
+  LIVE_QUERY_STALE_MS,
+  SESSION_STATUS_POLL_MS,
+} from "@/lib/live-query-config";
+import type { AccountsRuntimeOverviewResponse } from "@/lib/runtime-overview";
 import { ShieldAlert, Loader2, LayoutGrid, List, Table2, Settings, Globe } from "lucide-react";
 import type { Account } from "@shared/schema";
 
 type ViewMode = 'grid' | 'list' | 'table' | 'groups';
 
+interface AuthMeResponse {
+  success: boolean;
+  user: {
+    id: string;
+    username: string;
+  };
+}
+
+interface TradeCopyStatusResponse {
+  success: boolean;
+  data: {
+    masterAccountId: string | null;
+    masterConnected: boolean;
+    masterConnectionType: "tradovate" | "rithmic" | "none";
+    followerCount: number;
+    connectedFollowerCount: number;
+    ready: boolean;
+    followers: Array<{
+      accountId: string;
+      brokerKind: "tradovate" | "rithmic" | "legacy_websocket";
+      connected: boolean;
+    }>;
+  };
+}
+
 export default function Accounts() {
   const { toast } = useToast();
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [addGroupTrigger, setAddGroupTrigger] = useState(0);
+  const [sessionMasterAccountId, setSessionMasterAccountId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('copy-session-master-account-id');
+    } catch {
+      return null;
+    }
+  });
   const [globalSettings, setGlobalSettings] = useState<RiskSettings>(() => {
     try {
       const saved = localStorage.getItem('global-risk-settings-v1');
@@ -48,23 +100,101 @@ export default function Accounts() {
     }
   }, [viewMode]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (sessionMasterAccountId) {
+      localStorage.setItem('copy-session-master-account-id', sessionMasterAccountId);
+    } else {
+      localStorage.removeItem('copy-session-master-account-id');
+    }
+  }, [sessionMasterAccountId]);
+
   const { data: accountsData, isLoading } = useQuery<{ success: boolean; accounts: Account[] }>({
     queryKey: ['/api/accounts'],
   });
-
   const accounts = accountsData?.accounts || [];
+  const { data: authData } = useQuery<AuthMeResponse | null>({
+    queryKey: ['/api/auth/me'],
+    queryFn: getQueryFn({ on401: 'returnNull' }),
+  });
+  const { data: tradeCopyStatusData } = useQuery<TradeCopyStatusResponse | null>({
+    queryKey: authData?.user?.id ? ['/api/trade-copy/status', authData.user.id] : ['/api/trade-copy/status', 'anonymous'],
+    queryFn: async ({ queryKey }) => {
+      const res = await fetch(queryKey.join('/') as string, {
+        credentials: 'include',
+      });
+
+      if (res.status === 401 || res.status === 404) {
+        return null;
+      }
+
+      if (!res.ok) {
+        const text = (await res.text()) || res.statusText;
+        throw new Error(`${res.status}: ${text}`);
+      }
+
+      return res.json();
+    },
+    enabled: !!authData?.user?.id && accounts.length > 0,
+    refetchInterval: SESSION_STATUS_POLL_MS,
+    staleTime: LIVE_QUERY_STALE_MS,
+  });
+  const { data: runtimeOverviewData } = useQuery<AccountsRuntimeOverviewResponse | null>({
+    queryKey: authData?.user?.id ? ['/api/runtime/accounts-overview', authData.user.id] : ['/api/runtime/accounts-overview', 'anonymous'],
+    queryFn: async ({ queryKey }) => {
+      const res = await fetch(queryKey[0] as string, {
+        credentials: 'include',
+      });
+
+      if (res.status === 401 || res.status === 404) {
+        return null;
+      }
+
+      if (!res.ok) {
+        const text = (await res.text()) || res.statusText;
+        throw new Error(`${res.status}: ${text}`);
+      }
+
+      return res.json();
+    },
+    enabled: !!authData?.user?.id && accounts.length > 0,
+    refetchInterval: LIVE_QUERY_POLL_MS,
+    staleTime: LIVE_QUERY_STALE_MS,
+  });
+  const tradeCopyStatus = tradeCopyStatusData?.data;
+  const connectedAccounts = accounts.filter((account) => account.isConnected);
+  const activeSessionMasterAccountId = tradeCopyStatus?.masterAccountId ?? sessionMasterAccountId;
+  const positionSnapshotData: PositionSnapshotResponse | null = runtimeOverviewData?.positionSnapshot ?? null;
+  const accountLiveMetricsById = buildAccountLiveMetricsById(positionSnapshotData?.accounts ?? []);
+  const accountBalanceMetricsById = buildAccountBalanceMetricsById(runtimeOverviewData?.accountLiveMetrics.accounts ?? []);
+
+  useEffect(() => {
+    if (tradeCopyStatus?.masterAccountId) {
+      setSessionMasterAccountId(tradeCopyStatus.masterAccountId);
+      return;
+    }
+
+    if (connectedAccounts.length === 0) {
+      setSessionMasterAccountId(null);
+      return;
+    }
+
+    if (
+      sessionMasterAccountId &&
+      connectedAccounts.some((account) => account.id === sessionMasterAccountId)
+    ) {
+      return;
+    }
+
+    setSessionMasterAccountId(connectedAccounts[0]?.id ?? null);
+  }, [connectedAccounts, sessionMasterAccountId, tradeCopyStatus?.masterAccountId]);
 
   const addAccountMutation = useMutation({
     mutationFn: async (accountData: any) => {
-      const response = await fetch('/api/accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(accountData),
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        throw new Error('Failed to add account');
-      }
+      const response = await apiRequest('POST', '/api/accounts', accountData);
       return response.json();
     },
     onSuccess: () => {
@@ -72,18 +202,9 @@ export default function Accounts() {
     },
   });
 
-  const handleAddAccount = async (newAccount: any) => {
+  const handleAddAccount = async (newAccount: AccountCreatePayload) => {
     try {
-      await addAccountMutation.mutateAsync({
-        name: newAccount.name,
-        platform: newAccount.platform,
-        accountType: newAccount.accountType,
-        tradovateUsername: newAccount.username,
-        tradovateAccountId: newAccount.tradovateAccountId,
-        tradovateEnvironment: newAccount.environment,
-        isConnected: false,
-        ...(newAccount.accountType === 'follower' && { positionScaling: 100 }),
-      });
+      await addAccountMutation.mutateAsync(newAccount);
 
       toast({
         title: "Account Added",
@@ -95,29 +216,72 @@ export default function Accounts() {
         description: error instanceof Error ? error.message : "Unknown error",
         variant: "destructive",
       });
+      throw error;
     }
   };
 
-  const handleConnect = (accountId: string) => {
+  const connectAccountMutation = useMutation({
+    mutationFn: (accountId: string) => connectAccount(accountId),
+    onSuccess: (_result, accountId) => {
+      queryClient.setQueryData<{ success: boolean; accounts: Account[] } | undefined>(
+        ['/api/accounts'],
+        (current) => updateAccountConnectionInQueryData(current, accountId, true),
+      );
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+    },
+  });
+
+  const disconnectAccountMutation = useMutation({
+    mutationFn: (accountId: string) => disconnectAccount(accountId),
+    onSuccess: (_result, accountId) => {
+      queryClient.setQueryData<{ success: boolean; accounts: Account[] } | undefined>(
+        ['/api/accounts'],
+        (current) => updateAccountConnectionInQueryData(current, accountId, false),
+      );
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+    },
+  });
+
+  const handleConnect = async (accountId: string) => {
     const account = accounts.find(a => a.id === accountId);
-    toast({
-      title: "Account Connected",
-      description: `${account?.name} is now connected and will copy trades`,
-    });
+
+    try {
+      await connectAccountMutation.mutateAsync(accountId);
+      toast({
+        title: "Account Connected",
+        description: `${account?.name} is now connected and will copy trades`,
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to Connect Account",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleDisconnectClick = (accountId: string, accountName: string) => {
     setDisconnectAlert({ open: true, accountId, accountName });
   };
 
-  const handleDisconnectConfirm = () => {
+  const handleDisconnectConfirm = async () => {
     const account = accounts.find(a => a.id === disconnectAlert.accountId);
-    toast({
-      title: "Account Disconnected",
-      description: `${account?.name} has been disconnected`,
-      variant: "destructive",
-    });
-    setDisconnectAlert({ open: false, accountId: '', accountName: '' });
+
+    try {
+      await disconnectAccountMutation.mutateAsync(disconnectAlert.accountId);
+      toast({
+        title: "Account Disconnected",
+        description: `${account?.name} has been disconnected`,
+        variant: "destructive",
+      });
+      setDisconnectAlert({ open: false, accountId: '', accountName: '' });
+    } catch (error) {
+      toast({
+        title: "Failed to Disconnect Account",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
   };
 
   // Convert a DB account row → RiskSettings shape for the dialog
@@ -161,10 +325,177 @@ export default function Accounts() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['/api/accounts'] }),
   });
 
+  const saveBrokerSettingsMutation = useMutation({
+    mutationFn: async ({
+      accountId,
+      settings,
+    }: {
+      accountId: string;
+      settings: {
+        rithmicExchange: string;
+        rithmicSystemName: string | null;
+        rithmicEnvironment: 'test' | 'live';
+      };
+    }) => {
+      const res = await fetch(`/api/accounts/${accountId}/broker-settings`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+        credentials: 'include',
+      });
+
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.message || 'Failed to save broker settings');
+      }
+
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['/api/accounts'] }),
+  });
+
+  const updateAccountTypeMutation = useMutation({
+    mutationFn: async ({
+      accountId,
+      accountType,
+    }: {
+      accountId: string;
+      accountType: 'master' | 'follower';
+    }) => {
+      const res = await fetch(`/api/accounts/${accountId}/account-type`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountType }),
+        credentials: 'include',
+      });
+
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(body?.message || 'Failed to update account type');
+      }
+
+      return body;
+    },
+    onSuccess: (result, variables) => {
+      queryClient.setQueryData<{ success: boolean; accounts: Account[] } | undefined>(
+        ['/api/accounts'],
+        (current) => {
+          if (!current?.accounts) {
+            return current;
+          }
+
+          const updatedAccount = result?.account as Account | undefined;
+          const nextAccounts = current.accounts.map((account) =>
+            account.id === variables.accountId
+              ? {
+                  ...account,
+                  accountType: updatedAccount?.accountType ?? variables.accountType,
+                }
+              : account,
+          );
+
+          return {
+            ...current,
+            accounts: nextAccounts,
+          };
+        },
+      );
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/trade-copy/status'] });
+    },
+  });
+
+  const startTradeCopyMutation = useMutation({
+    mutationFn: async (payload: {
+      userId: string;
+      masterAccountId: string;
+      followerAccountIds: string[];
+      environment: 'demo' | 'live';
+    }) => {
+      const res = await fetch('/api/trade-copy/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'include',
+      });
+
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(body?.message || 'Failed to start copy session');
+      }
+
+      return body;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/trade-copy/status'] });
+    },
+  });
+
+  const stopTradeCopyMutation = useMutation({
+    mutationFn: async (payload: { userId: string }) => {
+      const res = await fetch('/api/trade-copy/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'include',
+      });
+
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(body?.message || 'Failed to stop copy session');
+      }
+
+      return body;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/trade-copy/status'] });
+    },
+  });
+
   const handleRiskSettingsSave = (accountId: string, settings: RiskSettings) => {
     saveRiskSettingsMutation.mutate({ accountId, settings });
     const account = accounts.find(a => a.id === accountId);
     toast({ title: "Risk Settings Saved", description: `Updated for ${account?.name}` });
+  };
+
+  const handleBrokerSettingsSave = async (
+    accountId: string,
+    settings: {
+      rithmicExchange: string;
+      rithmicSystemName: string | null;
+      rithmicEnvironment: 'test' | 'live';
+    },
+  ) => {
+    await saveBrokerSettingsMutation.mutateAsync({ accountId, settings });
+    const account = accounts.find(a => a.id === accountId);
+    toast({
+      title: "Broker Settings Saved",
+      description: `Updated for ${account?.name}`,
+    });
+  };
+
+  const handleAccountTypeSwitch = async (account: Account) => {
+    const nextAccountType = account.accountType === 'master' ? 'follower' : 'master';
+
+    try {
+      await updateAccountTypeMutation.mutateAsync({
+        accountId: account.id,
+        accountType: nextAccountType,
+      });
+
+      toast({
+        title: 'Account role updated',
+        description: `${account.name} is now a ${nextAccountType}.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Could not change account role',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleGlobalSettingsUpdate = (settings: RiskSettings) => {
@@ -178,6 +509,146 @@ export default function Accounts() {
       return { ...account, ...globalSettings };
     }
     return account;
+  };
+
+  const getAccountSessionStatus = (account: Account): {
+    label?: string;
+    tone: 'neutral' | 'ok' | 'warn';
+  } => {
+    if (!tradeCopyStatus) {
+      if (account.isConnected && activeSessionMasterAccountId === account.id) {
+        return {
+          label: 'session master',
+          tone: 'warn',
+        };
+      }
+
+      return {
+        label: account.isConnected ? 'link only' : undefined,
+        tone: 'neutral',
+      };
+    }
+
+    if (tradeCopyStatus.masterAccountId === account.id) {
+      if (tradeCopyStatus.ready) {
+        return { label: 'copy ready', tone: 'ok' };
+      }
+
+      if (tradeCopyStatus.masterConnected) {
+        return { label: 'master linked', tone: 'warn' };
+      }
+
+      return {
+        label: account.isConnected ? 'link only' : undefined,
+        tone: 'neutral',
+      };
+    }
+
+    const followerStatus = tradeCopyStatus.followers.find((follower) => follower.accountId === account.id);
+    if (!followerStatus) {
+      return {
+        label: account.isConnected ? 'not in session' : undefined,
+        tone: account.isConnected ? 'warn' : 'neutral',
+      };
+    }
+
+    return followerStatus.connected
+      ? { label: 'follower ready', tone: 'ok' }
+      : { label: 'follower pending', tone: 'warn' };
+  };
+  const selectedMasterAccount = connectedAccounts.find(
+    (account) => account.id === activeSessionMasterAccountId,
+  ) ?? null;
+  const connectedFollowers = connectedAccounts.filter(
+    (account) => account.id !== activeSessionMasterAccountId,
+  );
+  const canAutoStartCopySession =
+    !!authData?.user?.id &&
+    !!selectedMasterAccount &&
+    connectedFollowers.length > 0;
+
+  const startCopySession = async () => {
+    if (!authData?.user?.id) {
+      toast({
+        title: 'Sign in required',
+        description: 'The app needs your signed-in user session before it can start copy trading.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!selectedMasterAccount) {
+      toast({
+        title: 'Choose a session master first',
+        description: 'Connect the account you want to lead, then mark it as the session master.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (connectedFollowers.length === 0) {
+      toast({
+        title: 'No follower ready yet',
+        description: 'Connect at least one follower account before starting the copy session.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const masterAccount = selectedMasterAccount;
+    const environment: 'demo' | 'live' =
+      masterAccount.tradovateEnvironment === 'live' || masterAccount.rithmicEnvironment === 'live'
+        ? 'live'
+        : 'demo';
+
+    try {
+      await startTradeCopyMutation.mutateAsync({
+        userId: authData.user.id,
+        masterAccountId: masterAccount.id,
+        followerAccountIds: connectedFollowers.map((account) => account.id),
+        environment,
+      });
+
+      toast({
+        title: 'Copy session started',
+        description: `${masterAccount.name} is now the active master for ${connectedFollowers.length} follower account(s).`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Could not start copy session',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const stopCopySession = async () => {
+    if (!authData?.user?.id) {
+      return;
+    }
+
+    try {
+      await stopTradeCopyMutation.mutateAsync({ userId: authData.user.id });
+      toast({
+        title: 'Copy session stopped',
+        description: 'The active copy session has been stopped.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Could not stop copy session',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const setSessionMaster = (accountId: string) => {
+    setSessionMasterAccountId(accountId);
+    const account = accounts.find((item) => item.id === accountId);
+    toast({
+      title: 'Session master selected',
+      description: `${account?.name} will lead the next copy session.`,
+    });
   };
 
   // Count active risk limits on an account (for badge)
@@ -266,6 +737,65 @@ export default function Accounts() {
         </RiskSettingsDialog>
       </div>
 
+      <div className="panel-surface rounded-[1.4rem] p-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold">Copy Session</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {tradeCopyStatus
+              ? tradeCopyStatus.ready
+                ? `Ready: ${tradeCopyStatus.connectedFollowerCount}/${tradeCopyStatus.followerCount} followers connected`
+                : tradeCopyStatus.masterConnected
+                  ? `Master linked. Followers ready: ${tradeCopyStatus.connectedFollowerCount}/${tradeCopyStatus.followerCount}`
+                  : 'No active copy session yet'
+              : 'No active copy session yet'}
+          </p>
+          {!tradeCopyStatus && !selectedMasterAccount && (
+            <p className="text-xs text-amber-400 mt-1">
+              Connect the account you want to lead, then use `Use For Session` on that card.
+            </p>
+          )}
+          {!tradeCopyStatus && selectedMasterAccount && connectedFollowers.length === 0 && (
+            <p className="text-xs text-amber-400 mt-1">
+              Connect at least one other account to follow the selected session master.
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge
+            variant="outline"
+            className={
+              tradeCopyStatus?.ready
+                ? 'border-emerald-400/30 text-emerald-400'
+                : tradeCopyStatus?.masterConnected
+                  ? 'border-amber-400/30 text-amber-400'
+                  : 'text-muted-foreground'
+            }
+          >
+            {tradeCopyStatus?.ready ? 'Ready' : tradeCopyStatus?.masterConnected ? 'Partial' : 'Standby'}
+          </Badge>
+          {tradeCopyStatus ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={stopCopySession}
+              disabled={stopTradeCopyMutation.isPending}
+              data-testid="button-stop-copy-session"
+            >
+              Stop Session
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={startCopySession}
+              disabled={!canAutoStartCopySession || startTradeCopyMutation.isPending}
+              data-testid="button-start-copy-session"
+            >
+              Start Session
+            </Button>
+          )}
+        </div>
+      </div>
+
       <div className="flex gap-1 rounded-xl border border-border bg-muted/80 p-1 w-fit">
         {hasAccounts && (
           <>
@@ -321,6 +851,25 @@ export default function Accounts() {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {accounts.map((account) => {
                 const effectiveAccount = getEffectiveSettings(account);
+                const sessionStatus = getAccountSessionStatus(account);
+                const liveMetrics = accountLiveMetricsById[account.id];
+                const liveBalanceMetrics = accountBalanceMetricsById[account.id];
+                const hasLivePositionData = liveMetrics?.hasLiveBrokerData ?? false;
+                const hasLiveBalance = liveBalanceMetrics?.hasLiveBrokerData ?? false;
+                const hasLiveBrokerData = hasLivePositionData || hasLiveBalance;
+                const pnl = hasLivePositionData
+                  ? liveMetrics.unrealizedPnl
+                  : (account.pnl ? parseFloat(account.pnl) : 0);
+                const openPositions = hasLivePositionData
+                  ? liveMetrics.openPositions
+                  : (account.openPositions || 0);
+                const balance = hasLiveBalance
+                  ? (liveBalanceMetrics?.balance ?? 0)
+                  : (account.balance ? parseFloat(account.balance) : 0);
+                const liveBrokerStatus = liveMetrics?.status !== "NONE"
+                  ? liveMetrics.status
+                  : liveBalanceMetrics?.status ?? "NONE";
+                const liveBrokerReason = liveMetrics?.reason ?? liveBalanceMetrics?.reason;
                 return (
                   <AccountCard
                     key={account.id}
@@ -329,9 +878,14 @@ export default function Accounts() {
                     platform={account.platform}
                     accountType={account.accountType as 'master' | 'follower'}
                     isConnected={account.isConnected || false}
-                    balance={account.balance ? parseFloat(account.balance) : 0}
-                    openPositions={account.openPositions || 0}
-                    pnl={account.pnl ? parseFloat(account.pnl) : 0}
+                    sessionStatusLabel={sessionStatus.label}
+                    sessionStatusTone={sessionStatus.tone}
+                    hasLiveBrokerData={hasLiveBrokerData}
+                    liveBrokerStatus={liveBrokerStatus}
+                    liveBrokerReason={liveBrokerReason}
+                    balance={balance}
+                    openPositions={openPositions}
+                    pnl={pnl}
                     positionScaling={effectiveAccount.positionScaling || undefined}
                     maxContracts={effectiveAccount.maxContracts || undefined}
                     blockedTickers={effectiveAccount.blockedTickers || []}
@@ -339,28 +893,71 @@ export default function Accounts() {
                     onConnect={() => handleConnect(account.id)}
                     onDisconnect={() => handleDisconnectClick(account.id, account.name)}
                     configureButton={
-                      <RiskSettingsDialog
-                        name={account.name}
-                        kind="account"
-                        settings={accountToRiskSettings(account)}
-                        globalSettings={globalSettings}
-                        onSave={(s) => handleRiskSettingsSave(account.id, s)}
-                      >
+                      <div className="space-y-2">
                         <Button
                           variant="outline"
                           size="sm"
                           className="w-full"
-                          data-testid={`button-configure-${account.id}`}
+                          onClick={() => setSessionMaster(account.id)}
+                          disabled={!account.isConnected || activeSessionMasterAccountId === account.id}
+                          data-testid={`button-set-session-master-${account.id}`}
                         >
-                          <ShieldAlert className="mr-2 h-3 w-3" />
-                          Risk Settings
-                          {account.riskMode === 'global'
-                            ? <Globe className="ml-1.5 h-3 w-3 text-muted-foreground" />
-                            : countActiveLimits(accountToRiskSettings(account)) > 0
-                              ? <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-amber-500 inline-block" />
-                              : null}
+                          {activeSessionMasterAccountId === account.id ? 'Session Master' : 'Use For Session'}
                         </Button>
-                      </RiskSettingsDialog>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => handleAccountTypeSwitch(account)}
+                          disabled={account.isConnected || updateAccountTypeMutation.isPending}
+                          data-testid={`button-switch-role-${account.id}`}
+                        >
+                          {account.accountType === 'master' ? 'Make Follower' : 'Make Master'}
+                        </Button>
+                        {account.platform === 'Rithmic' && (
+                          <BrokerSettingsDialog
+                            accountId={account.id}
+                            accountName={account.name}
+                            platform={account.platform}
+                            rithmicExchange={account.rithmicExchange}
+                            rithmicSystemName={account.rithmicSystemName}
+                            rithmicEnvironment={account.rithmicEnvironment}
+                            onSave={(settings) => handleBrokerSettingsSave(account.id, settings)}
+                          >
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full"
+                              data-testid={`button-broker-settings-${account.id}`}
+                            >
+                              <Settings className="mr-2 h-3 w-3" />
+                              Broker Settings
+                            </Button>
+                          </BrokerSettingsDialog>
+                        )}
+                        <RiskSettingsDialog
+                          name={account.name}
+                          kind="account"
+                          settings={accountToRiskSettings(account)}
+                          globalSettings={globalSettings}
+                          onSave={(s) => handleRiskSettingsSave(account.id, s)}
+                        >
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            data-testid={`button-configure-${account.id}`}
+                          >
+                            <ShieldAlert className="mr-2 h-3 w-3" />
+                            Risk Settings
+                            {account.riskMode === 'global'
+                              ? <Globe className="ml-1.5 h-3 w-3 text-muted-foreground" />
+                              : countActiveLimits(accountToRiskSettings(account)) > 0
+                                ? <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-amber-500 inline-block" />
+                                : null}
+                          </Button>
+                        </RiskSettingsDialog>
+                      </div>
                     }
                   />
                 );
@@ -372,8 +969,21 @@ export default function Accounts() {
             <div className="space-y-2">
               {accounts.map((account) => {
                 const effectiveAccount = getEffectiveSettings(account);
-                const balance = account.balance ? parseFloat(account.balance) : 0;
-                const pnl = account.pnl ? parseFloat(account.pnl) : 0;
+                const savedBalance = account.balance ? parseFloat(account.balance) : 0;
+                const liveMetrics = accountLiveMetricsById[account.id];
+                const liveBalanceMetrics = accountBalanceMetricsById[account.id];
+                const hasLivePositionData = liveMetrics?.hasLiveBrokerData ?? false;
+                const hasLiveBalance = liveBalanceMetrics?.hasLiveBrokerData ?? false;
+                const liveBrokerData = hasLivePositionData || hasLiveBalance;
+                const balance = hasLiveBalance
+                  ? (liveBalanceMetrics?.balance ?? savedBalance)
+                  : savedBalance;
+                const pnl = hasLivePositionData
+                  ? liveMetrics.unrealizedPnl
+                  : (account.pnl ? parseFloat(account.pnl) : 0);
+                const openPositions = hasLivePositionData
+                  ? liveMetrics.openPositions
+                  : (account.openPositions || 0);
                 
                 return (
                   <div
@@ -395,27 +1005,71 @@ export default function Accounts() {
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <div className={`h-2 w-2 rounded-full ${account.isConnected ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]' : 'bg-muted-foreground'}`} />
                           <span>{account.isConnected ? 'Connected' : 'Disconnected'}</span>
+                          {account.isConnected && !liveBrokerData && (
+                            <span className="text-[10px] uppercase tracking-wide text-zinc-500">
+                              {liveMetrics?.status === 'UNAVAILABLE' || liveBalanceMetrics?.status === 'UNAVAILABLE' ? 'Snapshot pending' : 'Link verified'}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-8">
                       <div className="text-right">
-                        <div className="text-xs text-muted-foreground">Balance</div>
+                        <div className="text-xs text-muted-foreground">{liveBrokerData ? 'Balance' : 'Saved Balance'}</div>
                         <div className="font-semibold tabular-nums">${balance.toLocaleString()}</div>
                       </div>
                       <div className="text-right">
-                        <div className="text-xs text-muted-foreground">P&L</div>
+                        <div className="text-xs text-muted-foreground">{liveBrokerData ? 'P&L' : 'Saved P&L'}</div>
                         <div className={`font-semibold tabular-nums ${pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           ${pnl >= 0 ? '+' : ''}{pnl.toLocaleString()}
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-xs text-muted-foreground">Positions</div>
-                        <div className="font-semibold tabular-nums">{account.openPositions || 0}</div>
+                        <div className="text-xs text-muted-foreground">{liveBrokerData ? 'Positions' : 'Saved Positions'}</div>
+                        <div className="font-semibold tabular-nums">{openPositions}</div>
                       </div>
 
                       <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSessionMaster(account.id)}
+                          disabled={!account.isConnected || activeSessionMasterAccountId === account.id}
+                          data-testid={`button-set-session-master-${account.id}`}
+                          title="Use this connected account as the active session master"
+                        >
+                          {activeSessionMasterAccountId === account.id ? 'Session Master' : 'Use For Session'}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleAccountTypeSwitch(account)}
+                          disabled={account.isConnected || updateAccountTypeMutation.isPending}
+                          data-testid={`button-switch-role-${account.id}`}
+                        >
+                          {account.accountType === 'master' ? 'Make Follower' : 'Make Master'}
+                        </Button>
+                        {account.platform === 'Rithmic' && (
+                          <BrokerSettingsDialog
+                            accountId={account.id}
+                            accountName={account.name}
+                            platform={account.platform}
+                            rithmicExchange={account.rithmicExchange}
+                            rithmicSystemName={account.rithmicSystemName}
+                            rithmicEnvironment={account.rithmicEnvironment}
+                            onSave={(settings) => handleBrokerSettingsSave(account.id, settings)}
+                          >
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              data-testid={`button-broker-settings-${account.id}`}
+                              title="Saved Rithmic exchange and system name"
+                            >
+                              <Settings className="h-3 w-3" />
+                            </Button>
+                          </BrokerSettingsDialog>
+                        )}
                         <RiskSettingsDialog
                           name={account.name}
                           kind="account"
@@ -486,8 +1140,21 @@ export default function Accounts() {
                   <tbody>
                     {accounts.map((account) => {
                       const effectiveAccount = getEffectiveSettings(account);
-                      const balance = account.balance ? parseFloat(account.balance) : 0;
-                      const pnl = account.pnl ? parseFloat(account.pnl) : 0;
+                      const savedBalance = account.balance ? parseFloat(account.balance) : 0;
+                      const liveMetrics = accountLiveMetricsById[account.id];
+                      const liveBalanceMetrics = accountBalanceMetricsById[account.id];
+                      const hasLivePositionData = liveMetrics?.hasLiveBrokerData ?? false;
+                      const hasLiveBalance = liveBalanceMetrics?.hasLiveBrokerData ?? false;
+                      const liveBrokerData = hasLivePositionData || hasLiveBalance;
+                      const balance = hasLiveBalance
+                        ? (liveBalanceMetrics?.balance ?? savedBalance)
+                        : savedBalance;
+                      const pnl = hasLivePositionData
+                        ? liveMetrics.unrealizedPnl
+                        : (account.pnl ? parseFloat(account.pnl) : 0);
+                      const openPositions = hasLivePositionData
+                        ? liveMetrics.openPositions
+                        : (account.openPositions || 0);
 
                       return (
                         <tr
@@ -510,13 +1177,18 @@ export default function Accounts() {
                             <div className="flex items-center gap-2">
                               <div className={`h-2 w-2 rounded-full ${account.isConnected ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]' : 'bg-muted-foreground'}`} />
                               <span className="text-sm">{account.isConnected ? 'Connected' : 'Disconnected'}</span>
+                              {account.isConnected && !liveBrokerData && (
+                                <span className="text-[10px] uppercase tracking-wide text-zinc-500">
+                                  {liveMetrics?.status === 'UNAVAILABLE' || liveBalanceMetrics?.status === 'UNAVAILABLE' ? 'Snapshot pending' : 'Link verified'}
+                                </span>
+                              )}
                             </div>
                           </td>
-                          <td className="p-3 text-right font-semibold tabular-nums">${balance.toLocaleString()}</td>
+                          <td className="p-3 text-right font-semibold tabular-nums" title={liveBrokerData ? 'Live broker value' : 'Saved placeholder value'}>${balance.toLocaleString()}</td>
                           <td className={`p-3 text-right font-semibold tabular-nums ${pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             ${pnl >= 0 ? '+' : ''}{pnl.toLocaleString()}
                           </td>
-                          <td className="p-3 text-right tabular-nums">{account.openPositions || 0}</td>
+                          <td className="p-3 text-right tabular-nums">{openPositions}</td>
                           {accounts.some(a => a.accountType === 'follower') && (
                             <td className="p-3 text-right tabular-nums">
                               {account.accountType === 'follower' ? `${effectiveAccount.positionScaling}%` : '-'}
@@ -524,6 +1196,44 @@ export default function Accounts() {
                           )}
                           <td className="p-3">
                             <div className="flex gap-2 justify-end">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSessionMaster(account.id)}
+                                disabled={!account.isConnected || activeSessionMasterAccountId === account.id}
+                                data-testid={`button-set-session-master-${account.id}`}
+                              >
+                                {activeSessionMasterAccountId === account.id ? 'Session Master' : 'Use For Session'}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleAccountTypeSwitch(account)}
+                                disabled={account.isConnected || updateAccountTypeMutation.isPending}
+                                data-testid={`button-switch-role-${account.id}`}
+                              >
+                                {account.accountType === 'master' ? 'Make Follower' : 'Make Master'}
+                              </Button>
+                              {account.platform === 'Rithmic' && (
+                                <BrokerSettingsDialog
+                                  accountId={account.id}
+                                  accountName={account.name}
+                                  platform={account.platform}
+                                  rithmicExchange={account.rithmicExchange}
+                                  rithmicSystemName={account.rithmicSystemName}
+                                  rithmicEnvironment={account.rithmicEnvironment}
+                                  onSave={(settings) => handleBrokerSettingsSave(account.id, settings)}
+                                >
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    data-testid={`button-broker-settings-${account.id}`}
+                                    title="Saved Rithmic exchange and system name"
+                                  >
+                                    <Settings className="h-3 w-3" />
+                                  </Button>
+                                </BrokerSettingsDialog>
+                              )}
                               <RiskSettingsDialog
                                 name={account.name}
                                 kind="account"

@@ -7,6 +7,7 @@ class FakeRithmicAPI {
   testConnectionCalls = 0;
   sendOrderCalls = 0;
   disconnectCalls = 0;
+  stopOrderFillStreamCalls = 0;
   authenticated = false;
   authenticateResult = {
     success: true,
@@ -22,6 +23,8 @@ class FakeRithmicAPI {
     data: [],
   };
   lastSendOrder?: Record<string, unknown>;
+  lastSubscribedAccountId?: string;
+  onFill?: (fill: any) => void;
   sendOrderImpl = async (params: Record<string, unknown>) => {
     this.lastSendOrder = { ...params };
   };
@@ -49,6 +52,19 @@ class FakeRithmicAPI {
   async disconnect() {
     this.disconnectCalls += 1;
     this.authenticated = false;
+  }
+
+  async subscribeToOrderFills(accountId: string, onFill: (fill: any) => void) {
+    this.lastSubscribedAccountId = accountId;
+    this.onFill = onFill;
+  }
+
+  async stopOrderFillStream() {
+    this.stopOrderFillStreamCalls += 1;
+  }
+
+  emitFill(fill: any) {
+    this.onFill?.(fill);
   }
 }
 
@@ -131,6 +147,7 @@ test('disconnect clears state', async () => {
 
   const state = adapter.getConnectionState();
   assert.equal(api.disconnectCalls, 1);
+  assert.equal(api.stopOrderFillStreamCalls, 1);
   assert.equal(state.connected, false);
   assert.equal(state.authenticated, false);
   assert.deepEqual(state.brokerAccountIds, []);
@@ -309,4 +326,67 @@ test('cancelOrder throws not implemented', async () => {
   await assert.rejects(() => adapter.cancelOrder('broker-order-1', 'acct-1'), {
     message: 'Rithmic order cancellation is not implemented.',
   });
+});
+
+test('subscribeToExecutionFills emits normalized execution fill events when API support exists', async () => {
+  const api = new FakeRithmicAPI();
+  api.testConnectionResult.data = [{ id: 'acct-1', name: 'Primary' }];
+  const adapter = new RithmicAdapter(createConfig(), api);
+  await adapter.connect();
+
+  const fills: any[] = [];
+  const subscribed = await adapter.subscribeToExecutionFills('acct-1', (fill) => {
+    fills.push(fill);
+  });
+
+  assert.equal(subscribed, true);
+  assert.equal(api.lastSubscribedAccountId, 'acct-1');
+
+  api.emitFill({
+    accountId: 'acct-1',
+    symbol: 'MESU6',
+    side: 'BUY',
+    quantity: 2,
+    price: 6400.25,
+    timestamp: Date.parse('2026-08-04T13:00:00.000Z'),
+    fillId: 'fill-rt-1',
+  });
+
+  assert.deepEqual(fills[0], {
+    accountId: 'acct-1',
+    brokerKey: 'rithmic:follower-1',
+    symbol: 'MESU6',
+    side: 'BUY',
+    brokerOrderId: undefined,
+    fillId: 'fill-rt-1',
+    filledAt: '2026-08-04T13:00:00.000Z',
+    filledQuantity: 2,
+    averageFillPrice: 6400.25,
+  });
+});
+
+test('subscribeToExecutionFills returns false when the injected API lacks fill streaming support', async () => {
+  const sharedLikeApi = {
+    async authenticate() {
+      return { success: true, message: 'ok' };
+    },
+    async testConnection() {
+      return {
+        success: true,
+        message: 'ok',
+        data: [{ id: 'acct-1', name: 'Primary' }],
+      };
+    },
+    async sendOrder() {},
+    isAuthenticated() {
+      return true;
+    },
+    async disconnect() {},
+  };
+
+  const adapter = new RithmicAdapter(createConfig(), sharedLikeApi);
+  await adapter.connect();
+
+  const subscribed = await adapter.subscribeToExecutionFills('acct-1', () => {});
+  assert.equal(subscribed, false);
 });

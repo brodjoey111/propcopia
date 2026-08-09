@@ -1,7 +1,10 @@
+import { EventEmitter } from 'events';
 import { RithmicAPI } from '../rithmic-api';
 import type {
   BrokerAdapter,
   BrokerAdapterConnectionState,
+  BrokerExecutionEventStream,
+  BrokerExecutionFillEvent,
 } from './BrokerAdapter';
 import type {
   BrokerAccount,
@@ -33,10 +36,12 @@ type RithmicAccountLike = {
   currency?: unknown;
 };
 
-type RithmicApiLike = Pick<
-  RithmicAPI,
-  'authenticate' | 'testConnection' | 'sendOrder' | 'isAuthenticated' | 'disconnect'
->;
+type RithmicApiLike =
+  Pick<
+    RithmicAPI,
+    'authenticate' | 'testConnection' | 'sendOrder' | 'isAuthenticated' | 'disconnect'
+  > &
+  Partial<Pick<RithmicAPI, 'subscribeToOrderFills' | 'stopOrderFillStream'>>;
 
 type RithmicApiFactory = (config: RithmicAdapterConfig) => RithmicApiLike;
 
@@ -59,7 +64,20 @@ function toStringOrUndefined(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-export class RithmicAdapter implements BrokerAdapter {
+function hasOrderFillSupport(
+  api: RithmicApiLike,
+): api is RithmicApiLike &
+  Required<Pick<RithmicAPI, 'subscribeToOrderFills' | 'stopOrderFillStream'>> {
+  return (
+    typeof api.subscribeToOrderFills === 'function' &&
+    typeof api.stopOrderFillStream === 'function'
+  );
+}
+
+export class RithmicAdapter
+  extends EventEmitter
+  implements BrokerAdapter, BrokerExecutionEventStream
+{
   private api: RithmicApiLike;
   private orderMapper: RithmicOrderMapper;
   private connected = false;
@@ -73,6 +91,7 @@ export class RithmicAdapter implements BrokerAdapter {
     private config: RithmicAdapterConfig,
     apiOrFactory?: RithmicApiLike | RithmicApiFactory,
   ) {
+    super();
     this.orderMapper = new RithmicOrderMapper({
       exchange: config.exchange,
     });
@@ -115,6 +134,9 @@ export class RithmicAdapter implements BrokerAdapter {
   }
 
   async disconnect(): Promise<void> {
+    if (hasOrderFillSupport(this.api)) {
+      await this.api.stopOrderFillStream();
+    }
     await this.api.disconnect();
     this.connected = false;
     this.authenticated = false;
@@ -186,6 +208,34 @@ export class RithmicAdapter implements BrokerAdapter {
       status: 'SENT',
       submittedAt: new Date().toISOString(),
     };
+  }
+
+  async subscribeToExecutionFills(
+    accountId: string,
+    onFill: (fill: BrokerExecutionFillEvent) => void,
+  ): Promise<boolean> {
+    if (!hasOrderFillSupport(this.api)) {
+      return false;
+    }
+
+    await this.api.subscribeToOrderFills(accountId, (fill) => {
+      const executionFill: BrokerExecutionFillEvent = {
+        accountId,
+        brokerKey: this.config.brokerKey,
+        symbol: fill.symbol,
+        side: fill.side,
+        brokerOrderId: undefined,
+        fillId: fill.fillId,
+        filledAt: new Date(fill.timestamp).toISOString(),
+        filledQuantity: fill.quantity,
+        averageFillPrice: fill.price,
+      };
+
+      onFill(executionFill);
+      this.emit('executionFill', executionFill);
+    });
+
+    return true;
   }
 
   async cancelOrder(_brokerOrderId: string, _accountId: string): Promise<void> {

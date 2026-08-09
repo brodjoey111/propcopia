@@ -3,11 +3,42 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { AddAccountDialog } from "@/components/add-account-dialog";
 import { ConfigureAccountDialog } from "@/components/configure-account-dialog";
 import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
+import { LiveActivityFeed } from "@/components/live-activity-feed";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient } from "@/lib/queryClient";
+import type { AccountCreatePayload } from "@/lib/account-create-payload";
+import {
+  buildCopyGroupActivityFeed,
+  filterCopyGroupActivityFeed,
+  hydrateCopyGroup,
+  summarizeCopyGroups,
+  type CopyGroup,
+  type CopyGroupSnapshotApiResponse,
+} from "@/lib/copy-groups";
+import {
+  buildAccountLiveMetricsById,
+  toDashboardPositionRows,
+  type PositionSnapshotResponse,
+} from "@/lib/positions";
+import {
+  buildAccountBalanceMetricsById,
+} from "@/lib/account-live-metrics";
+import {
+  LIVE_QUERY_POLL_MS,
+  LIVE_QUERY_STALE_MS,
+  SESSION_STATUS_POLL_MS,
+} from "@/lib/live-query-config";
+import type { OperationsOverviewResponse } from "@/lib/operations-overview";
+import type { DashboardRuntimeOverviewResponse } from "@/lib/runtime-overview";
+import type { TradeHistoryDailySummary } from "@/lib/trade-history";
+import { apiRequest, getQueryFn, queryClient } from "@/lib/queryClient";
+import {
+  connectAccount,
+  disconnectAccount,
+  updateAccountConnectionInQueryData,
+} from "@/lib/account-connection-api";
 import type { Account as AccountType } from "@shared/schema";
 import {
   Activity,
@@ -40,6 +71,30 @@ import {
 interface Account extends Omit<AccountType, "openPositions" | "pnl"> {
   openPositions: number | null;
   pnl: string | null;
+}
+
+interface AuthMeResponse {
+  success: boolean;
+  user: {
+    id: string;
+    username: string;
+  };
+}
+
+interface TradeCopyStatusResponse {
+  success: boolean;
+  data: {
+    masterConnected: boolean;
+    masterConnectionType: "tradovate" | "rithmic" | "none";
+    followerCount: number;
+    connectedFollowerCount: number;
+    ready: boolean;
+    followers: Array<{
+      accountId: string;
+      brokerKind: "tradovate" | "rithmic" | "legacy_websocket";
+      connected: boolean;
+    }>;
+  };
 }
 
 type DashboardAccountView = {
@@ -116,6 +171,18 @@ const mockPositions = [
   { symbol: "CLV6", side: "Flat", size: 0, avg: "-", account: "FundedNext Follower", pnl: 0 },
 ];
 
+async function getJson<T>(url: string): Promise<T> {
+  const response = await fetch(url, {
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load ${url}`);
+  }
+
+  return response.json();
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -133,6 +200,15 @@ function getBackgroundGlow(value: number) {
   return value >= 0
     ? "from-emerald-500/12 via-emerald-400/5 to-transparent"
     : "from-rose-500/12 via-rose-400/5 to-transparent";
+}
+
+function formatActivityTimestamp(timestamp: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
 }
 
 export default function Dashboard() {
@@ -158,25 +234,109 @@ export default function Dashboard() {
   const { data: accountsData } = useQuery<{ success: boolean; accounts: Account[] }>({
     queryKey: ["/api/accounts"],
   });
-
   const accounts = accountsData?.accounts || [];
   const usingMockData = accounts.length === 0;
+  const { data: authData } = useQuery<AuthMeResponse | null>({
+    queryKey: ["/api/auth/me"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+  });
+  const { data: tradeCopyStatusData } = useQuery<TradeCopyStatusResponse | null>({
+    queryKey: authData?.user?.id ? ["/api/trade-copy/status", authData.user.id] : ["/api/trade-copy/status", "anonymous"],
+    queryFn: async ({ queryKey }) => {
+      const res = await fetch(queryKey.join("/") as string, {
+        credentials: "include",
+      });
+
+      if (res.status === 401 || res.status === 404) {
+        return null;
+      }
+
+      if (!res.ok) {
+        const text = (await res.text()) || res.statusText;
+        throw new Error(`${res.status}: ${text}`);
+      }
+
+      return res.json();
+    },
+    enabled: !!authData?.user?.id && !usingMockData,
+    refetchInterval: SESSION_STATUS_POLL_MS,
+    staleTime: LIVE_QUERY_STALE_MS,
+  });
+  const { data: runtimeOverviewData } = useQuery<DashboardRuntimeOverviewResponse | null>({
+    queryKey: authData?.user?.id ? ["/api/runtime/dashboard-overview", authData.user.id] : ["/api/runtime/dashboard-overview", "anonymous"],
+    queryFn: async ({ queryKey }) => {
+      const res = await fetch(queryKey[0] as string, {
+        credentials: "include",
+      });
+
+      if (res.status === 401 || res.status === 404) {
+        return null;
+      }
+
+      if (!res.ok) {
+        const text = (await res.text()) || res.statusText;
+        throw new Error(`${res.status}: ${text}`);
+      }
+
+      return res.json();
+    },
+    enabled: !!authData?.user?.id && !usingMockData,
+    refetchInterval: LIVE_QUERY_POLL_MS,
+    staleTime: LIVE_QUERY_STALE_MS,
+  });
+  const copyGroupSnapshotData: CopyGroupSnapshotApiResponse | null = runtimeOverviewData?.copyGroups
+    ? {
+        success: true,
+        generatedAt: runtimeOverviewData.generatedAt,
+        groups: runtimeOverviewData.copyGroups.groups,
+        runningGroups: runtimeOverviewData.copyGroups.runningGroups,
+      }
+    : null;
+  const positionSnapshotData: PositionSnapshotResponse | null = runtimeOverviewData?.positionSnapshot ?? null;
+  const operationsOverviewData: OperationsOverviewResponse | null = runtimeOverviewData?.operationsOverview ?? null;
+  const accountBalanceMetricsById = buildAccountBalanceMetricsById(runtimeOverviewData?.accountLiveMetrics.accounts ?? []);
+  const positionMetricsById = buildAccountLiveMetricsById(positionSnapshotData?.accounts ?? []);
+  const tradeAnalytics = runtimeOverviewData?.tradeAnalytics;
+  const hydratedCopyGroups = copyGroupSnapshotData?.groups.map((group) => hydrateCopyGroup(group)) ?? [];
+  const copyGroupFeed = copyGroupSnapshotData
+    ? buildCopyGroupActivityFeed(
+        hydratedCopyGroups,
+        Object.fromEntries(
+          copyGroupSnapshotData.groups.map((group) => [group.group.group.groupId, group.activity]),
+        ),
+      )
+    : [];
 
   const dashboardAccounts: DashboardAccountView[] = usingMockData
     ? mockAccounts
     : accounts.map((account) => {
         const numericPnl = account.pnl ? parseFloat(account.pnl) : 0;
+        const liveBalanceMetrics = accountBalanceMetricsById[account.id];
+        const livePositionMetrics = positionMetricsById[account.id];
         return {
           id: account.id,
           name: account.name,
-          accountId: account.tradovateAccountId || account.id.slice(0, 8).toUpperCase(),
+          accountId:
+            account.tradovateAccountId ||
+            account.rithmicAccountId ||
+            account.tradeifyAccountId ||
+            account.id.slice(0, 8).toUpperCase(),
           platform: account.platform,
           accountType: account.accountType as "master" | "follower",
           isConnected: account.isConnected || false,
-          balance: account.balance ? parseFloat(account.balance) : 0,
+          balance:
+            liveBalanceMetrics?.hasLiveBrokerData
+              ? (liveBalanceMetrics.balance ?? 0)
+              : (account.balance ? parseFloat(account.balance) : 0),
           dailyPnl: numericPnl,
-          unrealizedPnl: account.openPositions ? numericPnl * 0.28 : 0,
-          openPositions: account.openPositions || 0,
+          unrealizedPnl:
+            livePositionMetrics?.hasLiveBrokerData
+              ? livePositionMetrics.unrealizedPnl
+              : (account.openPositions ? numericPnl * 0.28 : 0),
+          openPositions:
+            livePositionMetrics?.hasLiveBrokerData
+              ? livePositionMetrics.openPositions
+              : (account.openPositions || 0),
           positionScaling: account.positionScaling || undefined,
           maxContracts: account.maxContracts || undefined,
           blockedTickers: account.blockedTickers || [],
@@ -186,26 +346,103 @@ export default function Dashboard() {
 
   const totalBalance = dashboardAccounts.reduce((sum, account) => sum + account.balance, 0);
   const totalDailyPnl = dashboardAccounts.reduce((sum, account) => sum + account.dailyPnl, 0);
-  const totalUnrealizedPnl = dashboardAccounts.reduce((sum, account) => sum + account.unrealizedPnl, 0);
-  const totalOpenPositions = dashboardAccounts.reduce((sum, account) => sum + account.openPositions, 0);
   const connectedAccountsCount = dashboardAccounts.filter((account) => account.isConnected).length;
   const disconnectedAccountsCount = dashboardAccounts.length - connectedAccountsCount;
 
   const totalBuyingPower = totalBalance * 1.92;
-  const winRate = 72;
-  const riskShield = disconnectedAccountsCount === 0 ? "Protected" : "Attention";
+  const tradeHistorySummary = tradeAnalytics?.summary ?? {
+    total: 0,
+    filled: 0,
+    failed: 0,
+    pending: 0,
+    skippedOrRejected: 0,
+  };
+  const dailyExecutionSeries: TradeHistoryDailySummary[] = tradeAnalytics?.dailyExecutionSeries ?? [];
+  const filledRate = tradeHistorySummary.total > 0
+    ? Math.round((tradeHistorySummary.filled / tradeHistorySummary.total) * 100)
+    : 0;
+  const bestExecutionDay = dailyExecutionSeries.reduce(
+    (best, day) => (day.total > best.total ? day : best),
+    dailyExecutionSeries[0] ?? { label: "N/A", dateKey: "", total: 0, filled: 0, pending: 0, failed: 0 },
+  );
+  const highestFilledDay = dailyExecutionSeries.reduce(
+    (best, day) => (day.filled > best.filled ? day : best),
+    dailyExecutionSeries[0] ?? { label: "N/A", dateKey: "", total: 0, filled: 0, pending: 0, failed: 0 },
+  );
+  const highestFailureDay = dailyExecutionSeries.reduce(
+    (best, day) => (day.failed > best.failed ? day : best),
+    dailyExecutionSeries[0] ?? { label: "N/A", dateKey: "", total: 0, filled: 0, pending: 0, failed: 0 },
+  );
+  const tradeCopyStatus = tradeCopyStatusData?.data;
+  const derivedCopyGroupOverview = summarizeCopyGroups(hydratedCopyGroups);
+  const copyGroupOverview = operationsOverviewData
+    ? {
+        ...derivedCopyGroupOverview,
+        totalGroups: operationsOverviewData.copyGroups.totalGroups,
+        runningGroups: operationsOverviewData.copyGroups.runningGroups,
+        pausedGroups: operationsOverviewData.copyGroups.pausedGroups,
+        degradedGroups: operationsOverviewData.copyGroups.degradedGroups,
+        unhealthyGroups: operationsOverviewData.copyGroups.unhealthyGroups,
+        connectedFollowers: operationsOverviewData.copyGroups.connectedFollowers,
+        totalFollowers: operationsOverviewData.copyGroups.totalFollowers,
+      }
+    : derivedCopyGroupOverview;
+  const copyGroupAlerts = operationsOverviewData
+    ? operationsOverviewData.recentAlerts.slice(0, 8).map((activity) => ({
+        id: activity.eventId,
+        groupId: activity.groupId,
+        groupName: activity.groupName,
+        timestamp: activity.timestamp,
+        message: activity.message,
+        type: (
+          activity.severity === "ERROR"
+            ? "error"
+            : activity.category === "HEALTH" || activity.category === "LIFECYCLE"
+              ? "connection"
+              : "trade"
+        ) as "error" | "connection" | "trade" | "success",
+        severity: activity.severity,
+        category: activity.category,
+      }))
+    : filterCopyGroupActivityFeed(copyGroupFeed, "alerts").slice(0, 8);
+  const totalUnrealizedPnl = positionSnapshotData?.accounts?.reduce(
+    (sum, account) =>
+      sum + account.positions.reduce((positionSum, position) => positionSum + (position.unrealizedPnl ?? 0), 0),
+    0,
+  ) ?? dashboardAccounts.reduce((sum, account) => sum + account.unrealizedPnl, 0);
+  const totalOpenPositions = operationsOverviewData?.positions.totalOpenPositions
+    ?? positionSnapshotData?.summary.totalOpenPositions
+    ?? dashboardAccounts.reduce((sum, account) => sum + account.openPositions, 0);
+  const copySessionLabel = usingMockData
+    ? "Preview state"
+    : tradeCopyStatus?.ready
+      ? "Ready"
+      : tradeCopyStatus?.masterConnected
+        ? "Master linked"
+        : "Not started";
+  const brokerLinkLabel = usingMockData
+    ? "Preview state"
+    : tradeCopyStatus?.masterConnected
+      ? "Master linked"
+      : connectedAccountsCount > 0
+        ? "Accounts linked"
+        : "Awaiting session";
+  const followerReadinessLabel = usingMockData
+    ? "Preview state"
+    : tradeCopyStatus
+      ? `${tradeCopyStatus.connectedFollowerCount}/${tradeCopyStatus.followerCount} ready`
+      : `${connectedAccountsCount}/${dashboardAccounts.length} active`;
+  const riskShield = usingMockData
+    ? "Preview"
+    : tradeCopyStatus?.ready
+      ? "Protected"
+      : tradeCopyStatus?.masterConnected
+        ? "Attention"
+        : "Standby";
 
   const addAccountMutation = useMutation({
     mutationFn: async (accountData: any) => {
-      const response = await fetch("/api/accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(accountData),
-        credentials: "include",
-      });
-      if (!response.ok) {
-        throw new Error("Failed to add account");
-      }
+      const response = await apiRequest("POST", "/api/accounts", accountData);
       return response.json();
     },
     onSuccess: () => {
@@ -213,18 +450,9 @@ export default function Dashboard() {
     },
   });
 
-  const handleAddAccount = async (newAccount: any) => {
+  const handleAddAccount = async (newAccount: AccountCreatePayload) => {
     try {
-      await addAccountMutation.mutateAsync({
-        name: newAccount.name,
-        platform: newAccount.platform,
-        accountType: newAccount.accountType,
-        tradovateUsername: newAccount.username,
-        tradovateAccountId: newAccount.tradovateAccountId,
-        tradovateEnvironment: newAccount.environment,
-        isConnected: false,
-        ...(newAccount.accountType === "follower" && { positionScaling: 100 }),
-      });
+      await addAccountMutation.mutateAsync(newAccount);
 
       toast({
         title: "Account Added",
@@ -236,6 +464,7 @@ export default function Dashboard() {
         description: error instanceof Error ? error.message : "Unknown error",
         variant: "destructive",
       });
+      throw error;
     }
   };
 
@@ -247,38 +476,74 @@ export default function Dashboard() {
     });
   };
 
-  const handleConnect = (accountId: string) => {
+  const connectAccountMutation = useMutation({
+    mutationFn: (accountId: string) => connectAccount(accountId),
+    onSuccess: (_result, accountId) => {
+      queryClient.setQueryData<{ success: boolean; accounts: Account[] } | undefined>(
+        ["/api/accounts"],
+        (current) => updateAccountConnectionInQueryData(current, accountId, true),
+      );
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
+    },
+  });
+
+  const disconnectAccountMutation = useMutation({
+    mutationFn: (accountId: string) => disconnectAccount(accountId),
+    onSuccess: (_result, accountId) => {
+      queryClient.setQueryData<{ success: boolean; accounts: Account[] } | undefined>(
+        ["/api/accounts"],
+        (current) => updateAccountConnectionInQueryData(current, accountId, false),
+      );
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
+    },
+  });
+
+  const handleConnect = async (accountId: string) => {
     const account = accounts.find((item) => item.id === accountId);
-    toast({
-      title: "Account Connected",
-      description: `${account?.name} is now connected and will copy trades`,
-    });
+
+    try {
+      await connectAccountMutation.mutateAsync(accountId);
+      toast({
+        title: "Account Connected",
+        description: `${account?.name} is now connected and will copy trades`,
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to Connect Account",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleDisconnectClick = (accountId: string, accountName: string) => {
     setDisconnectAlert({ open: true, accountId, accountName });
   };
 
-  const handleDisconnectConfirm = () => {
+  const handleDisconnectConfirm = async () => {
     const account = accounts.find((item) => item.id === disconnectAlert.accountId);
-    toast({
-      title: "Account Disconnected",
-      description: `${account?.name} has been disconnected`,
-      variant: "destructive",
-    });
-    setDisconnectAlert({ open: false, accountId: "", accountName: "" });
+
+    try {
+      await disconnectAccountMutation.mutateAsync(disconnectAlert.accountId);
+      toast({
+        title: "Account Disconnected",
+        description: `${account?.name} has been disconnected`,
+        variant: "destructive",
+      });
+      setDisconnectAlert({ open: false, accountId: "", accountName: "" });
+    } catch (error) {
+      toast({
+        title: "Failed to Disconnect Account",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
   };
 
+  const livePositions = toDashboardPositionRows(positionSnapshotData?.accounts ?? []);
   const positions = usingMockData
     ? mockPositions
-    : dashboardAccounts.map((account, index) => ({
-        symbol: ["NQU6", "ESU6", "CLV6"][index % 3],
-        side: account.openPositions > 0 ? "Long" : "Flat",
-        size: account.openPositions,
-        avg: account.openPositions > 0 ? ["19,842.25", "6,402.75", "71.48"][index % 3] : "-",
-        account: account.name,
-        pnl: account.unrealizedPnl,
-      }));
+    : livePositions;
 
   return (
     <div className="space-y-6 pb-8">
@@ -317,7 +582,7 @@ export default function Dashboard() {
                 </div>
                 <div className="mt-4 flex items-center gap-2 text-white">
                   <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(74,222,128,0.9)]" />
-                  <span className="font-medium">{connectedAccountsCount > 0 ? "Stable" : "Awaiting session"}</span>
+                  <span className="font-medium">{brokerLinkLabel}</span>
                 </div>
               </div>
 
@@ -347,7 +612,7 @@ export default function Dashboard() {
                 <div className={`mt-4 text-2xl font-semibold ${disconnectedAccountsCount === 0 ? "text-emerald-300" : "text-amber-300"}`}>
                   {riskShield}
                 </div>
-                <div className="mt-1 text-xs text-zinc-500">status based on connected follower readiness</div>
+                <div className="mt-1 text-xs text-zinc-500">status based on live copy-session readiness</div>
               </div>
             </div>
           </div>
@@ -417,35 +682,43 @@ export default function Dashboard() {
           <div className="mb-5 flex items-center justify-between gap-4">
             <div>
               <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Performance Curve</p>
-              <h2 className="mt-2 text-2xl font-semibold text-white">Equity and intraday P&amp;L</h2>
+              <h2 className="mt-2 text-2xl font-semibold text-white">Execution throughput and fill quality</h2>
             </div>
             <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-sm text-emerald-300">
-              +{formatCurrency(mockPnlSeries[mockPnlSeries.length - 1].pnl)} week close
+              {usingMockData
+                ? `${mockPnlSeries[mockPnlSeries.length - 1].pnl} preview trades`
+                : `${tradeHistorySummary.total} recent lifecycle events`}
             </div>
           </div>
 
           <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
             <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Win Rate</p>
-              <p className="mt-2 text-xl font-semibold text-white">{winRate}%</p>
+              <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Fill Rate</p>
+              <p className="mt-2 text-xl font-semibold text-white">{usingMockData ? "72%" : `${filledRate}%`}</p>
             </div>
             <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Best Day</p>
-              <p className="mt-2 text-xl font-semibold text-emerald-300">{formatCurrency(1180)}</p>
+              <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Busiest Day</p>
+              <p className="mt-2 text-xl font-semibold text-emerald-300">
+                {usingMockData ? "Thu" : `${bestExecutionDay.label} (${bestExecutionDay.total})`}
+              </p>
             </div>
             <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Worst Day</p>
-              <p className="mt-2 text-xl font-semibold text-rose-300">{formatCurrency(-132.85)}</p>
+              <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Most Failures</p>
+              <p className="mt-2 text-xl font-semibold text-rose-300">
+                {usingMockData ? "Tue" : `${highestFailureDay.label} (${highestFailureDay.failed})`}
+              </p>
             </div>
             <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Equity Close</p>
-              <p className="mt-2 text-xl font-semibold text-cyan-300">{formatCurrency(mockPnlSeries[mockPnlSeries.length - 1].equity)}</p>
+              <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Best Fill Day</p>
+              <p className="mt-2 text-xl font-semibold text-cyan-300">
+                {usingMockData ? "Fri" : `${highestFilledDay.label} (${highestFilledDay.filled})`}
+              </p>
             </div>
           </div>
 
           <div className="h-[360px] rounded-[26px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.01))] p-4">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={mockPnlSeries}>
+              <AreaChart data={usingMockData ? mockPnlSeries : dailyExecutionSeries}>
                 <defs>
                   <linearGradient id="equityGlow" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.28} />
@@ -458,7 +731,7 @@ export default function Dashboard() {
                 </defs>
                 <CartesianGrid stroke="rgba(255,255,255,0.07)" vertical={false} />
                 <XAxis dataKey="label" stroke="#6b7280" tickLine={false} axisLine={false} />
-                <YAxis stroke="#6b7280" tickLine={false} axisLine={false} tickFormatter={(value) => `$${Math.round(value / 1000)}k`} />
+                <YAxis stroke="#6b7280" tickLine={false} axisLine={false} />
                 <Tooltip
                   contentStyle={{
                     background: "rgba(7, 10, 16, 0.97)",
@@ -468,8 +741,20 @@ export default function Dashboard() {
                     boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
                   }}
                 />
-                <Area type="monotone" dataKey="equity" stroke="#38bdf8" strokeWidth={2.5} fill="url(#equityGlow)" />
-                <Line type="monotone" dataKey="pnl" stroke="#4ade80" strokeWidth={2.2} dot={{ r: 3, fill: "#4ade80" }} />
+                <Area
+                  type="monotone"
+                  dataKey={usingMockData ? "equity" : "total"}
+                  stroke="#38bdf8"
+                  strokeWidth={2.5}
+                  fill="url(#equityGlow)"
+                />
+                <Line
+                  type="monotone"
+                  dataKey={usingMockData ? "pnl" : "filled"}
+                  stroke="#4ade80"
+                  strokeWidth={2.2}
+                  dot={{ r: 3, fill: "#4ade80" }}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -485,11 +770,37 @@ export default function Dashboard() {
           </div>
 
           <div className="space-y-3">
-            {[
-              { label: "Broker session", value: connectedAccountsCount > 0 ? "Connected" : "Pending", positive: connectedAccountsCount > 0 },
-              { label: "Copy engine", value: usingMockData ? "Preview state" : "Armed", positive: true },
-              { label: "Follower readiness", value: `${connectedAccountsCount}/${dashboardAccounts.length} active`, positive: connectedAccountsCount > 0 },
-              { label: "Risk routing", value: disconnectedAccountsCount === 0 ? "Nominal" : "Needs review", positive: disconnectedAccountsCount === 0 },
+              {[
+                {
+                  label: "Broker session",
+                  value: brokerLinkLabel,
+                  positive: usingMockData ? true : !!tradeCopyStatus?.masterConnected,
+                },
+                {
+                  label: "Copy engine",
+                  value: copySessionLabel,
+                  positive: usingMockData ? true : !!tradeCopyStatus?.ready,
+                },
+                {
+                  label: "Follower readiness",
+                  value: followerReadinessLabel,
+                  positive: usingMockData
+                    ? true
+                    : !!tradeCopyStatus &&
+                      tradeCopyStatus.followerCount > 0 &&
+                      tradeCopyStatus.connectedFollowerCount === tradeCopyStatus.followerCount,
+                },
+                {
+                  label: "Risk routing",
+                  value: usingMockData
+                    ? "Preview state"
+                    : tradeCopyStatus?.ready
+                      ? "Nominal"
+                      : tradeCopyStatus?.masterConnected
+                        ? "Needs review"
+                        : "Standby",
+                  positive: usingMockData ? true : !!tradeCopyStatus?.ready,
+                },
             ].map((row) => (
               <div key={row.label} className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-4">
                 <div>
@@ -618,6 +929,7 @@ export default function Dashboard() {
                           size="sm"
                           className="border-emerald-400/20 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20"
                           onClick={() => handleConnect(account.id)}
+                          disabled={account.isConnected}
                         >
                           Connect
                         </Button>
@@ -626,6 +938,7 @@ export default function Dashboard() {
                           variant="outline"
                           className="border-white/10 bg-white/[0.04] text-zinc-300"
                           onClick={() => handleDisconnectClick(account.id, account.name)}
+                          disabled={!account.isConnected}
                         >
                           Disconnect
                         </Button>
@@ -667,7 +980,11 @@ export default function Dashboard() {
             </div>
 
             <div className="space-y-3">
-              {positions.map((position) => (
+              {positions.length === 0 ? (
+                <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4 text-sm text-zinc-400">
+                  No live positions are available yet. Connected Tradovate and Tradeify accounts will appear here automatically.
+                </div>
+              ) : positions.map((position) => (
                 <div key={`${position.account}-${position.symbol}`} className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -703,22 +1020,48 @@ export default function Dashboard() {
           <Card className="border-white/10 bg-[linear-gradient(180deg,rgba(10,12,18,0.98),rgba(8,10,16,0.98))] p-5 shadow-xl shadow-black/25">
             <div className="mb-5 flex items-center justify-between">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">System Notes</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">What this pass prioritizes</h2>
+                <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Copy Group Pulse</p>
+                <h2 className="mt-2 text-2xl font-semibold text-white">Runtime health and alert stream</h2>
               </div>
               <Layers3 className="h-5 w-5 text-zinc-500" />
             </div>
 
-            <div className="space-y-3 text-sm leading-6 text-zinc-400">
+            <div className="grid grid-cols-2 gap-3">
               <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-                The top-to-bottom structure now reads like a professional control surface instead of a starter dashboard.
+                <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Running</p>
+                <p className="mt-2 text-xl font-semibold text-white">{copyGroupOverview.runningGroups}</p>
               </div>
               <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-                The account cards, metrics, and chart are now all speaking the same darker, higher-end visual language.
+                <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Alerts</p>
+                <p className="mt-2 text-xl font-semibold text-amber-300">
+                  {copyGroupOverview.degradedGroups + copyGroupOverview.unhealthyGroups}
+                </p>
               </div>
               <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-                Live accounts will still flow into this layout automatically, while mock data keeps the UI design moving now.
+                <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Followers Ready</p>
+                <p className="mt-2 text-xl font-semibold text-white">
+                  {copyGroupOverview.connectedFollowers}/{copyGroupOverview.totalFollowers}
+                </p>
               </div>
+              <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Avg Dispatch</p>
+                <p className="mt-2 text-xl font-semibold text-cyan-300">
+                  {copyGroupOverview.avgDispatchLatencyMs === null
+                    ? "No data"
+                    : `${copyGroupOverview.avgDispatchLatencyMs.toFixed(1)} ms`}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <LiveActivityFeed
+                activities={copyGroupAlerts.map((activity) => ({
+                  id: activity.id,
+                  timestamp: formatActivityTimestamp(activity.timestamp),
+                  message: `${activity.groupName}: ${activity.message}`,
+                  type: activity.type,
+                }))}
+              />
             </div>
           </Card>
         </section>

@@ -24,23 +24,22 @@ export default function Auth() {
 
   const loginMutation = useMutation({
     mutationFn: async (data: { username: string; password: string }) => {
-      const response = await apiRequest("POST", "/api/auth/login", data);
-      const result = await response.json();
-      return result;
+      const loginResponse = await apiRequest("POST", "/api/auth/login", data);
+      await loginResponse.json();
+
+      const authResponse = await apiRequest("GET", "/api/auth/me");
+      return authResponse.json();
     },
     onSuccess: async (data) => {
-      // Set user data directly in cache to avoid race condition
       queryClient.setQueryData(["/api/auth/me"], data);
       toast({
         title: "Login successful",
         description: "Welcome back!",
       });
-      // Small delay to ensure query cache is updated
-      setTimeout(() => {
-        setLocation("/dashboard");
-      }, 100);
+      setLocation("/dashboard");
     },
     onError: (error: Error) => {
+      queryClient.setQueryData(["/api/auth/me"], null);
       toast({
         title: "Login failed",
         description: error.message,

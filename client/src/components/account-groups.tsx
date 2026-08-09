@@ -48,6 +48,8 @@ const NULL_FIELDS = {
   rithmicAccountId: null,
   rithmicPassword: null,
   rithmicEnvironment: null,
+  rithmicSystemName: null,
+  rithmicExchange: null,
   apiKey: null,
   apiSecret: null,
   copySizingMode: "MULTIPLIER",

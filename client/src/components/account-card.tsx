@@ -9,6 +9,11 @@ interface AccountCardProps {
   platform: string;
   accountType: "master" | "follower";
   isConnected: boolean;
+  sessionStatusLabel?: string;
+  sessionStatusTone?: "neutral" | "ok" | "warn";
+  hasLiveBrokerData?: boolean;
+  liveBrokerStatus?: "LIVE" | "DISCONNECTED" | "UNAVAILABLE" | "ERROR" | "NONE";
+  liveBrokerReason?: string;
   balance: number;
   openPositions: number;
   pnl: number;
@@ -27,6 +32,11 @@ export function AccountCard({
   platform,
   accountType,
   isConnected,
+  sessionStatusLabel,
+  sessionStatusTone = "neutral",
+  hasLiveBrokerData = false,
+  liveBrokerStatus = "NONE",
+  liveBrokerReason,
   balance,
   openPositions,
   pnl,
@@ -41,6 +51,12 @@ export function AccountCard({
   const isPnlPositive = pnl >= 0;
   const hasRestrictions = maxContracts !== undefined || blockedTickers.length > 0;
   const isUsingGlobalSettings = riskMode === 'global';
+  const sessionToneClass =
+    sessionStatusTone === "ok"
+      ? "text-emerald-400"
+      : sessionStatusTone === "warn"
+        ? "text-amber-400"
+        : "text-zinc-500";
 
   return (
     <Card className="card-3d shimmer rounded-[1.4rem] p-5" data-testid={`card-account-${id}`}>
@@ -63,27 +79,45 @@ export function AccountCard({
           </div>
           <div className="flex items-center gap-1">
             <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.7)]' : 'bg-rose-400 shadow-[0_0_14px_rgba(251,113,133,0.35)]'}`} />
-            <span className="text-xs text-muted-foreground">
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </span>
+            <div className="text-right">
+              <div className="text-xs text-muted-foreground">
+                {isConnected ? 'Connected' : 'Disconnected'}
+              </div>
+              {isConnected && !hasLiveBrokerData && (
+                <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                  Link verified
+                </div>
+              )}
+              {sessionStatusLabel && (
+                <div className={`text-[10px] uppercase tracking-[0.12em] ${sessionToneClass}`}>
+                  {sessionStatusLabel}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <p className="text-xs text-muted-foreground">Balance</p>
+            <p className="text-xs text-muted-foreground">
+              {hasLiveBrokerData ? "Balance" : "Saved Balance"}
+            </p>
             <p className="mt-1 text-base font-semibold tabular-nums text-white" data-testid={`text-balance-${id}`}>
               ${balance.toLocaleString()}
             </p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Positions</p>
+            <p className="text-xs text-muted-foreground">
+              {hasLiveBrokerData ? "Positions" : "Saved Positions"}
+            </p>
             <p className="mt-1 text-base font-semibold tabular-nums text-white" data-testid={`text-positions-${id}`}>
               {openPositions}
             </p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">P&L</p>
+            <p className="text-xs text-muted-foreground">
+              {hasLiveBrokerData ? "P&L" : "Saved P&L"}
+            </p>
             <p className={`mt-1 text-base font-semibold tabular-nums ${isPnlPositive ? 'text-chart-2' : 'text-destructive'}`} data-testid={`text-pnl-${id}`}>
               {isPnlPositive ? '+' : ''}${pnl.toLocaleString()}
             </p>
@@ -97,6 +131,16 @@ export function AccountCard({
             </div>
           )}
         </div>
+
+        {isConnected && !hasLiveBrokerData && (
+          <div className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-[11px] leading-5 text-zinc-400">
+            {liveBrokerReason
+              ? liveBrokerReason
+              : liveBrokerStatus === "DISCONNECTED"
+                ? "Broker link is verified, but the live position session is disconnected."
+                : "Broker link is verified. Balance, P&amp;L, and positions are still showing saved placeholder values."}
+          </div>
+        )}
 
         {hasRestrictions && (
           <div className="flex flex-wrap gap-2 border-t pt-3">

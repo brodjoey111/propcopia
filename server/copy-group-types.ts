@@ -84,6 +84,31 @@ export interface CopyGroupRuntimeState {
   lastErrorMessage?: string;
 }
 
+export type CopyGroupActivitySeverity =
+  | 'INFO'
+  | 'WARN'
+  | 'ERROR';
+
+export type CopyGroupActivityCategory =
+  | 'LIFECYCLE'
+  | 'TRADE'
+  | 'RULE'
+  | 'INTENT'
+  | 'EXECUTION'
+  | 'HEALTH';
+
+export interface CopyGroupActivity {
+  eventId: string;
+  groupId: string;
+  timestamp: string;
+  severity: CopyGroupActivitySeverity;
+  category: CopyGroupActivityCategory;
+  message: string;
+  intentId?: string;
+  followerAccountId?: string;
+  details?: Record<string, string | number | boolean | null>;
+}
+
 export interface CopyGroupStatistics {
   groupId: string;
   tradesObserved: number;
@@ -105,6 +130,18 @@ export interface CopyGroupStatistics {
   p95DispatchLatencyMs: number;
   p99DispatchLatencyMs: number;
   lastUpdatedAt: string;
+}
+
+export interface CopyGroupObservability {
+  groupId: string;
+  recentActivity: CopyGroupActivity[];
+  totalEvents: number;
+  infoEventCount: number;
+  warningEventCount: number;
+  errorEventCount: number;
+  lastEventAt?: string;
+  lastErrorAt?: string;
+  lastErrorMessage?: string;
 }
 
 export interface CopyGroupHealth {

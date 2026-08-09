@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { EventEmitter } from 'events';
+import { propCopiaEventBus } from './event-bus';
 import type { TradeIntent, TradeIntentStatus } from './trade-intent-types';
 
 export type { TradeIntent, TradeIntentStatus } from './trade-intent-types';
@@ -29,6 +30,9 @@ export class TradeIntentManager extends EventEmitter {
 
     this.intents.set(intent.intentId, intent);
     this.emit('intentCreated', intent);
+    propCopiaEventBus.publish('intent.created', {
+      intent,
+    });
     return intent;
   }
 
@@ -91,6 +95,10 @@ export class TradeIntentManager extends EventEmitter {
 
     this.intents.set(intentId, updatedIntent);
     this.emit('intentUpdated', updatedIntent);
+    propCopiaEventBus.publish('intent.updated', {
+      intent: updatedIntent,
+      previousStatus: intent.status,
+    });
     return updatedIntent;
   }
 }

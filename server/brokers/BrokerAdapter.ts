@@ -1,4 +1,5 @@
 import type {
+  ExecutionFill,
   BrokerAccount,
   BrokerOrderRequest,
   BrokerOrderResult,
@@ -28,4 +29,18 @@ export interface BrokerAdapter {
   cancelOrder(brokerOrderId: string, accountId: string): Promise<void>;
   getAccounts(): Promise<BrokerAccount[]>;
   getPositions(accountId?: string): Promise<BrokerPosition[]>;
+}
+
+export interface BrokerExecutionFillEvent extends ExecutionFill {
+  accountId: string;
+  brokerKey: string;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+}
+
+export interface BrokerExecutionEventStream {
+  subscribeToExecutionFills(
+    accountId: string,
+    onFill: (fill: BrokerExecutionFillEvent) => void,
+  ): Promise<boolean>;
 }
