@@ -1,10 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { useUser } from "@/contexts/user-context";
 import {
   LIVE_QUERY_POLL_MS,
   LIVE_QUERY_STALE_MS,
 } from "@/lib/live-query-config";
-import type { NotificationsResponse } from "@/lib/notifications";
+import {
+  applyNotificationPreferences,
+  type NotificationsResponse,
+} from "@/lib/notifications";
 
 export const notificationsQueryKey = ["/api/notifications"] as const;
 
@@ -26,10 +30,30 @@ async function fetchNotifications(): Promise<NotificationsResponse | null> {
 }
 
 export function useNotifications() {
-  return useQuery<NotificationsResponse | null>({
+  const { user } = useUser();
+
+  return useQuery<NotificationsResponse | null, Error, NotificationsResponse | null>({
     queryKey: notificationsQueryKey,
     queryFn: fetchNotifications,
     refetchInterval: LIVE_QUERY_POLL_MS,
+    refetchIntervalInBackground: false,
     staleTime: LIVE_QUERY_STALE_MS,
+    select: (data) => {
+      if (!data) {
+        return null;
+      }
+
+      const notifications = applyNotificationPreferences(data.notifications, {
+        notifyTrades: user?.notifyTrades,
+        notifyErrors: user?.notifyErrors,
+        notifyConnection: user?.notifyConnection,
+      });
+
+      return {
+        ...data,
+        unreadEstimate: notifications.length,
+        notifications,
+      };
+    },
   });
 }

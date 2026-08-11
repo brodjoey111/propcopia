@@ -34,6 +34,8 @@ export interface ExecutionFill {
   fillId?: string;
   brokerOrderId?: string;
   filledQuantity?: number;
+  cumulativeFilledQuantity?: number;
+  remainingQuantity?: number;
   averageFillPrice?: number;
 }
 
@@ -98,6 +100,8 @@ export interface ExecutionRecord {
   nextRetryAt?: string;
   brokerOrderId?: string;
   acknowledgedAt?: string;
+  partialFillCount?: number;
+  remainingQuantity?: number;
   filledAt?: string;
   fillId?: string;
   filledQuantity?: number;

@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { RithmicAttribution } from "@/components/rithmic-attribution";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
@@ -437,6 +438,7 @@ export function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
                   <a href="mailto:rapi@rithmic.com" className="text-primary hover:underline">rapi@rithmic.com</a>{' '}
                   for API access credentials.
                 </p>
+                <RithmicAttribution compact />
               </>
             ) : (
               <div className="space-y-2">

@@ -30,6 +30,14 @@ export interface RithmicAccount {
   currency?: string;
 }
 
+export interface RithmicLoginMetadata {
+  fcmId: string;
+  ibId: string;
+  uniqueUserId: string;
+  timestamp: string;
+  timezone: string;
+}
+
 export interface RithmicOrderFillEvent {
   accountId: string;
   symbol: string;
@@ -104,6 +112,7 @@ const FIELD = {
   ACCOUNT_CURRENCY: 154383,
   USER_TYPE:        154036,
   MANUAL_OR_AUTO:   154710,  // OrderPlacement enum (1=MANUAL, 2=AUTO)
+  UNIQUE_USER_ID:   153428,
 
   // response fields
   RP_CODE:          132766,  // rp_code (repeated string, "0" = success)
@@ -846,7 +855,13 @@ export class RithmicAPI extends EventEmitter {
     uri: string,
     infraType: number,
     onAuthenticated?: (ws: WebSocket, fields: ProtoFields) => void,
-  ): Promise<{ success: boolean; message: string; fcmId?: string; ibId?: string }> {
+  ): Promise<{
+    success: boolean;
+    message: string;
+    fcmId?: string;
+    ibId?: string;
+    authData?: RithmicLoginMetadata;
+  }> {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
         ws.terminate();
@@ -870,6 +885,9 @@ export class RithmicAPI extends EventEmitter {
           loginDone = true;
           const fcmId = fields.strings.get(FIELD.FCM_ID)?.[0] ?? '';
           const ibId  = fields.strings.get(FIELD.IB_ID)?.[0]  ?? '';
+          const uniqueUserId = fields.strings.get(FIELD.UNIQUE_USER_ID)?.[0] ?? '';
+          const timestamp = new Date().toISOString();
+          const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
           console.log(`[RithmicAPI] Login OK — fcm_id=${fcmId} ib_id=${ibId}`);
 
           if (infraType === INFRA_TYPE.TICKER_PLANT) {
@@ -880,7 +898,19 @@ export class RithmicAPI extends EventEmitter {
           }
 
           clearTimeout(timeout);
-          resolve({ success: true, message: 'Authenticated with Rithmic', fcmId, ibId });
+          resolve({
+            success: true,
+            message: 'Authenticated with Rithmic',
+            fcmId,
+            ibId,
+            authData: {
+              fcmId,
+              ibId,
+              uniqueUserId,
+              timestamp,
+              timezone,
+            },
+          });
 
           if (onAuthenticated) onAuthenticated(ws, fields);
         } else if (templateId === TEMPLATE.REJECT) {
@@ -910,7 +940,13 @@ export class RithmicAPI extends EventEmitter {
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
-  async authenticate(): Promise<{ success: boolean; message: string }> {
+  async authenticate(): Promise<{
+    success: boolean;
+    message: string;
+    fcmId?: string;
+    ibId?: string;
+    authData?: RithmicLoginMetadata;
+  }> {
     const serverUri = SERVERS[this.credentials.environment];
 
     if (!serverUri) {
@@ -929,12 +965,22 @@ export class RithmicAPI extends EventEmitter {
    
   }
 
-  async testConnection(): Promise<{ success: boolean; message: string; data?: RithmicAccount[] }> {
+  async testConnection(): Promise<{
+    success: boolean;
+    message: string;
+    data?: RithmicAccount[];
+    authData?: RithmicLoginMetadata;
+  }> {
     const authResult = await this.authenticate();
     if (!authResult.success) return authResult;
     try {
       const accounts = await this.fetchAccountList();
-      return { success: true, message: 'Successfully connected to Rithmic', data: accounts };
+      return {
+        success: true,
+        message: 'Successfully connected to Rithmic',
+        data: accounts,
+        authData: authResult.authData,
+      };
     } catch (error) {
       return {
         success: false,

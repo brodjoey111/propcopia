@@ -18,13 +18,20 @@ export default function TestConnection() {
   const [formData, setFormData] = useState({
     username: "",
     password: "",
-    environment: "demo",
+    systemName: "Rithmic Test",
+    environment: "test",
   });
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<{
     success: boolean;
     message: string;
-    authData?: any;
+    authData?: {
+      uniqueUserId: string;
+      fcmId: string;
+      ibId: string;
+      timestamp: string;
+      timezone: string;
+    };
     accounts?: any;
   } | null>(null);
 
@@ -56,7 +63,7 @@ export default function TestConnection() {
         <p className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground">Broker access</p>
         <h1 className="mt-2 text-3xl font-semibold text-white">Login to Trading Platform</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Connect to Tradovate or NinjaTrader with just your username and password
+          Test your Rithmic login and copy the exact login details needed for conformance
         </p>
       </div>
 
@@ -76,12 +83,29 @@ export default function TestConnection() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="demo">Demo</SelectItem>
+                  <SelectItem value="test">Test</SelectItem>
                   <SelectItem value="live">Live</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Use Demo for testing (no real money)
+                Pick Test for paper credentials or Live for production credentials
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="system-name">System Name</Label>
+              <Input
+                id="system-name"
+                type="text"
+                placeholder="Rithmic Test"
+                value={formData.systemName}
+                onChange={(e) =>
+                  setFormData({ ...formData, systemName: e.target.value })
+                }
+                data-testid="input-system-name"
+              />
+              <p className="text-xs text-muted-foreground">
+                Use the exact system name your broker gave you
               </p>
             </div>
 
@@ -162,15 +186,27 @@ export default function TestConnection() {
 
                 {result.authData && (
                   <div className="space-y-2">
-                    <p className="text-sm font-medium">Authentication Details:</p>
+                    <p className="text-sm font-medium">Copy These Into Your Email:</p>
                     <div className="rounded-md border p-3 text-xs">
                       <p>
-                        <span className="text-muted-foreground">User ID:</span>{" "}
-                        {result.authData.userId}
+                        <span className="text-muted-foreground">unique_user_id:</span>{" "}
+                        {result.authData.uniqueUserId || "Not returned"}
                       </p>
                       <p className="mt-1">
-                        <span className="text-muted-foreground">Token Expires:</span>{" "}
-                        {new Date(result.authData.tokenExpiration).toLocaleString()}
+                        <span className="text-muted-foreground">fcm_id:</span>{" "}
+                        {result.authData.fcmId || "Not returned"}
+                      </p>
+                      <p className="mt-1">
+                        <span className="text-muted-foreground">ib_id:</span>{" "}
+                        {result.authData.ibId || "Not returned"}
+                      </p>
+                      <p className="mt-1">
+                        <span className="text-muted-foreground">timestamp:</span>{" "}
+                        {new Date(result.authData.timestamp).toLocaleString()}
+                      </p>
+                      <p className="mt-1">
+                        <span className="text-muted-foreground">timezone:</span>{" "}
+                        {result.authData.timezone}
                       </p>
                     </div>
                   </div>
@@ -203,19 +239,19 @@ export default function TestConnection() {
             <ul className="space-y-2 text-sm">
               <li className="flex items-start gap-2">
                 <span className="text-muted-foreground">•</span>
-                <span>Tradovate account (Demo or Live with $1,000+ equity)</span>
+                <span>Your Rithmic username and password</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-muted-foreground">•</span>
-                <span>Username/Password credentials (not Google sign-in)</span>
+                <span>Your exact Rithmic system name</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-muted-foreground">•</span>
-                <span>API Access Add-On subscription (for Live trading)</span>
+                <span>A successful login so the page can show unique_user_id, fcm_id, and ib_id</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-muted-foreground">•</span>
-                <span>Generated API Key and CID from Application Settings</span>
+                <span>Copy the values into your follow-up email to Rithmic</span>
               </li>
             </ul>
           </Card>

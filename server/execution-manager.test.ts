@@ -19,6 +19,7 @@ import type {
   ExecutionAcknowledgedEvent,
   ExecutionFailedEvent,
   ExecutionFilledEvent,
+  ExecutionPartialFillEvent,
   ExecutionQueuedEvent,
   ExecutionSentEvent,
 } from './event-bus-types';
@@ -134,14 +135,14 @@ class FakeBrokerAdapter implements BrokerAdapter {
   }
 }
 
-function createReadyIntent(manager: TradeIntentManager, suffix: string) {
+function createReadyIntent(manager: TradeIntentManager, suffix: string, quantity = 1) {
   const intent = manager.createIntent({
     masterAccountId: `master-${suffix}`,
     masterFillId: `fill-${suffix}`,
     followerAccountId: `follower-${suffix}`,
     symbol: 'ESZ6',
     side: 'BUY',
-    quantity: 1,
+    quantity,
   });
 
   manager.markValidated(intent.intentId);
@@ -176,6 +177,7 @@ function createHarness(options?: ExecutionManagerOptions) {
   const sentEvents: ExecutionSentEvent[] = [];
   const failedEvents: ExecutionFailedEvent[] = [];
   const acknowledgedEvents: ExecutionAcknowledgedEvent[] = [];
+  const partialFillEvents: ExecutionPartialFillEvent[] = [];
   const filledEvents: ExecutionFilledEvent[] = [];
 
   propCopiaEventBus.subscribe('execution.queued', (event) => {
@@ -190,6 +192,9 @@ function createHarness(options?: ExecutionManagerOptions) {
   propCopiaEventBus.subscribe('execution.acknowledged', (event) => {
     acknowledgedEvents.push(event);
   });
+  propCopiaEventBus.subscribe('execution.partial_fill', (event) => {
+    partialFillEvents.push(event);
+  });
   propCopiaEventBus.subscribe('execution.filled', (event) => {
     filledEvents.push(event);
   });
@@ -202,6 +207,7 @@ function createHarness(options?: ExecutionManagerOptions) {
     sentEvents,
     failedEvents,
     acknowledgedEvents,
+    partialFillEvents,
     filledEvents,
     cleanup() {
       propCopiaEventBus.removeAllListeners();
@@ -808,6 +814,104 @@ test('ExecutionManager', { concurrency: false }, async (t) => {
     assert.equal(harness.acknowledgedEvents.length, 1);
     assert.equal(harness.filledEvents.length, 1);
     assert.equal(harness.filledEvents[0].fillId, 'fill-follow-1');
+  });
+
+  await t.test('recordPartialFill auto-acknowledges SENT intents and keeps the intent open', async () => {
+    const harness = createHarness();
+    t.after(harness.cleanup);
+
+    harness.adapter.queueAccepted({ brokerOrderId: 'broker-order-partial' });
+    const intent = createReadyIntent(harness.tradeIntentManager, 'partial-intent', 2);
+
+    await harness.executionManager.enqueue(createContext(intent));
+    await waitForStatus(harness.executionManager, intent.intentId, 'COMPLETED');
+
+    const record = harness.executionManager.recordPartialFill(intent.intentId, {
+      filledAt: '2026-08-04T12:00:04.000Z',
+      fillId: 'fill-follow-partial-1',
+      filledQuantity: 1,
+      averageFillPrice: 6401.25,
+    });
+
+    assert.equal(harness.tradeIntentManager.getIntent(intent.intentId)?.status, 'ACKNOWLEDGED');
+    assert.equal(record.partialFillCount, 1);
+    assert.equal(record.filledQuantity, 1);
+    assert.equal(record.remainingQuantity, 1);
+    assert.equal(harness.acknowledgedEvents.length, 1);
+    assert.equal(harness.partialFillEvents.length, 1);
+    assert.equal(harness.partialFillEvents[0].cumulativeFilledQuantity, 1);
+  });
+
+  await t.test('findOpenExecutionForFill prefers an exact broker order match across multiple open executions', async () => {
+    const harness = createHarness({ maxConcurrency: 2 });
+    t.after(harness.cleanup);
+
+    harness.adapter.queueAccepted({ brokerOrderId: 'broker-order-first' });
+    harness.adapter.queueAccepted({ brokerOrderId: 'broker-order-second' });
+
+    const firstIntent = createReadyIntent(harness.tradeIntentManager, 'fill-match-first', 2);
+    const secondIntent = createReadyIntent(harness.tradeIntentManager, 'fill-match-second', 2);
+    const firstContext = {
+      ...createContext(firstIntent),
+      request: {
+        ...createContext(firstIntent).request,
+        accountId: 'shared-fill-account',
+      },
+    };
+    const secondContext = {
+      ...createContext(secondIntent),
+      request: {
+        ...createContext(secondIntent).request,
+        accountId: 'shared-fill-account',
+      },
+    };
+
+    await harness.executionManager.enqueue(firstContext);
+    await harness.executionManager.enqueue(secondContext);
+    await waitForStatus(harness.executionManager, firstIntent.intentId, 'COMPLETED');
+    await waitForStatus(harness.executionManager, secondIntent.intentId, 'COMPLETED');
+
+    const candidate = harness.executionManager.findOpenExecutionForFill({
+      accountId: 'shared-fill-account',
+      brokerKey: 'fake-broker',
+      symbol: secondIntent.symbol,
+      side: secondIntent.side,
+      brokerOrderId: 'broker-order-first',
+      fillId: 'fill-match-1',
+      filledAt: '2026-08-11T14:12:00.000Z',
+      filledQuantity: 1,
+    });
+
+    assert.equal(candidate?.intentId, firstIntent.intentId);
+  });
+
+  await t.test('findOpenExecutionForFill falls back to the most recent matching open execution', async () => {
+    const harness = createHarness();
+    t.after(harness.cleanup);
+
+    harness.adapter.queueAccepted({ brokerOrderId: 'broker-order-older' });
+    harness.adapter.queueAccepted({ brokerOrderId: 'broker-order-newer' });
+
+    const firstIntent = createReadyIntent(harness.tradeIntentManager, 'fill-fallback-first', 2);
+    const secondIntent = createReadyIntent(harness.tradeIntentManager, 'fill-fallback-second', 2);
+
+    await harness.executionManager.enqueue(createContext(firstIntent));
+    await waitForStatus(harness.executionManager, firstIntent.intentId, 'COMPLETED');
+
+    await harness.executionManager.enqueue(createContext(secondIntent));
+    await waitForStatus(harness.executionManager, secondIntent.intentId, 'COMPLETED');
+
+    const candidate = harness.executionManager.findOpenExecutionForFill({
+      accountId: secondIntent.followerAccountId,
+      brokerKey: 'fake-broker',
+      symbol: secondIntent.symbol,
+      side: secondIntent.side,
+      fillId: 'fill-fallback-1',
+      filledAt: '2026-08-11T14:13:00.000Z',
+      filledQuantity: 1,
+    });
+
+    assert.equal(candidate?.intentId, secondIntent.intentId);
   });
 
   await t.test('waitForExecution resolves immediately for already COMPLETED execution', async () => {

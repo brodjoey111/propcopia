@@ -8,6 +8,8 @@ interface ActivityEntry {
   timestamp: string;
   message: string;
   type: "trade" | "connection" | "error" | "success";
+  relatedCount?: number;
+  relatedMessages?: string[];
 }
 
 interface LiveActivityFeedProps {
@@ -53,6 +55,18 @@ export function LiveActivityFeed({ activities }: LiveActivityFeedProps) {
                 <div className={`mt-0.5 h-2 w-2 flex-shrink-0 rounded-full ${getTypeColor(activity.type)}`} />
                 <div className="flex-1 space-y-1">
                   <p className="text-sm">{activity.message}</p>
+                  {activity.relatedCount && activity.relatedCount > 0 ? (
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">
+                        +{activity.relatedCount} related update{activity.relatedCount === 1 ? "" : "s"}
+                      </p>
+                      {activity.relatedMessages?.slice(0, 2).map((message, index) => (
+                        <p key={`${activity.id}-related-${index}`} className="text-xs text-muted-foreground">
+                          {message}
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
                   <p className="font-mono text-xs text-muted-foreground">
                     {activity.timestamp}
                   </p>

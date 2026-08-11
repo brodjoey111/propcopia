@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type UpdateUserProfile, users, type WatchlistItem, type InsertWatchlistItem, watchlistItems } from "@shared/schema";
+import { type User, type InsertUser, type UpdateUserProfile, type UpdateUserSettings, users, type WatchlistItem, type InsertWatchlistItem, watchlistItems } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
@@ -11,6 +11,7 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUserProfile(id: string, profile: UpdateUserProfile): Promise<User | undefined>;
+  updateUserSettings(id: string, settings: UpdateUserSettings): Promise<User | undefined>;
   updateOnboarding(
     id: string,
     data: {
@@ -60,6 +61,20 @@ export class MemStorage implements IStorage {
       dailyTradingStreak: 0,
       safeTradingDays: 0,
       riskEducationCompleted: false,
+      autoCopyEnabled: true,
+      copyExitsEnabled: true,
+      copyModificationsEnabled: true,
+      bidirectionalSyncEnabled: false,
+      notifyTrades: true,
+      notifyErrors: true,
+      notifyConnection: true,
+      showReviewedNotifications: true,
+      copyGroupsUngroupedName: "Ungrouped",
+      activityQueueSort: "recent",
+      activityQueueAuditFocus: "all",
+      copyGroupHealthReviewFilter: "all",
+      copyGroupHealthReviewsJson: null,
+      riskFollowUpReviewsJson: null,
       badges: [],
       lastActiveDate: null,
       dailyLossLimit: null,
@@ -79,6 +94,41 @@ export class MemStorage implements IStorage {
       bio: profile.bio !== undefined ? profile.bio : user.bio,
       profilePicture: profile.profilePicture !== undefined ? profile.profilePicture : user.profilePicture,
     };
+    this.users.set(id, updatedUser);
+    return updatedUser;
+  }
+
+  async updateUserSettings(id: string, settings: UpdateUserSettings): Promise<User | undefined> {
+    const user = this.users.get(id);
+    if (!user) {
+      return undefined;
+    }
+
+    const updatedUser: User = {
+      ...user,
+      autoCopyEnabled: settings.autoCopyEnabled ?? user.autoCopyEnabled,
+      copyExitsEnabled: settings.copyExitsEnabled ?? user.copyExitsEnabled,
+      copyModificationsEnabled: settings.copyModificationsEnabled ?? user.copyModificationsEnabled,
+      bidirectionalSyncEnabled: settings.bidirectionalSyncEnabled ?? user.bidirectionalSyncEnabled,
+      notifyTrades: settings.notifyTrades ?? user.notifyTrades,
+      notifyErrors: settings.notifyErrors ?? user.notifyErrors,
+      notifyConnection: settings.notifyConnection ?? user.notifyConnection,
+      showReviewedNotifications:
+        settings.showReviewedNotifications ?? user.showReviewedNotifications,
+      copyGroupsUngroupedName:
+        settings.copyGroupsUngroupedName ?? user.copyGroupsUngroupedName,
+      activityQueueSort:
+        settings.activityQueueSort ?? user.activityQueueSort,
+      activityQueueAuditFocus:
+        settings.activityQueueAuditFocus ?? user.activityQueueAuditFocus,
+      copyGroupHealthReviewFilter:
+        settings.copyGroupHealthReviewFilter ?? user.copyGroupHealthReviewFilter,
+      copyGroupHealthReviewsJson:
+        settings.copyGroupHealthReviewsJson ?? user.copyGroupHealthReviewsJson,
+      riskFollowUpReviewsJson:
+        settings.riskFollowUpReviewsJson ?? user.riskFollowUpReviewsJson,
+    };
+
     this.users.set(id, updatedUser);
     return updatedUser;
   }
@@ -153,6 +203,15 @@ export class DbStorage implements IStorage {
     const result = await db
       .update(users)
       .set(profile)
+      .where(eq(users.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async updateUserSettings(id: string, settings: UpdateUserSettings): Promise<User | undefined> {
+    const result = await db
+      .update(users)
+      .set(settings)
       .where(eq(users.id, id))
       .returning();
     return result[0];

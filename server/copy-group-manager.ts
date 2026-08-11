@@ -14,10 +14,24 @@ import { ExecutionManager } from './execution-manager';
 import type { ExecutionRecord } from './execution-types';
 import type { TradeIntent } from './trade-intent-types';
 import { propCopiaEventBus } from './event-bus';
+import { formatRuleReasonLabel } from './rule-reason-label';
+import { CopyGroupActivityJournal } from './copy-group-activity-journal';
 
 export interface RegisteredCopyGroup {
   group: CopyGroup;
   followers: CopyFollower[];
+}
+
+export interface CopyGroupRegistrationOptions {
+  persistedState?: Partial<CopyGroupRuntimeState> | null;
+}
+
+export interface CopyGroupManagerOptions {
+  onActivityRecorded?: (input: {
+    userId: string;
+    groupId: string;
+    activity: CopyGroupActivity;
+  }) => void | Promise<void>;
 }
 
 export interface CopyGroupRuntime {
@@ -60,6 +74,52 @@ function createInitialState(groupId: string, followerCount: number): CopyGroupRu
     connectedFollowerCount: 0,
     totalFollowerCount: followerCount,
   };
+}
+
+function createStateFromPersistence(
+  groupId: string,
+  followerCount: number,
+  persistedState?: Partial<CopyGroupRuntimeState> | null,
+): CopyGroupRuntimeState {
+  const baseState = createInitialState(groupId, followerCount);
+
+  if (!persistedState) {
+    return baseState;
+  }
+
+  const safeState: CopyGroupRuntimeState = {
+    ...baseState,
+    lastMasterFillAt: persistedState.lastMasterFillAt,
+    lastIntentCreatedAt: persistedState.lastIntentCreatedAt,
+    lastExecutionAt: persistedState.lastExecutionAt,
+    lastErrorAt: persistedState.lastErrorAt,
+    lastErrorMessage: persistedState.lastErrorMessage,
+  };
+
+  switch (persistedState.status) {
+    case 'PAUSED':
+      safeState.status = 'PAUSED';
+      safeState.pausedAt = persistedState.pausedAt ?? nowIso();
+      safeState.resumedAt = persistedState.resumedAt;
+      return safeState;
+    case 'EMERGENCY_STOPPED':
+      safeState.status = 'EMERGENCY_STOPPED';
+      safeState.isKillSwitchActive = true;
+      safeState.emergencyStoppedAt = persistedState.emergencyStoppedAt ?? nowIso();
+      safeState.emergencyStopReason = persistedState.emergencyStopReason;
+      return safeState;
+    case 'STOPPED':
+      safeState.stoppedAt = persistedState.stoppedAt;
+      return safeState;
+    case 'RUNNING':
+    case 'STARTING':
+    case 'STOPPING':
+    case 'ERROR':
+      safeState.stoppedAt = nowIso();
+      return safeState;
+    default:
+      return safeState;
+  }
 }
 
 function createInitialStatistics(groupId: string): CopyGroupStatistics {
@@ -113,25 +173,28 @@ function createInitialHealth(groupId: string): CopyGroupHealth {
   };
 }
 
-function createInitialObservability(groupId: string): CopyGroupObservability {
-  return {
-    groupId,
-    recentActivity: [],
-    totalEvents: 0,
-    infoEventCount: 0,
-    warningEventCount: 0,
-    errorEventCount: 0,
-  };
-}
-
 export class CopyGroupManager {
   private groups = new Map<string, RegisteredCopyGroup>();
   private runtimes = new Map<string, CopyGroupRuntime>();
   private intentIdToGroupId = new Map<string, string>();
   private cleanupCallbacks = new Map<string, Array<() => void>>();
   private observedIntentStatuses = new Map<string, Map<string, Set<string>>>();
+  private activityJournal = new CopyGroupActivityJournal();
+  private onActivityRecorded?: CopyGroupManagerOptions["onActivityRecorded"];
 
-  registerGroup(group: CopyGroup, followers: CopyFollower[]): CopyGroupRuntime {
+  constructor(options: CopyGroupManagerOptions = {}) {
+    this.onActivityRecorded = options.onActivityRecorded;
+  }
+
+  setActivityRecorder(onActivityRecorded?: CopyGroupManagerOptions["onActivityRecorded"]): void {
+    this.onActivityRecorded = onActivityRecorded;
+  }
+
+  registerGroup(
+    group: CopyGroup,
+    followers: CopyFollower[],
+    options?: CopyGroupRegistrationOptions,
+  ): CopyGroupRuntime {
     if (this.groups.has(group.groupId)) {
       throw new Error(`Copy group already registered: ${group.groupId}`);
     }
@@ -146,27 +209,136 @@ export class CopyGroupManager {
       engine,
       tradeIntentManager: engine.getTradeIntentManager(),
       executionManager,
-      state: createInitialState(group.groupId, followers.length),
+      state: createStateFromPersistence(
+        group.groupId,
+        followers.length,
+        options?.persistedState,
+      ),
       statistics: createInitialStatistics(group.groupId),
       health: createInitialHealth(group.groupId),
-      observability: createInitialObservability(group.groupId),
+      observability: this.activityJournal.getObservability(group.groupId),
     };
+
+    if (runtime.state.status === 'PAUSED') {
+      runtime.executionManager.pause();
+    }
+
+    if (runtime.state.status === 'EMERGENCY_STOPPED') {
+      runtime.executionManager.activateKillSwitch(runtime.state.emergencyStopReason);
+    }
 
     this.groups.set(group.groupId, { group, followers });
     this.runtimes.set(group.groupId, runtime);
     this.cleanupCallbacks.set(group.groupId, []);
     this.observedIntentStatuses.set(group.groupId, new Map());
     this.subscribeRuntime(runtime);
-    this.recordActivity(runtime, {
+    const persistedStatus = options?.persistedState?.status;
+    if (persistedStatus === 'PAUSED') {
+      this.recordActivity(runtime, {
+        severity: 'WARN',
+        category: 'LIFECYCLE',
+        message: `Restored paused copy group ${group.name} in a safe offline state.`,
+        details: {
+          followerCount: followers.length,
+          executionMode: group.executionSettings.mode,
+        },
+      });
+    } else if (persistedStatus === 'EMERGENCY_STOPPED') {
+      this.recordActivity(runtime, {
+        severity: 'ERROR',
+        category: 'LIFECYCLE',
+        message: runtime.state.emergencyStopReason
+          ? `Restored emergency stop for ${group.name}: ${runtime.state.emergencyStopReason}`
+          : `Restored emergency stop for ${group.name}.`,
+        details: {
+          followerCount: followers.length,
+          executionMode: group.executionSettings.mode,
+        },
+      });
+    } else if (
+      persistedStatus === 'RUNNING' ||
+      persistedStatus === 'STARTING' ||
+      persistedStatus === 'STOPPING' ||
+      persistedStatus === 'ERROR'
+    ) {
+      this.recordActivity(runtime, {
+        severity: 'WARN',
+        category: 'LIFECYCLE',
+        message: `Recovered copy group ${group.name} into STOPPED state after reload.`,
+        details: {
+          previousStatus: persistedStatus,
+          followerCount: followers.length,
+          executionMode: group.executionSettings.mode,
+        },
+      });
+    } else {
+      this.recordActivity(runtime, {
+        severity: 'INFO',
+        category: 'LIFECYCLE',
+        message: `Registered copy group ${group.name}.`,
+        details: {
+          followerCount: followers.length,
+          executionMode: group.executionSettings.mode,
+        },
+      });
+    }
+    return runtime;
+  }
+
+  syncGroup(
+    group: CopyGroup,
+    followers: CopyFollower[],
+    options?: CopyGroupRegistrationOptions,
+  ): CopyGroupRuntime {
+    const existingRuntime = this.runtimes.get(group.groupId);
+    if (!existingRuntime) {
+      return this.registerGroup(group, followers, options);
+    }
+
+    if (
+      existingRuntime.state.status === 'RUNNING' ||
+      existingRuntime.state.status === 'STARTING' ||
+      existingRuntime.state.status === 'STOPPING'
+    ) {
+      throw new Error(`Copy group ${group.groupId} must be stopped before syncing configuration.`);
+    }
+
+    const nextState = createStateFromPersistence(
+      group.groupId,
+      followers.length,
+      options?.persistedState ?? existingRuntime.state,
+    );
+
+    existingRuntime.group = group;
+    existingRuntime.followers = followers;
+    existingRuntime.state = nextState;
+
+    if (nextState.status === 'EMERGENCY_STOPPED') {
+      existingRuntime.executionManager.activateKillSwitch(nextState.emergencyStopReason);
+    } else {
+      existingRuntime.executionManager.deactivateKillSwitch();
+    }
+
+    if (nextState.status === 'PAUSED') {
+      existingRuntime.executionManager.pause();
+    } else {
+      existingRuntime.executionManager.resume();
+    }
+
+    this.groups.set(group.groupId, { group, followers });
+    existingRuntime.statistics.lastUpdatedAt = nowIso();
+    this.recordActivity(existingRuntime, {
       severity: 'INFO',
       category: 'LIFECYCLE',
-      message: `Registered copy group ${group.name}.`,
+      message: `Synchronized copy group ${group.name} configuration.`,
       details: {
         followerCount: followers.length,
         executionMode: group.executionSettings.mode,
       },
     });
-    return runtime;
+    this.refreshHealth(existingRuntime);
+
+    return existingRuntime;
   }
 
   async unregisterGroup(groupId: string): Promise<void> {
@@ -357,7 +529,34 @@ export class CopyGroupManager {
   }
 
   getRecentActivity(groupId: string): CopyGroupActivity[] {
-    return [...this.requireRuntime(groupId).observability.recentActivity];
+    this.requireRuntime(groupId);
+    return this.activityJournal.getRecentActivity(groupId);
+  }
+
+  getPersistedState(groupId: string): CopyGroupRuntimeState {
+    const runtime = this.requireRuntime(groupId);
+
+    return createStateFromPersistence(
+      runtime.group.groupId,
+      runtime.followers.length,
+      runtime.state,
+    );
+  }
+
+  recordExternalActivity(
+    groupId: string,
+    activity: Omit<CopyGroupActivity, 'eventId' | 'groupId' | 'timestamp'>,
+  ): void {
+    const runtime = this.requireRuntime(groupId);
+    this.recordActivity(runtime, activity);
+
+    if (activity.severity === 'ERROR') {
+      runtime.state.lastErrorAt = nowIso();
+      runtime.state.lastErrorMessage = activity.message;
+    }
+
+    runtime.statistics.lastUpdatedAt = nowIso();
+    this.refreshHealth(runtime);
   }
 
   private requireRuntime(groupId: string): CopyGroupRuntime {
@@ -528,6 +727,7 @@ export class CopyGroupManager {
     };
 
     const onRuleSkipped = (payload: TradeRuleObservedPayload) => {
+      const reasonLabel = formatRuleReasonLabel(payload.reasonCode);
       if (payload.reasonCode === 'SYMBOL_BLOCKED') {
         runtime.statistics.skippedBlockedSymbolCount += 1;
       }
@@ -541,7 +741,7 @@ export class CopyGroupManager {
       this.recordActivity(runtime, {
         severity: 'WARN',
         category: 'RULE',
-        message: `Follower ${payload.followerAccountId} skipped for ${payload.symbol}: ${payload.reasonCode}.`,
+        message: `Follower ${payload.followerAccountId} skipped for ${payload.symbol}: ${reasonLabel}.`,
         followerAccountId: payload.followerAccountId,
         details: {
           masterFillId: payload.masterFillId,
@@ -550,13 +750,14 @@ export class CopyGroupManager {
     };
 
     const onRuleRejected = (payload: TradeRuleObservedPayload) => {
+      const reasonLabel = formatRuleReasonLabel(payload.reasonCode);
       runtime.state.lastErrorAt = nowIso();
-      runtime.state.lastErrorMessage = `${payload.reasonCode ?? 'UNKNOWN_RULE_REJECTION'} for ${payload.followerAccountId}`;
+      runtime.state.lastErrorMessage = `${reasonLabel} for ${payload.followerAccountId}`;
       runtime.statistics.lastUpdatedAt = nowIso();
       this.recordActivity(runtime, {
         severity: 'ERROR',
         category: 'RULE',
-        message: `Follower ${payload.followerAccountId} rejected for ${payload.symbol}: ${payload.reasonCode}.`,
+        message: `Follower ${payload.followerAccountId} rejected for ${payload.symbol}: ${reasonLabel}.`,
         followerAccountId: payload.followerAccountId,
         details: {
           masterFillId: payload.masterFillId,
@@ -653,20 +854,21 @@ export class CopyGroupManager {
       ...activity,
     };
 
-    runtime.observability.recentActivity.unshift(entry);
-    runtime.observability.recentActivity = runtime.observability.recentActivity.slice(0, 50);
-    runtime.observability.totalEvents += 1;
-    runtime.observability.lastEventAt = timestamp;
+    runtime.observability = this.activityJournal.append(runtime.group.groupId, entry);
 
-    if (entry.severity === 'INFO') {
-      runtime.observability.infoEventCount += 1;
-    } else if (entry.severity === 'WARN') {
-      runtime.observability.warningEventCount += 1;
-    } else {
-      runtime.observability.errorEventCount += 1;
-      runtime.observability.lastErrorAt = timestamp;
-      runtime.observability.lastErrorMessage = entry.message;
+    if (!this.onActivityRecorded) {
+      return;
     }
+
+    Promise.resolve(
+      this.onActivityRecorded({
+        userId: runtime.group.userId,
+        groupId: runtime.group.groupId,
+        activity: entry,
+      }),
+    ).catch((error) => {
+      console.error('Failed to persist copy-group activity:', error);
+    });
   }
 
   private refreshHealth(runtime: CopyGroupRuntime): void {

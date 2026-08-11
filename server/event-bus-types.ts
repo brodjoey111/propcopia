@@ -95,6 +95,20 @@ export interface ExecutionFilledEvent {
   filledAt: string;
 }
 
+export interface ExecutionPartialFillEvent {
+  intentId: string;
+  groupId?: string;
+  followerAccountId: string;
+  brokerKey: string;
+  brokerOrderId?: string;
+  fillId?: string;
+  filledQuantity?: number;
+  cumulativeFilledQuantity?: number;
+  remainingQuantity?: number;
+  averageFillPrice?: number;
+  filledAt: string;
+}
+
 export interface CopyGroupStartedEvent {
   group: CopyGroup;
   runtime: CopyGroupRuntimeState;
@@ -137,6 +151,7 @@ export interface PropCopiaEventMap {
   'execution.sent': ExecutionSentEvent;
   'execution.failed': ExecutionFailedEvent;
   'execution.acknowledged': ExecutionAcknowledgedEvent;
+  'execution.partial_fill': ExecutionPartialFillEvent;
   'execution.filled': ExecutionFilledEvent;
   'copy_group.started': CopyGroupStartedEvent;
   'copy_group.stopped': CopyGroupStoppedEvent;

@@ -126,6 +126,7 @@ export function KillSwitchButton() {
     queryKey: QUERY_KEY,
     queryFn: fetchStatus,
     refetchInterval: POLL_MS,
+    refetchIntervalInBackground: false,
   });
 
   const isActive = data?.active ?? false;
@@ -203,7 +204,7 @@ export function KillSwitchBanner() {
   const { data } = useQuery<KillSwitchStatus>({
     queryKey: QUERY_KEY,
     queryFn: fetchStatus,
-    refetchInterval: POLL_MS,
+    refetchInterval: false,
   });
 
   const deactivateMut = useMutation({

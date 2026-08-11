@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Logo } from "@/components/logo";
+import { RithmicAttribution } from "@/components/rithmic-attribution";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -243,6 +244,9 @@ export default function Auth() {
             </span>
           </Link>
         </p>
+      </div>
+      <div className="mt-6 w-full max-w-2xl">
+        <RithmicAttribution compact />
       </div>
     </div>
   );

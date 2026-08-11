@@ -26,10 +26,9 @@ export function DisconnectAccountAlert({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent data-testid="alert-disconnect-account">
         <AlertDialogHeader>
-          <AlertDialogTitle>Disconnect Account?</AlertDialogTitle>
+          <AlertDialogTitle>Disconnect this account?</AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure you want to disconnect <strong>{accountName}</strong>? 
-            Active positions will remain open, but new trades will not be copied to this account.
+            <strong>{accountName}</strong> will stop receiving new copied trades. Any positions that are already open will stay open until you manage them manually.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

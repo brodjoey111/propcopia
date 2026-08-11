@@ -6,6 +6,7 @@ export type RuleDecision = 'ALLOWED' | 'SKIPPED' | 'REJECTED';
 
 export type RuleReasonCode =
   | 'FOLLOWER_DISABLED'
+  | 'RISK_LIMIT_BREACHED'
   | 'SYMBOL_NOT_ALLOWED'
   | 'SYMBOL_BLOCKED'
   | 'DIRECTION_NOT_ALLOWED'
@@ -29,6 +30,7 @@ export interface MasterTradeForRuleEvaluation {
 
 export interface FollowerRuleConfig {
   enabled: boolean;
+  isRiskBreached?: boolean | null;
   allowedSymbols?: string[] | null;
   blockedSymbols?: string[] | null;
   allowedDirections?: 'both' | 'long_only' | 'short_only' | null;
@@ -130,6 +132,13 @@ export function evaluateFollowerTradeRule(
     return {
       decision: 'SKIPPED',
       reasonCode: 'FOLLOWER_DISABLED',
+    };
+  }
+
+  if (follower.isRiskBreached) {
+    return {
+      decision: 'REJECTED',
+      reasonCode: 'RISK_LIMIT_BREACHED',
     };
   }
 

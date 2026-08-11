@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   DndContext,
   DragEndEvent,
@@ -14,9 +14,20 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   GripVertical,
+  History,
   Plus,
   Trash2,
   Pencil,
@@ -31,7 +42,31 @@ import {
   Inbox,
   ShieldAlert,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { RiskSettingsDialog, type RiskSettings, DEFAULT_RISK_SETTINGS } from "@/components/risk-settings-dialog";
+import { useUser } from "@/contexts/user-context";
+import { useToast } from "@/hooks/use-toast";
+import {
+  describeGroupRiskSummary,
+  summarizeGroupRisk,
+  toAccountRiskBadgeView,
+  type AccountRiskItem,
+} from "@/lib/account-risk";
+import type {
+  CopyGroupActivity,
+  CopyGroupRuntimeSummary,
+  CopyGroupSnapshotApiResponse,
+  CopyGroupStatus,
+} from "@/lib/copy-groups";
+import {
+  buildCopyGroupActivityTimeline,
+  describeCopyGroupBoardState,
+} from "@/lib/copy-groups";
+import {
+  buildCopyGroupSyncPlan,
+  hydrateBoardStateFromSnapshot,
+} from "@/lib/copy-group-persistence";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Account } from "@shared/schema";
 
 // ─── Demo data ───────────────────────────────────────────────────────────────
@@ -181,6 +216,7 @@ export interface TradingGroup {
   isActive: boolean;
   masterId: string | null;
   disabledAccountIds: string[];
+  runtimePreference?: "ready" | "paused" | "emergency_stopped";
 }
 
 const UNGROUPED_ID = "__ungrouped__";
@@ -201,12 +237,13 @@ function loadGroups(): TradingGroup[] {
     const raw = localStorage.getItem("trading-groups-v1");
     if (!raw) return [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (JSON.parse(raw) as any[]).map((g) => ({
-      isActive: true,
-      masterId: null,
-      disabledAccountIds: [],
-      ...g,
-    }));
+      return (JSON.parse(raw) as any[]).map((g) => ({
+        isActive: true,
+        masterId: null,
+        disabledAccountIds: [],
+        runtimePreference: g?.isActive === false ? "paused" : "ready",
+        ...g,
+      }));
   } catch {
     return [];
   }
@@ -229,6 +266,80 @@ function saveAssignments(assignments: Record<string, string>) {
   localStorage.setItem("group-assignments-v1", JSON.stringify(assignments));
 }
 
+function getLocalRuntimeStatus(group: TradingGroup): CopyGroupStatus {
+  if (group.runtimePreference === "emergency_stopped") {
+    return "EMERGENCY_STOPPED";
+  }
+
+  if (group.runtimePreference === "paused" || group.isActive === false) {
+    return "PAUSED";
+  }
+
+  return "STOPPED";
+}
+
+function describeLatestOperatorAction(
+  recentActivityPreview: CopyGroupActivity[],
+): string | null {
+  const lifecycleEntry = recentActivityPreview.find((entry) => entry.category === "LIFECYCLE");
+  if (!lifecycleEntry) {
+    return null;
+  }
+
+  if (lifecycleEntry.message.startsWith("Emergency stop activated")) {
+    return "Emergency stop applied";
+  }
+
+  if (lifecycleEntry.message.includes(" paused.")) {
+    return "Paused by operator";
+  }
+
+  if (lifecycleEntry.message.includes(" resumed.")) {
+    return "Resumed by operator";
+  }
+
+  if (lifecycleEntry.message.startsWith("Restored emergency stop")) {
+    return "Emergency stop restored after reload";
+  }
+
+  if (lifecycleEntry.message.startsWith("Restored paused copy group")) {
+    return "Paused state restored after reload";
+  }
+
+  if (lifecycleEntry.message.startsWith("Recovered copy group")) {
+    return "Recovered into ready state after reload";
+  }
+
+  return lifecycleEntry.message;
+}
+
+function describeHoldReason(input: {
+  runtimeStatus: CopyGroupStatus;
+  runtimeSummary?: CopyGroupRuntimeSummary;
+  riskDetail: { detail: string; tone: "ok" | "warn" | "danger" | "muted" };
+  recentActivityPreview: CopyGroupActivity[];
+}): string | null {
+  const latestLifecycleEntry = input.recentActivityPreview.find((entry) => entry.category === "LIFECYCLE");
+
+  if (input.runtimeStatus === "EMERGENCY_STOPPED") {
+    return latestLifecycleEntry?.message ?? input.runtimeSummary?.detail ?? "Emergency stop is active until the group is cleared.";
+  }
+
+  if (input.runtimeStatus === "PAUSED") {
+    if (input.riskDetail.tone === "danger" || input.riskDetail.tone === "warn") {
+      return input.riskDetail.detail;
+    }
+
+    return latestLifecycleEntry?.message ?? input.runtimeSummary?.detail ?? "This group is paused until an operator resumes it.";
+  }
+
+  if (input.riskDetail.tone === "danger") {
+    return input.riskDetail.detail;
+  }
+
+  return null;
+}
+
 // ─── Draggable account card ──────────────────────────────────────────────────
 
 interface DraggableCardProps {
@@ -245,7 +356,12 @@ interface DraggableCardProps {
   groupId?: string;
   onConnect?: () => void;
   onDisconnect?: () => void;
+  accountActionDisabled?: boolean;
+  connectButtonLabel?: string;
+  disconnectButtonLabel?: string;
   onToggleEnabled?: () => void;
+  riskStatusLabel?: string;
+  riskStatusTone?: "ok" | "warn" | "danger" | "muted";
 }
 
 function DraggableCard({
@@ -257,7 +373,12 @@ function DraggableCard({
   groupId,
   onConnect,
   onDisconnect,
+  accountActionDisabled,
+  connectButtonLabel = "Connect",
+  disconnectButtonLabel = "Disconnect",
   onToggleEnabled,
+  riskStatusLabel,
+  riskStatusTone = "muted",
 }: DraggableCardProps) {
   const {
     attributes,
@@ -280,6 +401,14 @@ function DraggableCard({
   const style = transform
     ? { transform: `translate3d(${transform.x}px,${transform.y}px,0)` }
     : undefined;
+  const riskToneClass =
+    riskStatusTone === "ok"
+      ? "border-emerald-400/20 text-emerald-300"
+      : riskStatusTone === "warn"
+        ? "border-amber-400/20 text-amber-300"
+        : riskStatusTone === "danger"
+          ? "border-red-400/20 text-red-300"
+          : "text-muted-foreground";
 
   return (
     <div
@@ -336,6 +465,11 @@ function DraggableCard({
               {isDisabled && (
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0 border-red-500/40 text-red-500">
                   Paused
+                </Badge>
+              )}
+              {riskStatusLabel && (
+                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 shrink-0 ${riskToneClass}`}>
+                  {riskStatusLabel}
                 </Badge>
               )}
               {/* Per-account toggle */}
@@ -395,18 +529,20 @@ function DraggableCard({
                   variant="outline"
                   className="h-6 text-[11px] px-2 w-full"
                   onClick={(e) => { e.stopPropagation(); onDisconnect?.(); }}
+                  disabled={accountActionDisabled}
                 >
                   <Unplug className="h-3 w-3 mr-1" />
-                  Disconnect
+                  {disconnectButtonLabel}
                 </Button>
               ) : (
                 <Button
                   size="sm"
                   className="h-6 text-[11px] px-2 w-full"
                   onClick={(e) => { e.stopPropagation(); onConnect?.(); }}
+                  disabled={accountActionDisabled}
                 >
                   <PlugZap className="h-3 w-3 mr-1" />
-                  Connect
+                  {connectButtonLabel}
                 </Button>
               )}
             </div>
@@ -517,9 +653,24 @@ interface GroupLaneProps {
   onToggleAccount: (groupId: string, accountId: string) => void;
   onConnect: (accountId: string) => void;
   onDisconnect: (accountId: string, name: string) => void;
+  accountActionDisabled?: boolean;
+  getConnectButtonLabel?: (accountId: string) => string;
+  getDisconnectButtonLabel?: (accountId: string) => string;
   onSaveRisk?: (groupId: string, settings: RiskSettings) => void;
   onClearRisk?: (groupId: string) => void;
   riskSettings?: Partial<RiskSettings>;
+  accountRiskById?: Record<string, AccountRiskItem | undefined>;
+  runtimeStatus?: CopyGroupStatus;
+  runtimeSummary?: CopyGroupRuntimeSummary;
+  recentActivityPreview?: CopyGroupActivity[];
+  runtimeLoading?: boolean;
+  runtimeUnavailable?: boolean;
+  lifecycleActionPending?: boolean;
+  onStartGroup?: (groupId: string) => void;
+  onPauseGroup?: (groupId: string) => void;
+  onResumeGroup?: (groupId: string) => void;
+  onEmergencyStopGroup?: (groupId: string) => void;
+  onResetGroup?: (groupId: string) => void;
 }
 
 function GroupLane({
@@ -536,15 +687,84 @@ function GroupLane({
   onToggleAccount,
   onConnect,
   onDisconnect,
+  accountActionDisabled = false,
+  getConnectButtonLabel,
+  getDisconnectButtonLabel,
   onSaveRisk,
   onClearRisk,
   riskSettings,
+  accountRiskById = {},
+  runtimeStatus,
+  runtimeSummary,
+  recentActivityPreview = [],
+  runtimeLoading = false,
+  runtimeUnavailable = false,
+  lifecycleActionPending = false,
+  onStartGroup,
+  onPauseGroup,
+  onResumeGroup,
+  onEmergencyStopGroup,
+  onResetGroup,
 }: GroupLaneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: group.id });
   const { setNodeRef: setClearRef, isOver: isClearOver } = useDroppable({ id: `master-clear:${group.id}` });
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(group.name);
   const [showPalette, setShowPalette] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyActivity, setHistoryActivity] = useState<CopyGroupActivity[]>(recentActivityPreview);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const timelineItems = buildCopyGroupActivityTimeline(historyActivity, 12);
+
+  useEffect(() => {
+    if (historyOpen) {
+      return;
+    }
+
+    setHistoryActivity(recentActivityPreview);
+  }, [historyOpen, recentActivityPreview]);
+
+  useEffect(() => {
+    if (!historyOpen || isUngrouped || isDemo) {
+      return;
+    }
+
+    let cancelled = false;
+    setHistoryLoading(true);
+    setHistoryError(null);
+
+    void (async () => {
+      const response = await fetch(`/api/copy-groups/${group.id}/activity`, {
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to load copy-group history");
+      }
+
+      const payload = await response.json();
+      if (cancelled) {
+        return;
+      }
+
+      setHistoryActivity(payload.activity ?? []);
+    })().catch((error) => {
+      if (cancelled) {
+        return;
+      }
+
+      setHistoryError(error instanceof Error ? error.message : "Unable to load history.");
+    }).finally(() => {
+      if (!cancelled) {
+        setHistoryLoading(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [group.id, historyOpen, isDemo, isUngrouped]);
 
   const commitRename = () => {
     const trimmed = editName.trim();
@@ -553,13 +773,50 @@ function GroupLane({
   };
 
   const accentColor      = isUngrouped ? "#94a3b8" : group.color;
-  const isActive         = isUngrouped ? true : (group.isActive !== false);
+  const resolvedRuntimeStatus = isUngrouped
+    ? "RUNNING"
+    : (runtimeStatus ?? getLocalRuntimeStatus(group as TradingGroup));
+  const isActive = resolvedRuntimeStatus !== "PAUSED" && resolvedRuntimeStatus !== "EMERGENCY_STOPPED";
   const masterId         = group.masterId ?? null;
   const disabledIds      = isUngrouped ? [] : (group.disabledAccountIds ?? []);
   const effectiveMasterId = masterId && !disabledIds.includes(masterId) ? masterId : null;
   const masterAccounts   = accounts.filter((a) => a.accountType === "master");
   const followerAccounts = accounts.filter((a) => a.accountType !== "master");
   const hasMasterWarning = !isUngrouped && !effectiveMasterId && accounts.some((a) => !disabledIds.includes(a.id));
+  const activeFollowerCount = followerAccounts.filter((account) => !disabledIds.includes(account.id)).length;
+  const groupRiskSummary = summarizeGroupRisk({
+    accountIds: followerAccounts.map((account) => account.id),
+    accountRiskById,
+    disabledAccountIds: disabledIds,
+  });
+  const groupRiskDetail = describeGroupRiskSummary(groupRiskSummary, activeFollowerCount);
+  const groupBoardState = describeCopyGroupBoardState({
+    isActive,
+    activeAccountCount: accounts.filter((account) => !disabledIds.includes(account.id)).length,
+    hasMasterWarning,
+    riskSummary: groupRiskSummary,
+    riskDetail: groupRiskDetail,
+  });
+  const groupRiskToneClass =
+    groupRiskSummary.tone === "ok"
+      ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+      : groupRiskSummary.tone === "warn"
+        ? "border-amber-400/20 bg-amber-400/10 text-amber-300"
+        : groupRiskSummary.tone === "danger"
+          ? "border-red-400/20 bg-red-400/10 text-red-300"
+          : "border-white/10 bg-white/[0.04] text-zinc-300";
+  const recentWarningCount = recentActivityPreview.filter((entry) => entry.severity === "WARN").length;
+  const recentErrorCount = recentActivityPreview.filter((entry) => entry.severity === "ERROR").length;
+  const recentLifecycleCount = recentActivityPreview.filter((entry) => entry.category === "LIFECYCLE").length;
+  const recentHealthCount = recentActivityPreview.filter((entry) => entry.category === "HEALTH").length;
+  const latestPreviewMessage = recentActivityPreview[0]?.message;
+  const latestOperatorAction = describeLatestOperatorAction(recentActivityPreview);
+  const holdReason = describeHoldReason({
+    runtimeStatus: resolvedRuntimeStatus,
+    runtimeSummary,
+    riskDetail: groupRiskDetail,
+    recentActivityPreview,
+  });
 
   return (
     <div
@@ -679,21 +936,88 @@ function GroupLane({
 
         {/* Trading toggle */}
         {!isUngrouped && (
-          <button
-            onClick={() => onToggle(group.id)}
-            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all shrink-0 ${
-              isActive
-                ? "bg-green-500/15 text-green-600 hover:bg-green-500/25 dark:text-green-400 border border-green-500/30"
-                : "bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/25"
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold shrink-0 border ${
+              resolvedRuntimeStatus === "RUNNING"
+                ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-400"
+                : resolvedRuntimeStatus === "PAUSED"
+                  ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                  : resolvedRuntimeStatus === "EMERGENCY_STOPPED"
+                    ? "border-red-500/30 bg-red-500/10 text-red-400"
+                    : "border-white/10 bg-white/[0.04] text-zinc-300"
             }`}
           >
             <Power className="h-3 w-3" />
-            {isActive ? "Trading ON" : "Trading OFF"}
-          </button>
+            {resolvedRuntimeStatus === "RUNNING"
+              ? "Running"
+              : resolvedRuntimeStatus === "PAUSED"
+                ? "Paused"
+                : resolvedRuntimeStatus === "EMERGENCY_STOPPED"
+                  ? "Emergency Stop"
+                  : resolvedRuntimeStatus === "STARTING" || resolvedRuntimeStatus === "STOPPING"
+                    ? "Updating"
+                    : "Ready"}
+          </span>
+        )}
+
+        {!isUngrouped && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            {resolvedRuntimeStatus === "RUNNING" ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px]"
+                onClick={() => onPauseGroup?.(group.id)}
+                disabled={lifecycleActionPending}
+              >
+                Pause
+              </Button>
+            ) : resolvedRuntimeStatus === "PAUSED" ? (
+              <Button
+                size="sm"
+                className="h-7 text-[11px]"
+                onClick={() => onResumeGroup?.(group.id)}
+                disabled={lifecycleActionPending}
+              >
+                Resume
+              </Button>
+            ) : resolvedRuntimeStatus === "EMERGENCY_STOPPED" ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px]"
+                onClick={() => onResetGroup?.(group.id)}
+                disabled={lifecycleActionPending}
+              >
+                Clear Stop
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                className="h-7 text-[11px]"
+                onClick={() => onStartGroup?.(group.id)}
+                disabled={lifecycleActionPending || hasMasterWarning}
+              >
+                Start
+              </Button>
+            )}
+
+            {(resolvedRuntimeStatus === "RUNNING" || resolvedRuntimeStatus === "PAUSED") && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 border-red-500/30 bg-red-500/10 text-[11px] text-red-400 hover:bg-red-500/20 hover:text-red-300"
+                onClick={() => onEmergencyStopGroup?.(group.id)}
+                disabled={lifecycleActionPending}
+              >
+                Emergency
+              </Button>
+            )}
+          </div>
         )}
 
         {/* Risk mode badge — visible only while trading is ON */}
-        {!isUngrouped && isActive && (
+        {!isUngrouped && resolvedRuntimeStatus !== "EMERGENCY_STOPPED" && isActive && (
           riskSettings
             ? (
               /* Custom mode — amber badge with × to reset */
@@ -719,6 +1043,13 @@ function GroupLane({
             )
         )}
 
+        {!isUngrouped && (
+          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold tracking-wide shrink-0 ${groupRiskToneClass}`}>
+            <ShieldAlert className="h-2.5 w-2.5" />
+            {groupBoardState.label}
+          </span>
+        )}
+
         {/* Risk settings button — dialog lives here as its own trigger */}
         {!isUngrouped && onSaveRisk && (
           <RiskSettingsDialog
@@ -740,6 +1071,93 @@ function GroupLane({
           </RiskSettingsDialog>
         )}
 
+        {!isUngrouped && (
+          <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+            <DialogTrigger asChild>
+              <button
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all shrink-0 bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60"
+                title="Recent copy-group history"
+                type="button"
+              >
+                <History className="h-3 w-3" />
+                History
+              </button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>{group.name} history</DialogTitle>
+                <DialogDescription>
+                  Recent lifecycle, health, and execution updates captured for this copy group.
+                </DialogDescription>
+              </DialogHeader>
+
+              <ScrollArea className="max-h-[420px] pr-4">
+                <div className="space-y-3">
+                  {historyLoading ? (
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-6 text-sm text-zinc-400">
+                      Loading recent history...
+                    </div>
+                  ) : historyError ? (
+                    <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-6 text-sm text-red-200">
+                      {historyError}
+                    </div>
+                  ) : timelineItems.length === 0 ? (
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-6 text-sm text-zinc-400">
+                      No recent history yet. Group registration and runtime changes will appear here.
+                    </div>
+                  ) : (
+                    timelineItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`rounded-xl border px-4 py-3 ${
+                          item.tone === "danger"
+                            ? "border-red-500/20 bg-red-500/10"
+                            : item.tone === "warn"
+                              ? "border-amber-500/20 bg-amber-500/10"
+                              : item.tone === "ok"
+                                ? "border-emerald-500/20 bg-emerald-500/10"
+                                : "border-white/10 bg-white/[0.03]"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] uppercase tracking-wide ${
+                              item.tone === "danger"
+                                ? "border-red-500/30 text-red-200"
+                                : item.tone === "warn"
+                                  ? "border-amber-500/30 text-amber-100"
+                                  : item.tone === "ok"
+                                    ? "border-emerald-500/30 text-emerald-100"
+                                    : "border-white/10 text-zinc-300"
+                            }`}
+                          >
+                            {item.category}
+                          </Badge>
+                          <span
+                            className={`text-[10px] uppercase tracking-[0.18em] ${
+                              item.tone === "danger"
+                                ? "text-red-200/80"
+                                : item.tone === "warn"
+                                  ? "text-amber-100/80"
+                                  : item.tone === "ok"
+                                    ? "text-emerald-100/80"
+                                    : "text-zinc-500"
+                            }`}
+                          >
+                            {item.timestampLabel}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm text-white">{item.message}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+            </DialogContent>
+          </Dialog>
+        )}
+
         {/* P&L — pushed right */}
         {accounts.length > 0 && (
           <div className="ml-auto flex items-center gap-1.5 shrink-0">
@@ -751,11 +1169,202 @@ function GroupLane({
         )}
       </div>
 
+      {!isUngrouped && runtimeLoading && !runtimeSummary && (
+        <div className="flex items-center gap-3 px-4 py-1.5 border-b border-white/8 bg-white/[0.03]">
+          <Skeleton className="h-3 w-20 bg-white/10" />
+          <Skeleton className="h-3 flex-1 max-w-[240px] bg-white/10" />
+          <Skeleton className="ml-auto h-3 w-28 bg-white/10" />
+        </div>
+      )}
+
+      {!isUngrouped && runtimeUnavailable && !runtimeLoading && !runtimeSummary && (
+        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-amber-500/20 bg-amber-500/10">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-300">
+            Status unavailable
+          </span>
+          <span className="text-[11px] text-amber-100/80">
+            Copy-group health could not be loaded. Trading preferences on this board were not changed.
+          </span>
+        </div>
+      )}
+
+      {!isUngrouped && runtimeSummary && (
+        <div
+          className={`flex items-center gap-2 px-4 py-1.5 border-b ${
+            runtimeSummary.tone === "danger"
+              ? "bg-red-500/10 border-red-500/20"
+              : runtimeSummary.tone === "warn"
+                ? "bg-amber-500/10 border-amber-500/20"
+                : runtimeSummary.tone === "ok"
+                  ? "bg-emerald-500/10 border-emerald-500/20"
+                  : "bg-white/[0.03] border-white/8"
+          }`}
+        >
+          <span
+            className={`text-[11px] font-semibold uppercase tracking-wide ${
+              runtimeSummary.tone === "danger"
+                ? "text-red-300"
+                : runtimeSummary.tone === "warn"
+                  ? "text-amber-300"
+                  : runtimeSummary.tone === "ok"
+                    ? "text-emerald-300"
+                    : "text-zinc-300"
+            }`}
+          >
+            {runtimeSummary.label}
+          </span>
+          <span
+            className={`text-[11px] ${
+              runtimeSummary.tone === "danger"
+                ? "text-red-200/80"
+                : runtimeSummary.tone === "warn"
+                  ? "text-amber-100/80"
+                  : runtimeSummary.tone === "ok"
+                    ? "text-emerald-100/80"
+                    : "text-zinc-400"
+            }`}
+          >
+            {runtimeSummary.detail}
+          </span>
+          {runtimeSummary.updatedLabel && (
+            <span className="ml-auto text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+              Updated {runtimeSummary.updatedLabel}
+            </span>
+          )}
+        </div>
+      )}
+
+      {!isUngrouped && runtimeSummary?.label === "Restored offline" && (
+        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-amber-500/20 bg-amber-500/10">
+          <History className="h-3 w-3 text-amber-300" />
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-300">
+            Reload recovery
+          </span>
+          <span className="text-[11px] text-amber-100/80">
+            Review recent group history before restarting this copy group.
+          </span>
+        </div>
+      )}
+
+      {!isUngrouped && recentActivityPreview.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-white/8 bg-white/[0.02] px-4 py-2">
+          <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+            Recovery Snapshot
+          </span>
+          {recentErrorCount > 0 && (
+            <span className="rounded-full border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-200">
+              {recentErrorCount} recent error{recentErrorCount === 1 ? "" : "s"}
+            </span>
+          )}
+          {recentWarningCount > 0 && (
+            <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-100">
+              {recentWarningCount} warning{recentWarningCount === 1 ? "" : "s"}
+            </span>
+          )}
+          {recentLifecycleCount > 0 && (
+            <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-100">
+              {recentLifecycleCount} lifecycle update{recentLifecycleCount === 1 ? "" : "s"}
+            </span>
+          )}
+          {recentHealthCount > 0 && (
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold text-zinc-300">
+              {recentHealthCount} health signal{recentHealthCount === 1 ? "" : "s"}
+            </span>
+          )}
+          {latestPreviewMessage && (
+            <span className="min-w-[220px] flex-1 text-[11px] text-zinc-400">
+              Latest: {latestPreviewMessage}
+            </span>
+          )}
+        </div>
+      )}
+
+      {!isUngrouped && (latestOperatorAction || holdReason) && (
+        <div className="grid gap-1.5 border-b border-white/8 bg-black/10 px-4 py-2">
+          {latestOperatorAction && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+                Last operator action
+              </span>
+              <span className="text-[11px] text-zinc-300">
+                {latestOperatorAction}
+              </span>
+            </div>
+          )}
+          {holdReason && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+                Hold reason
+              </span>
+              <span className="text-[11px] text-zinc-400">
+                {holdReason}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Paused banner */}
-      {!isActive && !isUngrouped && accounts.length > 0 && (
+      {resolvedRuntimeStatus === "PAUSED" && !isUngrouped && accounts.length > 0 && (
         <div className="flex items-center gap-1.5 px-4 py-1.5 bg-red-500/10 border-b border-red-500/20">
           <Power className="h-3 w-3 text-red-500/70" />
           <span className="text-[11px] font-semibold text-red-500/80 uppercase tracking-wide">Trading paused</span>
+        </div>
+      )}
+
+      {resolvedRuntimeStatus === "EMERGENCY_STOPPED" && !isUngrouped && accounts.length > 0 && (
+        <div className="flex items-center gap-1.5 px-4 py-1.5 bg-red-500/12 border-b border-red-500/30">
+          <ShieldAlert className="h-3 w-3 text-red-400" />
+          <span className="text-[11px] font-semibold text-red-300 uppercase tracking-wide">
+            Emergency stop active
+          </span>
+        </div>
+      )}
+
+      {!isUngrouped &&
+      resolvedRuntimeStatus !== "EMERGENCY_STOPPED" &&
+      isActive &&
+      groupBoardState.tone !== "ok" && (
+        <div
+          className={`flex items-center gap-1.5 px-4 py-1.5 border-b ${
+            groupBoardState.tone === "danger"
+              ? "bg-red-500/10 border-red-500/20"
+              : groupBoardState.tone === "warn"
+                ? "bg-amber-500/10 border-amber-500/20"
+                : "bg-white/[0.04] border-white/8"
+          }`}
+        >
+          <ShieldAlert
+            className={`h-3 w-3 ${
+              groupBoardState.tone === "danger"
+                ? "text-red-400"
+                : groupBoardState.tone === "warn"
+                  ? "text-amber-400"
+                  : "text-zinc-300"
+            }`}
+          />
+          <span
+            className={`text-[11px] font-semibold uppercase tracking-wide ${
+              groupBoardState.tone === "danger"
+                ? "text-red-300"
+                : groupBoardState.tone === "warn"
+                  ? "text-amber-300"
+                  : "text-zinc-200"
+            }`}
+          >
+            {groupBoardState.label}
+          </span>
+          <span
+            className={`text-[11px] ${
+              groupBoardState.tone === "danger"
+                ? "text-red-200/80"
+                : groupBoardState.tone === "warn"
+                  ? "text-amber-100/80"
+                  : "text-zinc-300"
+            }`}
+          >
+            {groupBoardState.detail}
+          </span>
         </div>
       )}
 
@@ -800,6 +1409,11 @@ function GroupLane({
                   onToggleEnabled={!isUngrouped ? () => onToggleAccount(group.id, account.id) : undefined}
                   onConnect={() => onConnect(account.id)}
                   onDisconnect={() => onDisconnect(account.id, account.name)}
+                  accountActionDisabled={accountActionDisabled}
+                  connectButtonLabel={getConnectButtonLabel?.(account.id)}
+                  disconnectButtonLabel={getDisconnectButtonLabel?.(account.id)}
+                  riskStatusLabel={toAccountRiskBadgeView(accountRiskById[account.id]).label}
+                  riskStatusTone={toAccountRiskBadgeView(accountRiskById[account.id]).tone}
                 />
               </div>
             ))
@@ -815,6 +1429,10 @@ interface AccountGroupsViewProps {
   accounts: Account[];
   onConnect: (accountId: string) => void;
   onDisconnect: (accountId: string, name: string) => void;
+  accountActionDisabled?: boolean;
+  getConnectButtonLabel?: (accountId: string) => string;
+  getDisconnectButtonLabel?: (accountId: string) => string;
+  accountRiskById?: Record<string, AccountRiskItem | undefined>;
   /** Increment this counter from the parent to trigger addGroup without a ref */
   addGroupTrigger?: number;
 }
@@ -823,10 +1441,18 @@ export function AccountGroupsView({
   accounts,
   onConnect,
   onDisconnect,
+  accountActionDisabled = false,
+  getConnectButtonLabel,
+  getDisconnectButtonLabel,
+  accountRiskById = {},
   addGroupTrigger,
 }: AccountGroupsViewProps) {
+  const { user } = useUser();
+  const { toast } = useToast();
   // ── Mode detection ─────────────────────────────────────────────────────
   const isDemo = accounts.length === 0;
+  const syncSignatureRef = useRef<string | null>(null);
+  const hydratedBoardSignatureRef = useRef<string | null>(null);
 
   // ── Real-account state (persisted) ────────────────────────────────────
   const [groups, setGroups] = useState<TradingGroup[]>(loadGroups);
@@ -846,6 +1472,7 @@ export function AccountGroupsView({
   });
 
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [pendingLifecycleGroupId, setPendingLifecycleGroupId] = useState<string | null>(null);
 
   // ── Group risk settings (persisted in localStorage) ────────────────────
   const [groupRiskSettings, setGroupRiskSettings] = useState<Record<string, Partial<RiskSettings>>>(() => {
@@ -855,6 +1482,26 @@ export function AccountGroupsView({
     } catch { return {}; }
   });
   const [riskDialogGroupId, setRiskDialogGroupId] = useState<string | null>(null);
+  const {
+    data: registeredGroupsData,
+    isLoading: isCopyGroupSnapshotLoading,
+    isError: isCopyGroupSnapshotError,
+  } = useQuery<CopyGroupSnapshotApiResponse>({
+    queryKey: ["/api/copy-groups/snapshot"],
+    queryFn: async () => {
+      const response = await fetch("/api/copy-groups/snapshot", {
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to load copy-group snapshot");
+      }
+
+      return response.json();
+    },
+    enabled: !isDemo && !!user?.id,
+    refetchOnWindowFocus: false,
+  });
 
   const saveGroupRiskSetting = (groupId: string, settings: RiskSettings) => {
     setGroupRiskSettings((prev) => {
@@ -880,10 +1527,274 @@ export function AccountGroupsView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addGroupTrigger]);
 
+  useEffect(() => {
+    if (isDemo || !user?.id || !registeredGroupsData) {
+      return;
+    }
+
+    if (registeredGroupsData.groups.length === 0 && groups.length > 0) {
+      return;
+    }
+
+    const nextBoardState = hydrateBoardStateFromSnapshot(registeredGroupsData, groups);
+    const nextSignature = JSON.stringify(nextBoardState);
+    const currentSignature = JSON.stringify({ groups, assignments });
+
+    if (
+      nextSignature === currentSignature ||
+      nextSignature === hydratedBoardSignatureRef.current
+    ) {
+      hydratedBoardSignatureRef.current = nextSignature;
+      return;
+    }
+
+    hydratedBoardSignatureRef.current = nextSignature;
+    setGroups(nextBoardState.groups);
+    setAssignments(nextBoardState.assignments);
+    setGroupRiskSettings((currentSettings) => {
+      const nextSettings = nextBoardState.groupRiskSettings;
+      const currentSignature = JSON.stringify(currentSettings);
+      const nextSettingsSignature = JSON.stringify(nextSettings);
+
+      if (currentSignature === nextSettingsSignature) {
+        return currentSettings;
+      }
+
+      try {
+        localStorage.setItem("group-risk-settings-v1", nextSettingsSignature);
+      } catch {}
+
+      return nextSettings;
+    });
+    saveGroups(nextBoardState.groups);
+    saveAssignments(nextBoardState.assignments);
+  }, [assignments, groups, isDemo, registeredGroupsData, user?.id]);
+
+  useEffect(() => {
+    if (isDemo || !user?.id) {
+      return;
+    }
+
+    const persistedName = user.copyGroupsUngroupedName?.trim() || "Ungrouped";
+    setUngroupedName((currentName) => {
+      if (currentName === persistedName) {
+        return currentName;
+      }
+
+      try {
+        localStorage.setItem("ungrouped-name-v1", persistedName);
+      } catch {}
+
+      return persistedName;
+    });
+  }, [isDemo, user?.copyGroupsUngroupedName, user?.id]);
+
+  useEffect(() => {
+    if (isDemo || !user?.id || !registeredGroupsData) {
+      return;
+    }
+
+    const runningGroupIds = new Set(registeredGroupsData.runningGroups ?? []);
+    const syncableGroups = groups.filter((group) => !runningGroupIds.has(group.id));
+    const registeredGroupIds = (registeredGroupsData.groups ?? []).map(
+      (registeredGroup) => registeredGroup.group.group.groupId,
+    );
+    const syncPlan = buildCopyGroupSyncPlan({
+      userId: user.id,
+      groups: syncableGroups,
+      assignments,
+      accounts,
+      groupRiskSettings,
+      registeredGroupIds: registeredGroupIds.filter((groupId) => !runningGroupIds.has(groupId)),
+    });
+    const syncSignature = JSON.stringify({
+      payloads: syncPlan.payloads,
+      removedGroupIds: syncPlan.removedGroupIds,
+      runningGroupIds: Array.from(runningGroupIds).sort(),
+    });
+
+    if (syncSignatureRef.current === syncSignature) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      for (const groupId of syncPlan.removedGroupIds) {
+        await apiRequest("DELETE", `/api/copy-groups/${groupId}`);
+      }
+
+      for (const payload of syncPlan.payloads) {
+        await apiRequest("POST", "/api/copy-groups/register", payload);
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      syncSignatureRef.current = syncSignature;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/copy-groups/snapshot"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/runtime/accounts-overview"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/runtime/dashboard-overview"] }),
+      ]);
+    })().catch((error) => {
+      if (cancelled) {
+        return;
+      }
+
+      console.error("Failed to sync copy group board state:", error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accounts, assignments, groupRiskSettings, groups, isDemo, registeredGroupsData, user?.id]);
+
   // ── Derived display values ─────────────────────────────────────────────
+  const setGroupRuntimePreference = (
+    groupId: string,
+    runtimePreference: "ready" | "paused" | "emergency_stopped",
+  ) => {
+    persistGroups(
+      groups.map((group) =>
+        group.id === groupId
+          ? {
+              ...group,
+              isActive: runtimePreference === "ready",
+              runtimePreference,
+            }
+          : group,
+      ),
+    );
+  };
+
+  const syncSingleGroupRegistration = async (
+    groupId: string,
+    runtimePreference: "ready" | "paused" | "emergency_stopped",
+  ) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const targetGroup = groups.find((group) => group.id === groupId);
+    if (!targetGroup) {
+      return;
+    }
+
+    const plan = buildCopyGroupSyncPlan({
+      userId: user.id,
+      groups: [
+        {
+          ...targetGroup,
+          isActive: runtimePreference === "ready",
+          runtimePreference,
+        },
+      ],
+      assignments,
+      accounts,
+      groupRiskSettings,
+      registeredGroupIds: [groupId],
+    });
+
+    const payload = plan.payloads[0];
+    if (!payload) {
+      return;
+    }
+
+    await apiRequest("POST", "/api/copy-groups/register", payload);
+  };
+
+  const invalidateCopyGroupQueries = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["/api/copy-groups/snapshot"] }),
+      queryClient.invalidateQueries({ queryKey: ["/api/runtime/accounts-overview"] }),
+      queryClient.invalidateQueries({ queryKey: ["/api/runtime/dashboard-overview"] }),
+    ]);
+  };
+
+  const persistUngroupedLaneName = async (name: string) => {
+    const trimmedName = name.trim() || "Ungrouped";
+
+    setUngroupedName(trimmedName);
+    try { localStorage.setItem("ungrouped-name-v1", trimmedName); } catch {}
+
+    if (isDemo || !user?.id) {
+      return;
+    }
+
+    const response = await apiRequest("PATCH", "/api/user/settings", {
+      copyGroupsUngroupedName: trimmedName,
+    });
+    const payload = await response.json();
+
+    queryClient.setQueryData(["/api/auth/me"], payload);
+  };
+
+  const applyGroupRuntimePreference = async (
+    groupId: string,
+    runtimePreference: "ready" | "paused" | "emergency_stopped",
+  ) => {
+    const previousGroup = groups.find((group) => group.id === groupId);
+    setPendingLifecycleGroupId(groupId);
+    setGroupRuntimePreference(groupId, runtimePreference);
+
+    try {
+      await syncSingleGroupRegistration(groupId, runtimePreference);
+      await invalidateCopyGroupQueries();
+      toast({
+        title:
+          runtimePreference === "ready"
+            ? "Group ready"
+            : runtimePreference === "paused"
+              ? "Group paused"
+              : "Emergency stop applied",
+        description:
+          runtimePreference === "ready"
+            ? "This group is saved in a safe ready state."
+            : runtimePreference === "paused"
+              ? "This group will stay paused until you change it."
+              : "This group is locked until you clear the stop.",
+      });
+    } catch (error) {
+      if (previousGroup) {
+        persistGroups(
+          groups.map((group) => (group.id === groupId ? previousGroup : group)),
+        );
+      }
+
+      console.error("Failed to apply copy-group runtime preference:", error);
+      toast({
+        title: "Group update failed",
+        description: error instanceof Error ? error.message : "Unable to save the group state right now.",
+        variant: "destructive",
+      });
+    } finally {
+      setPendingLifecycleGroupId(null);
+    }
+  };
+
   const displayAccounts  = isDemo ? DEMO_ACCOUNTS : accounts;
   const displayGroups    = isDemo ? demoGroups    : groups;
   const displayAssign    = isDemo ? demoAssignments : assignments;
+  const runtimeStatusByGroupId = new Map(
+    (registeredGroupsData?.groups ?? []).map((registeredGroup) => [
+      registeredGroup.group.group.groupId,
+      registeredGroup.runtime?.state?.status ?? "STOPPED",
+    ]),
+  );
+  const activityByGroupId = new Map(
+    (registeredGroupsData?.groups ?? []).map((registeredGroup) => [
+      registeredGroup.group.group.groupId,
+      registeredGroup.activityPreview,
+    ]),
+  );
+  const runtimeSummaryByGroupId = new Map(
+    (registeredGroupsData?.groups ?? []).map((registeredGroup) => [
+      registeredGroup.group.group.groupId,
+      registeredGroup.runtimeSummary,
+    ]),
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -911,18 +1822,30 @@ export function AccountGroupsView({
     const id    = `group-${Date.now()}`;
     if (isDemo) {
       const color = PALETTE[demoGroups.length % PALETTE.length];
-      setDemoGroups((prev) => [...prev, { id, name: `Group ${prev.length + 1}`, color, isActive: true, masterId: null, disabledAccountIds: [] }]);
+      setDemoGroups((prev) => [...prev, { id, name: `Group ${prev.length + 1}`, color, isActive: true, masterId: null, disabledAccountIds: [], runtimePreference: "ready" }]);
       return;
     }
     const color = PALETTE[groups.length % PALETTE.length];
-    persistGroups([...groups, { id, name: `Group ${groups.length + 1}`, color, isActive: true, masterId: null, disabledAccountIds: [] }]);
+    persistGroups([...groups, { id, name: `Group ${groups.length + 1}`, color, isActive: true, masterId: null, disabledAccountIds: [], runtimePreference: "ready" }]);
   };
 
   const renameGroup = (id: string, name: string) => {
     if (id === UNGROUPED_ID) {
       if (isDemo) { setDemoUngroupedName(name); return; }
-      setUngroupedName(name);
-      try { localStorage.setItem("ungrouped-name-v1", name); } catch {}
+      const previousName = ungroupedName;
+      void persistUngroupedLaneName(name).catch((error) => {
+        setUngroupedName(previousName);
+        try { localStorage.setItem("ungrouped-name-v1", previousName); } catch {}
+        console.error("Failed to save ungrouped lane name:", error);
+        toast({
+          title: "Lane rename failed",
+          description:
+            error instanceof Error
+              ? error.message
+              : "Unable to save the ungrouped lane name right now.",
+          variant: "destructive",
+        });
+      });
       return;
     }
     if (isDemo) { setDemoGroups((prev) => prev.map((g) => (g.id === id ? { ...g, name } : g))); return; }
@@ -943,8 +1866,19 @@ export function AccountGroupsView({
   };
 
   const toggleGroup = (id: string) => {
-    if (isDemo) { setDemoGroups((prev) => prev.map((g) => (g.id === id ? { ...g, isActive: !g.isActive } : g))); return; }
-    persistGroups(groups.map((g) => (g.id === id ? { ...g, isActive: !g.isActive } : g)));
+    if (isDemo) {
+      setDemoGroups((prev) => prev.map((g) => (g.id === id ? {
+        ...g,
+        isActive: !g.isActive,
+        runtimePreference: g.isActive ? "paused" : "ready",
+      } : g)));
+      return;
+    }
+    persistGroups(groups.map((g) => (g.id === id ? {
+      ...g,
+      isActive: !g.isActive,
+      runtimePreference: g.isActive ? "paused" : "ready",
+    } : g)));
   };
 
   const setMaster = (groupId: string, masterId: string | null) => {
@@ -1100,6 +2034,14 @@ export function AccountGroupsView({
             <Layers className="h-4 w-4 mr-1.5" />
             Board
           </Button>
+          <Button
+            variant={subView === "ungrouped" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setSubView("ungrouped")}
+          >
+            <Inbox className="h-4 w-4 mr-1.5" />
+            Ungrouped
+          </Button>
         </div>
 
         {subView === "kanban" && (
@@ -1136,9 +2078,24 @@ export function AccountGroupsView({
                   onToggleAccount={toggleAccountEnabled}
                   onConnect={onConnect}
                   onDisconnect={onDisconnect}
+                  accountActionDisabled={accountActionDisabled}
+                  getConnectButtonLabel={getConnectButtonLabel}
+                  getDisconnectButtonLabel={getDisconnectButtonLabel}
                   onSaveRisk={saveGroupRiskSetting}
                   onClearRisk={clearGroupRiskSetting}
                   riskSettings={groupRiskSettings[lane.id]}
+                  accountRiskById={accountRiskById}
+                  runtimeStatus={lane.isUngrouped ? undefined : runtimeStatusByGroupId.get(lane.id)}
+                  runtimeSummary={lane.isUngrouped ? undefined : runtimeSummaryByGroupId.get(lane.id)}
+                  recentActivityPreview={lane.isUngrouped ? [] : activityByGroupId.get(lane.id) ?? []}
+                  runtimeLoading={!lane.isUngrouped && isCopyGroupSnapshotLoading}
+                  runtimeUnavailable={!lane.isUngrouped && isCopyGroupSnapshotError}
+                  lifecycleActionPending={pendingLifecycleGroupId === lane.id}
+                  onStartGroup={(groupId) => void applyGroupRuntimePreference(groupId, "ready")}
+                  onPauseGroup={(groupId) => void applyGroupRuntimePreference(groupId, "paused")}
+                  onResumeGroup={(groupId) => void applyGroupRuntimePreference(groupId, "ready")}
+                  onEmergencyStopGroup={(groupId) => void applyGroupRuntimePreference(groupId, "emergency_stopped")}
+                  onResetGroup={(groupId) => void applyGroupRuntimePreference(groupId, "ready")}
                 />
               );
             })}
@@ -1174,13 +2131,13 @@ export function AccountGroupsView({
               <Inbox className="h-10 w-10 text-muted-foreground/40 mb-3" />
               <p className="text-sm font-medium text-muted-foreground">All accounts are in a group</p>
               <p className="text-xs text-muted-foreground/70 mt-1">
-                Switch to Groups to drag accounts between lanes.
+                Switch to Board to drag accounts between groups.
               </p>
             </div>
           ) : (
             <>
               <p className="text-sm text-muted-foreground mb-3">
-                {ungroupedAccounts.length} account{ungroupedAccounts.length !== 1 ? "s" : ""} not assigned to any group — switch to Groups to drag them in.
+                {ungroupedAccounts.length} account{ungroupedAccounts.length !== 1 ? "s" : ""} not assigned to any group. Switch to Board to drag them into place.
               </p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {ungroupedAccounts.map((account) => (
@@ -1190,6 +2147,9 @@ export function AccountGroupsView({
                       isDemo={isDemo}
                       onConnect={() => onConnect(account.id)}
                       onDisconnect={() => onDisconnect(account.id, account.name)}
+                      accountActionDisabled={accountActionDisabled}
+                      connectButtonLabel={getConnectButtonLabel?.(account.id)}
+                      disconnectButtonLabel={getDisconnectButtonLabel?.(account.id)}
                     />
                   </DndContext>
                 ))}

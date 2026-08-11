@@ -4,12 +4,16 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useNotifications } from "@/hooks/use-notifications";
+import {
+  clusterNotifications,
+  describeExecutionAttentionNotification,
+} from "@/lib/notifications";
 import { formatDistanceToNowStrict } from "date-fns";
 
 export function NotificationCenter() {
   const { data } = useNotifications();
   const unreadEstimate = data?.unreadEstimate ?? 0;
-  const notifications = data?.notifications.slice(0, 6) ?? [];
+  const notifications = clusterNotifications(data?.notifications ?? []).slice(0, 6);
 
   return (
     <Popover>
@@ -51,9 +55,21 @@ export function NotificationCenter() {
                   <div>
                     <p className="text-sm font-medium text-white">{notification.title}</p>
                     <p className="mt-1 text-sm text-zinc-400">{notification.message}</p>
+                    {notification.relatedCount > 0 ? (
+                      <div className="mt-2 space-y-1">
+                        <p className="text-xs text-zinc-500">
+                          +{notification.relatedCount} earlier update{notification.relatedCount === 1 ? "" : "s"} on this order path
+                        </p>
+                        {notification.relatedItems.slice(0, 2).map((related) => (
+                          <p key={related.id} className="text-xs text-zinc-500">
+                            {describeExecutionAttentionNotification(related).label}: {related.title}
+                          </p>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-zinc-400">
-                    {notification.severity}
+                    {describeExecutionAttentionNotification(notification).label}
                   </span>
                 </div>
                 <p className="mt-2 text-[11px] uppercase tracking-[0.16em] text-zinc-500">

@@ -11,7 +11,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  buildTradeJourneyRows,
   buildTradeHistoryQueryString,
+  buildTradeLifecycleStageCards,
+  describeTradeLifecycleOverview,
   summarizeTradeHistoryBySymbol,
   summarizeTradeHistory,
   toTradeHistoryRows,
@@ -51,6 +54,9 @@ export default function Trades() {
   const rows = toTradeHistoryRows(records);
   const summary = summarizeTradeHistory(records);
   const topSymbols = summarizeTradeHistoryBySymbol(records, 4);
+  const lifecycleOverview = describeTradeLifecycleOverview(records);
+  const lifecycleStageCards = buildTradeLifecycleStageCards(records);
+  const journeyRows = buildTradeJourneyRows(records, 5);
 
   const summaryCards = [
     {
@@ -141,6 +147,103 @@ export default function Trades() {
           );
         })}
       </div>
+
+      <Card className="border-white/10 bg-slate-950/60 p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Execution Journey</p>
+            <h2 className="mt-2 text-lg font-semibold text-white">{lifecycleOverview.headline}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{lifecycleOverview.detail}</p>
+          </div>
+          <Badge
+            variant="outline"
+            className={
+              lifecycleOverview.tone === "danger"
+                ? "border-rose-400/30 bg-rose-400/10 text-rose-200"
+                : lifecycleOverview.tone === "warn"
+                  ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
+                  : lifecycleOverview.tone === "ok"
+                    ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
+                    : "border-white/10 bg-white/[0.04] text-zinc-300"
+            }
+          >
+            {lifecycleOverview.tone === "danger"
+              ? "Needs attention"
+              : lifecycleOverview.tone === "warn"
+                ? "In progress"
+                : lifecycleOverview.tone === "ok"
+                  ? "Healthy"
+                  : "Waiting"}
+          </Badge>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {lifecycleStageCards.map((card) => (
+            <div key={card.label} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{card.label}</p>
+              <p
+                className={`mt-2 text-2xl font-semibold ${
+                  card.tone === "danger"
+                    ? "text-rose-300"
+                    : card.tone === "warn"
+                      ? "text-amber-300"
+                      : card.tone === "ok"
+                        ? "text-emerald-300"
+                        : "text-zinc-300"
+                }`}
+              >
+                {card.value}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Recent Hand-offs</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                The latest follower orders, their current stage, and the next step we are waiting on.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 xl:grid-cols-2">
+            {journeyRows.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-muted-foreground xl:col-span-2">
+                Recent execution hand-offs will appear here once order lifecycle records are available.
+              </div>
+            ) : (
+              journeyRows.map((row) => (
+                <div key={row.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-white">{row.symbol}</p>
+                      <p className="mt-1 text-sm text-slate-300">{row.accountLabel}</p>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={
+                        row.tone === "danger"
+                          ? "border-rose-400/30 bg-rose-400/10 text-rose-200"
+                          : row.tone === "warn"
+                            ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
+                            : "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
+                      }
+                    >
+                      {row.executionSummary.headline}
+                    </Badge>
+                  </div>
+                  <p className="mt-3 text-sm text-white">{row.executionSummary.detail}</p>
+                  <p className="mt-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    Updated {row.updatedAtLabel}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </Card>
 
       <Card className="border-white/10 bg-slate-950/60 p-5">
         <div className="flex items-center justify-between">
@@ -317,8 +420,58 @@ export default function Trades() {
                                 </div>
                                 <div>
                                   <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Current State</p>
-                                  <p className="mt-2 text-sm text-white">{row.statusLabel}</p>
+                                  <p className="mt-2 text-sm text-white">{row.executionSummary.headline}</p>
+                                  <p className="mt-1 text-xs text-muted-foreground">{row.executionSummary.detail}</p>
                                 </div>
+                                <div>
+                                  <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Stage Flow</p>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {row.detail.stageFlow.map((stage) => (
+                                      <div
+                                        key={`${row.id}-${stage.key}`}
+                                        className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                                          stage.state === "done"
+                                            ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
+                                            : stage.state === "active"
+                                              ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
+                                              : "border-white/10 bg-white/[0.03] text-zinc-400"
+                                        }`}
+                                      >
+                                        {stage.label}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div>
+                                  <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Fill Progress</p>
+                                  <div className="mt-2 space-y-2 text-sm text-slate-300">
+                                    <p><span className="text-muted-foreground">Requested:</span> {row.detail.requestedQuantityLabel}</p>
+                                    <p><span className="text-muted-foreground">Filled:</span> {row.detail.filledQuantityLabel}</p>
+                                    <p><span className="text-muted-foreground">Remaining:</span> {row.detail.remainingQuantityLabel}</p>
+                                    <p><span className="text-muted-foreground">Progress:</span> {row.detail.progressLabel}</p>
+                                    <p><span className="text-muted-foreground">Fill count:</span> {row.detail.fillCountLabel}</p>
+                                  </div>
+                                </div>
+                                {row.detail.reviewStatus === "reviewed" ? (
+                                  <div>
+                                    <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Review Note</p>
+                                    <div className="mt-2 space-y-2 text-sm text-slate-300">
+                                      <p>
+                                        <span className="text-muted-foreground">Status:</span> Reviewed
+                                      </p>
+                                      <p>
+                                        <span className="text-muted-foreground">Reviewed:</span>{" "}
+                                        {row.detail.reviewedAt
+                                          ? new Date(row.detail.reviewedAt).toLocaleString()
+                                          : "Recently"}
+                                      </p>
+                                      <p>
+                                        <span className="text-muted-foreground">Note:</span>{" "}
+                                        {row.detail.reviewNote ?? "No note captured"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ) : null}
                               </div>
 
                               <div>

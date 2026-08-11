@@ -64,6 +64,57 @@ test('tracks the full intent lifecycle from created through filled', () => {
   store.clear();
 });
 
+test('tracks partial fills without forcing the record into a final fill state', () => {
+  const store = new TradeHistoryStore();
+  store.start();
+
+  propCopiaEventBus.publish('intent.created', {
+    intent: {
+      intentId: 'intent-partial',
+      masterAccountId: 'master-partial',
+      masterFillId: 'fill-partial',
+      followerAccountId: 'follower-partial',
+      symbol: 'ES',
+      side: 'BUY',
+      quantity: 3,
+      createdAt: '2026-08-04T12:00:00.000Z',
+      status: 'NEW',
+    },
+  });
+  propCopiaEventBus.publish('execution.acknowledged', {
+    intentId: 'intent-partial',
+    followerAccountId: 'follower-partial',
+    brokerKey: 'follower-ws:follower-partial',
+    brokerOrderId: 'broker-partial',
+    acknowledgedAt: '2026-08-04T12:00:03.000Z',
+    brokerStatus: 'WORKING',
+  });
+  propCopiaEventBus.publish('execution.partial_fill', {
+    intentId: 'intent-partial',
+    followerAccountId: 'follower-partial',
+    brokerKey: 'follower-ws:follower-partial',
+    brokerOrderId: 'broker-partial',
+    fillId: 'fill-follow-partial',
+    filledQuantity: 1,
+    cumulativeFilledQuantity: 1,
+    remainingQuantity: 2,
+    averageFillPrice: 6400.5,
+    filledAt: '2026-08-04T12:00:04.000Z',
+  });
+
+  const record = store.get('intent-partial');
+  assert.ok(record);
+  assert.equal(record.lifecycleStatus, 'PARTIALLY_FILLED');
+  assert.equal(record.partialFillCount, 1);
+  assert.equal(record.filledQuantity, 1);
+  assert.equal(record.remainingQuantity, 2);
+  assert.equal(record.averageFillPrice, 6400.5);
+  assert.equal(record.events[0]?.message, 'Partial fill recorded (1/3)');
+
+  store.stop();
+  store.clear();
+});
+
 test('tracks rule-level skips without requiring an intent', () => {
   const store = new TradeHistoryStore();
   store.start();
@@ -79,6 +130,29 @@ test('tracks rule-level skips without requiring an intent', () => {
   assert.ok(record);
   assert.equal(record?.lifecycleStatus, 'RULE_SKIPPED');
   assert.equal(record?.ruleReasonCode, 'SYMBOL_BLOCKED');
+  assert.equal(record?.events[0]?.message, 'Rule skipped: Symbol blocked');
+
+  store.stop();
+  store.clear();
+});
+
+test('tracks rule rejections with user-friendly reason labels', () => {
+  const store = new TradeHistoryStore();
+  store.start();
+
+  propCopiaEventBus.publish('rule.rejected', {
+    followerAccountId: 'follower-3',
+    masterFillId: 'fill-3',
+    symbol: 'MNQ',
+    reasonCode: 'RISK_LIMIT_BREACHED',
+  });
+
+  const record = store.get('rule:fill-3:follower-3');
+  assert.ok(record);
+  assert.equal(record?.lifecycleStatus, 'RULE_REJECTED');
+  assert.equal(record?.ruleReasonCode, 'RISK_LIMIT_BREACHED');
+  assert.equal(record?.lastErrorMessage, 'Risk limit breached');
+  assert.equal(record?.events[0]?.message, 'Rule rejected: Risk limit breached');
 
   store.stop();
   store.clear();
@@ -167,6 +241,50 @@ test('listRecent filters by free-text query across record fields', () => {
   assert.equal(bySymbol[0].intentId, 'intent-search');
   assert.equal(byReason.length, 1);
   assert.equal(byReason[0].lifecycleStatus, 'FAILED');
+
+  store.stop();
+  store.clear();
+});
+
+test('markRecoveryItemReviewed stores review status, note, and event history', () => {
+  const store = new TradeHistoryStore();
+  store.start();
+
+  propCopiaEventBus.publish('intent.created', {
+    intent: {
+      intentId: 'intent-review',
+      masterAccountId: 'master-review',
+      masterFillId: 'fill-review',
+      followerAccountId: 'follower-review',
+      symbol: 'ES',
+      side: 'BUY',
+      quantity: 1,
+      createdAt: '2026-08-11T14:00:00.000Z',
+      status: 'NEW',
+    },
+  });
+  propCopiaEventBus.publish('execution.failed', {
+    intentId: 'intent-review',
+    followerAccountId: 'follower-review',
+    brokerKey: 'follower-ws:follower-review',
+    errorMessage: 'Broker down',
+    failedAt: '2026-08-11T14:01:00.000Z',
+  });
+
+  const reviewed = store.markRecoveryItemReviewed('intent-review', {
+    note: 'Checked broker logs and left for retry review',
+    reviewedAt: '2026-08-11T14:05:00.000Z',
+  });
+
+  assert.ok(reviewed);
+  assert.equal(reviewed.reviewStatus, 'reviewed');
+  assert.equal(reviewed.reviewNote, 'Checked broker logs and left for retry review');
+  assert.equal(reviewed.reviewedAt, '2026-08-11T14:05:00.000Z');
+  assert.equal(reviewed.events[0]?.type, 'review.marked');
+  assert.equal(
+    reviewed.events[0]?.message,
+    'Failure reviewed: Checked broker logs and left for retry review',
+  );
 
   store.stop();
   store.clear();

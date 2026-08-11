@@ -2,6 +2,7 @@ import { propCopiaEventBus } from './event-bus';
 import type { EventHandler } from './event-bus';
 import type { PropCopiaEventMap } from './event-bus-types';
 import type { TradeIntentStatus } from './trade-intent-types';
+import { formatRuleReasonLabel } from './rule-reason-label';
 
 export type TradeHistoryLifecycleStatus =
   | 'RULE_SKIPPED'
@@ -10,6 +11,7 @@ export type TradeHistoryLifecycleStatus =
   | 'QUEUED'
   | 'SENT'
   | 'ACKNOWLEDGED'
+  | 'PARTIALLY_FILLED'
   | 'FILLED'
   | 'FAILED'
   | 'CANCELLED';
@@ -36,7 +38,9 @@ export interface TradeHistoryRecord {
   brokerKey?: string;
   brokerOrderId?: string;
   fillId?: string;
+  partialFillCount?: number;
   filledQuantity?: number;
+  remainingQuantity?: number;
   averageFillPrice?: number;
   createdAt: string;
   updatedAt: string;
@@ -46,6 +50,9 @@ export interface TradeHistoryRecord {
   filledAt?: string;
   failedAt?: string;
   lastErrorMessage?: string;
+  reviewStatus?: 'pending' | 'reviewed';
+  reviewNote?: string;
+  reviewedAt?: string;
   events: TradeHistoryEvent[];
 }
 
@@ -72,6 +79,7 @@ export class TradeHistoryStore {
 
     this.subscribe('rule.skipped', (event) => {
       const historyId = buildRuleHistoryId(event.masterFillId, event.followerAccountId);
+      const reasonLabel = formatRuleReasonLabel(event.reasonCode);
       this.upsert(historyId, {
         historyId,
         masterFillId: event.masterFillId,
@@ -83,12 +91,13 @@ export class TradeHistoryStore {
       }, {
         type: 'rule.skipped',
         timestamp: new Date().toISOString(),
-        message: `Rule skipped: ${event.reasonCode}`,
+        message: `Rule skipped: ${reasonLabel}`,
       });
     });
 
     this.subscribe('rule.rejected', (event) => {
       const historyId = buildRuleHistoryId(event.masterFillId, event.followerAccountId);
+      const reasonLabel = formatRuleReasonLabel(event.reasonCode);
       this.upsert(historyId, {
         historyId,
         masterFillId: event.masterFillId,
@@ -97,11 +106,11 @@ export class TradeHistoryStore {
         lifecycleStatus: 'RULE_REJECTED',
         ruleDecision: 'REJECTED',
         ruleReasonCode: event.reasonCode,
-        lastErrorMessage: event.reasonCode,
+        lastErrorMessage: reasonLabel,
       }, {
         type: 'rule.rejected',
         timestamp: new Date().toISOString(),
-        message: `Rule rejected: ${event.reasonCode}`,
+        message: `Rule rejected: ${reasonLabel}`,
       });
     });
 
@@ -198,11 +207,34 @@ export class TradeHistoryStore {
       });
     });
 
+    this.subscribe('execution.partial_fill', (event) => {
+      const existing = this.records.get(event.intentId);
+      const cumulativeFilledQuantity = event.cumulativeFilledQuantity ?? event.filledQuantity;
+      this.patchIntentRecord(event.intentId, {
+        brokerKey: event.brokerKey,
+        brokerOrderId: event.brokerOrderId,
+        fillId: event.fillId,
+        filledQuantity: cumulativeFilledQuantity,
+        remainingQuantity: event.remainingQuantity,
+        partialFillCount: (existing?.partialFillCount ?? 0) + 1,
+        averageFillPrice: event.averageFillPrice,
+        lifecycleStatus: 'PARTIALLY_FILLED',
+      }, {
+        type: 'execution.partial_fill',
+        timestamp: event.filledAt,
+        message:
+          typeof cumulativeFilledQuantity === 'number'
+            ? `Partial fill recorded (${cumulativeFilledQuantity}${typeof existing?.quantity === 'number' ? `/${existing.quantity}` : ''})`
+            : 'Partial fill recorded',
+      });
+    });
+
     this.subscribe('execution.filled', (event) => {
       this.patchIntentRecord(event.intentId, {
         brokerKey: event.brokerKey,
         brokerOrderId: event.brokerOrderId,
         fillId: event.fillId,
+        remainingQuantity: 0,
         filledQuantity: event.filledQuantity,
         averageFillPrice: event.averageFillPrice,
         filledAt: event.filledAt,
@@ -294,6 +326,43 @@ export class TradeHistoryStore {
       ...record,
       events: [...record.events],
     };
+  }
+
+  markRecoveryItemReviewed(
+    historyId: string,
+    options: {
+      note?: string;
+      reviewedAt?: string;
+    } = {},
+  ): TradeHistoryRecord | undefined {
+    const existing = this.records.get(historyId);
+    if (!existing) {
+      return undefined;
+    }
+
+    const reviewedAt = options.reviewedAt ?? new Date().toISOString();
+    const reviewNote = options.note?.trim();
+
+    this.records.set(historyId, {
+      ...existing,
+      reviewStatus: 'reviewed',
+      reviewNote: reviewNote && reviewNote.length > 0 ? reviewNote : existing.reviewNote,
+      reviewedAt,
+      updatedAt: reviewedAt,
+      events: [
+        {
+          type: 'review.marked',
+          timestamp: reviewedAt,
+          message:
+            reviewNote && reviewNote.length > 0
+              ? `Failure reviewed: ${reviewNote}`
+              : 'Failure reviewed',
+        },
+        ...existing.events,
+      ].slice(0, 25),
+    });
+
+    return this.get(historyId);
   }
 
   private mapIntentStatus(status: TradeIntentStatus): TradeHistoryLifecycleStatus {

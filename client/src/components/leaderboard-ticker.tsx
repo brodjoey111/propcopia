@@ -13,7 +13,8 @@ interface Trader {
 export function LeaderboardTicker() {
   const { data: leaderboardData } = useQuery<{ success: boolean; data: Trader[] }>({
     queryKey: ['/api/leaderboard'],
-    refetchInterval: 10000,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
   });
 
   const allTraders = leaderboardData?.data || [];

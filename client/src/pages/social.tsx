@@ -53,6 +53,7 @@ export default function Social() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [newPost, setNewPost] = useState('');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [activeTab, setActiveTab] = useState('feed');
 
   const handleLike = (postId: string) => {
     setPosts(posts.map(post => {
@@ -124,7 +125,7 @@ export default function Social() {
         </p>
       </div>
 
-      <Tabs defaultValue="feed" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="feed" data-testid="tab-feed">
             Feed
@@ -289,7 +290,7 @@ export default function Social() {
         </TabsContent>
 
         <TabsContent value="leaderboard" className="space-y-4">
-          <LiveLeaderboard />
+          <LiveLeaderboard active={activeTab === 'leaderboard'} />
         </TabsContent>
 
         <TabsContent value="trending" className="space-y-4">

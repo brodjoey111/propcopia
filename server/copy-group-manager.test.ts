@@ -125,6 +125,110 @@ test('pause and resume affect only the selected group', async () => {
   assert.equal(manager.getRuntime('g1')?.executionManager.isPaused(), false);
 });
 
+test('registerGroup restores paused groups without restoring live connections', () => {
+  const manager = new CopyGroupManager();
+  const runtime = manager.registerGroup(createGroup('g1'), createFollowers('g1'), {
+    persistedState: {
+      status: 'PAUSED',
+      pausedAt: '2026-08-05T10:00:00.000Z',
+      masterConnected: true,
+      connectedFollowerCount: 2,
+      totalFollowerCount: 2,
+    },
+  });
+
+  assert.equal(runtime.state.status, 'PAUSED');
+  assert.equal(runtime.state.pausedAt, '2026-08-05T10:00:00.000Z');
+  assert.equal(runtime.state.masterConnected, false);
+  assert.equal(runtime.state.connectedFollowerCount, 0);
+  assert.equal(runtime.executionManager.isPaused(), true);
+  assert.equal(
+    manager.getRecentActivity('g1')[0]?.message,
+    'Restored paused copy group Group g1 in a safe offline state.',
+  );
+});
+
+test('registerGroup restores emergency stops with kill switch active', () => {
+  const manager = new CopyGroupManager();
+  const runtime = manager.registerGroup(createGroup('g1'), createFollowers('g1'), {
+    persistedState: {
+      status: 'EMERGENCY_STOPPED',
+      emergencyStoppedAt: '2026-08-05T10:05:00.000Z',
+      emergencyStopReason: 'manual review required',
+    },
+  });
+
+  assert.equal(runtime.state.status, 'EMERGENCY_STOPPED');
+  assert.equal(runtime.state.isKillSwitchActive, true);
+  assert.equal(runtime.state.emergencyStopReason, 'manual review required');
+  assert.equal(runtime.executionManager.isKillSwitchActive(), true);
+  assert.equal(
+    manager.getRecentActivity('g1')[0]?.message,
+    'Restored emergency stop for Group g1: manual review required',
+  );
+});
+
+test('registerGroup downgrades active persisted runtime states into STOPPED', () => {
+  const manager = new CopyGroupManager();
+  const runtime = manager.registerGroup(createGroup('g1'), createFollowers('g1'), {
+    persistedState: {
+      status: 'RUNNING',
+      startedAt: '2026-08-05T10:00:00.000Z',
+      masterConnected: true,
+      connectedFollowerCount: 2,
+    },
+  });
+
+  assert.equal(runtime.state.status, 'STOPPED');
+  assert.equal(runtime.state.masterConnected, false);
+  assert.equal(runtime.state.connectedFollowerCount, 0);
+  assert.equal(typeof runtime.state.stoppedAt, 'string');
+  assert.equal(
+    manager.getRecentActivity('g1')[0]?.message,
+    'Recovered copy group Group g1 into STOPPED state after reload.',
+  );
+});
+
+test('syncGroup updates a stopped group in place and preserves safe lifecycle state', () => {
+  const manager = new CopyGroupManager();
+  manager.registerGroup(createGroup('g1'), createFollowers('g1'));
+
+  const syncedRuntime = manager.syncGroup(
+    createGroup('g1', {
+      name: 'Group g1 synced',
+      followerAccountIds: ['follower-g1-1'],
+    }),
+    [createFollowers('g1')[0]!],
+    {
+      persistedState: {
+        status: 'PAUSED',
+      },
+    },
+  );
+
+  assert.equal(syncedRuntime.group.name, 'Group g1 synced');
+  assert.equal(syncedRuntime.followers.length, 1);
+  assert.equal(syncedRuntime.state.status, 'PAUSED');
+  assert.equal(syncedRuntime.executionManager.isPaused(), true);
+  assert.equal(
+    manager.getRecentActivity('g1')[0]?.message,
+    'Synchronized copy group Group g1 synced configuration.',
+  );
+});
+
+test('syncGroup rejects configuration changes while a group is actively running', async () => {
+  const manager = new CopyGroupManager();
+  manager.registerGroup(createGroup('g1'), createFollowers('g1'));
+  await manager.start('g1');
+
+  assert.throws(
+    () => manager.syncGroup(createGroup('g1'), createFollowers('g1')),
+    {
+      message: 'Copy group g1 must be stopped before syncing configuration.',
+    },
+  );
+});
+
 test('emergencyStop affects only the selected group', async () => {
   const manager = new CopyGroupManager();
   manager.registerGroup(createGroup('g1'), createFollowers('g1'));
@@ -386,7 +490,73 @@ test('execution, rule, and master-fill events update observability and counters'
   assert.equal(runtime.statistics.skippedZeroQuantityCount, 1);
   assert.equal(runtime.observability.errorEventCount >= 2, true);
   assert.equal(runtime.observability.lastErrorMessage, 'Broker adapter is not connected');
+  assert.equal(
+    manager.getRecentActivity('g1').some((entry) => entry.message.includes('Max trades per day reached')),
+    true,
+  );
   assert.equal(manager.getRecentActivity('g1').length > 0, true);
+});
+
+test('recordExternalActivity appends health alerts and updates error state', () => {
+  const manager = new CopyGroupManager();
+  const runtime = manager.registerGroup(createGroup('g1'), createFollowers('g1'));
+
+  manager.recordExternalActivity('g1', {
+    severity: 'WARN',
+    category: 'HEALTH',
+    message: 'Follower is approaching a risk threshold.',
+    followerAccountId: 'follower-g1-1',
+  });
+  manager.recordExternalActivity('g1', {
+    severity: 'ERROR',
+    category: 'HEALTH',
+    message: 'Follower breached configured risk limits.',
+    followerAccountId: 'follower-g1-2',
+  });
+
+  const activity = manager.getRecentActivity('g1');
+  assert.equal(activity[0]?.category, 'HEALTH');
+  assert.equal(activity[0]?.severity, 'ERROR');
+  assert.equal(activity[1]?.severity, 'WARN');
+  assert.equal(runtime.state.lastErrorMessage, 'Follower breached configured risk limits.');
+  assert.equal(runtime.observability.errorEventCount >= 1, true);
+});
+
+test('activity journal survives runtime recreation for the same group id', async () => {
+  const manager = new CopyGroupManager();
+  manager.registerGroup(createGroup('g1'), createFollowers('g1'));
+  await manager.start('g1');
+  manager.recordExternalActivity('g1', {
+    severity: 'WARN',
+    category: 'HEALTH',
+    message: 'Follower reconnecting after startup.',
+  });
+
+  const beforeUnregister = manager.getRecentActivity('g1');
+  await manager.unregisterGroup('g1');
+
+  const restoredRuntime = manager.registerGroup(createGroup('g1'), createFollowers('g1'));
+  const restoredActivity = manager.getRecentActivity('g1');
+
+  assert.equal(beforeUnregister.length >= 2, true);
+  assert.equal(restoredActivity.length >= beforeUnregister.length, true);
+  assert.equal(restoredActivity.some((entry) => entry.message.includes('Follower reconnecting')), true);
+  assert.equal(restoredRuntime.observability.totalEvents >= beforeUnregister.length, true);
+  assert.equal(restoredRuntime.observability.warningEventCount >= 1, true);
+});
+
+test('getPersistedState exports only safe lifecycle state', async () => {
+  const manager = new CopyGroupManager();
+  manager.registerGroup(createGroup('g1'), createFollowers('g1'));
+  await manager.start('g1');
+
+  const persistedState = manager.getPersistedState('g1');
+
+  assert.equal(persistedState.status, 'STOPPED');
+  assert.equal(persistedState.masterConnected, false);
+  assert.equal(persistedState.connectedFollowerCount, 0);
+  assert.equal(persistedState.totalFollowerCount, 2);
+  assert.equal(typeof persistedState.stoppedAt, 'string');
 });
 
 test('routes expose copy group endpoints through CopyGroupManager only', () => {
@@ -403,13 +573,20 @@ test('routes expose copy group endpoints through CopyGroupManager only', () => {
   assert.match(routesSource, /app\.post\("\/api\/copy-groups\/resume"/);
   assert.match(routesSource, /app\.post\("\/api\/copy-groups\/emergency-stop"/);
   assert.match(routesSource, /app\.delete\("\/api\/copy-groups\/:groupId"/);
-  assert.match(routesSource, /copyGroupManager\.registerGroup/);
+  assert.match(routesSource, /getOwnedRegisteredGroup/);
+  assert.match(routesSource, /copyGroupManager\.syncGroup/);
   assert.match(routesSource, /copyGroupManager\.start/);
   assert.match(routesSource, /copyGroupManager\.stop/);
   assert.match(routesSource, /copyGroupManager\.pause/);
   assert.match(routesSource, /copyGroupManager\.resume/);
   assert.match(routesSource, /copyGroupManager\.emergencyStop/);
   assert.match(routesSource, /copyGroupManager\.unregisterGroup/);
+  assert.match(routesSource, /copyGroupRegistrationStore/);
+  assert.match(routesSource, /ensurePersistedCopyGroupsLoaded/);
+  assert.match(routesSource, /persistRegisteredGroupState/);
+  assert.match(routesSource, /persistedState:\s*runtimeState/);
+  assert.match(routesSource, /evaluateFollowerRiskAlerts/);
+  assert.match(routesSource, /copyGroupManager\.recordExternalActivity/);
   assert.match(routesSource, /req\.session\?\.userId/);
   assert.match(routesSource, /registeredGroup\.group\.userId === req\.session\.userId/);
 });

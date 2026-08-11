@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -7,19 +7,28 @@ import { Button } from "@/components/ui/button";
 interface PositionScalingControlProps {
   accountName: string;
   defaultValue?: number;
+  accountMeta?: string;
+  riskModeLabel?: string;
+  isSaving?: boolean;
   onSave?: (value: number) => void;
 }
 
 export function PositionScalingControl({
   accountName,
   defaultValue = 100,
+  accountMeta,
+  riskModeLabel,
+  isSaving = false,
   onSave,
 }: PositionScalingControlProps) {
   const [scaling, setScaling] = useState(defaultValue);
   const presets = [25, 50, 100, 200];
 
+  useEffect(() => {
+    setScaling(defaultValue);
+  }, [defaultValue]);
+
   const handleSave = () => {
-    console.log(`Saving scaling for ${accountName}:`, scaling);
     onSave?.(scaling);
   };
 
@@ -31,6 +40,11 @@ export function PositionScalingControl({
           <p className="text-sm text-muted-foreground">
             Adjust position size scaling for this follower account
           </p>
+          {(accountMeta || riskModeLabel) && (
+            <p className="mt-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+              {[accountMeta, riskModeLabel].filter(Boolean).join(" • ")}
+            </p>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -74,8 +88,8 @@ export function PositionScalingControl({
           </div>
         </div>
 
-        <Button className="w-full" onClick={handleSave} data-testid="button-save-scaling">
-          Save Changes
+        <Button className="w-full" onClick={handleSave} disabled={isSaving} data-testid="button-save-scaling">
+          {isSaving ? "Saving..." : "Save Changes"}
         </Button>
       </div>
     </Card>

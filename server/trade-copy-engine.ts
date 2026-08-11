@@ -2,6 +2,7 @@ import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 import type { Account } from '@shared/schema';
 import type { RithmicAPI, RithmicOrderFillEvent } from './rithmic-api';
+import { evaluateAccountRisk } from './account-risk-service';
 import { propCopiaEventBus } from './event-bus';
 import type {
   BrokerAdapter,
@@ -69,6 +70,9 @@ export type FollowerBrokerConfig =
   | TradovateFollowerBrokerConfig
   | RithmicFollowerBrokerConfig
   | LegacyWebSocketFollowerBrokerConfig;
+
+const MAX_LEGACY_FOLLOWER_RECONNECT_ATTEMPTS = 5;
+const VERBOSE_TRADE_COPY_LOGS = process.env.TRADE_COPY_VERBOSE_LOGS === '1';
 
 type SharedRithmicApiAdapter = Pick<
   RithmicAPI,
@@ -150,11 +154,13 @@ interface FollowerConnection {
   ws: WebSocket | null;
   accessToken: string | null;
   isReady: boolean;
+  reconnectAttempts: number;
 }
 
 interface FollowerRuntimeRecord {
   accountId: string;
   brokerAccountId: string;
+  accountRiskBreached: boolean;
   positionScaling?: number;
   maxContracts?: number;
   copySizingMode: FollowerSizingMode;
@@ -186,6 +192,7 @@ export interface TradeCopyEngineStatus {
     accountId: string;
     brokerKind: FollowerBrokerConfig['kind'];
     connected: boolean;
+    health: 'ready' | 'reconnecting' | 'unavailable';
   }>;
 }
 
@@ -271,10 +278,19 @@ export class TradeCopyEngine extends EventEmitter {
   private baseUrl: string;
   private isActive: boolean = true; // Control flag for stop functionality
   private reconnectTimeouts: Set<NodeJS.Timeout> = new Set(); // Track reconnect timers
+  private followerReconnectTimeouts: Map<string, NodeJS.Timeout> = new Map();
   private failedSends: number = 0; // Track send failures
   private lastMasterFillAt: string | null = null;
   private lastMasterFillId: string | null = null;
   private lastMasterFillSymbol: string | null = null;
+
+  private logVerbose(message?: unknown, ...optionalParams: unknown[]): void {
+    if (!VERBOSE_TRADE_COPY_LOGS) {
+      return;
+    }
+
+    console.log(message, ...optionalParams);
+  }
 
   constructor(
     environment: 'demo' | 'live' = 'demo',
@@ -294,7 +310,7 @@ export class TradeCopyEngine extends EventEmitter {
       ? 'wss://demo.tradovateapi.com/v1/websocket'
       : 'wss://live.tradovateapi.com/v1/websocket';
     
-    console.log('[TradeCopy] Engine initialized for', environment, 'environment');
+    this.logVerbose('[TradeCopy] Engine initialized for', environment, 'environment');
   }
 
   // Pre-load position scaling multipliers into memory
@@ -307,7 +323,9 @@ export class TradeCopyEngine extends EventEmitter {
     }
     
     const loadTime = performance.now() - startTime;
-    console.log(`[TradeCopy] Scaling cache initialized for ${accounts.length} accounts in ${loadTime.toFixed(2)}ms`);
+    this.logVerbose(
+      `[TradeCopy] Scaling cache initialized for ${accounts.length} accounts in ${loadTime.toFixed(2)}ms`,
+    );
   }
 
   // Establish WebSocket connection to master account for real-time fills
@@ -321,7 +339,7 @@ export class TradeCopyEngine extends EventEmitter {
         this.masterWebSocket = new WebSocket(wsUrl);
         
         this.masterWebSocket.on('open', () => {
-          console.log('[TradeCopy] Master WebSocket connected');
+          this.logVerbose('[TradeCopy] Master WebSocket connected');
           
           // Authenticate WebSocket connection
           this.masterWebSocket?.send(JSON.stringify({
@@ -349,11 +367,11 @@ export class TradeCopyEngine extends EventEmitter {
         });
         
         this.masterWebSocket.on('close', () => {
-          console.log('[TradeCopy] Master WebSocket closed');
+          this.logVerbose('[TradeCopy] Master WebSocket closed');
           
           // Only reconnect if engine is still active
           if (this.isActive) {
-            console.log('[TradeCopy] Attempting reconnect in 5s...');
+            this.logVerbose('[TradeCopy] Attempting reconnect in 5s...');
             const timeout = setTimeout(() => {
               this.reconnectTimeouts.delete(timeout);
               if (this.isActive) {
@@ -376,7 +394,12 @@ export class TradeCopyEngine extends EventEmitter {
     globalScaling?: number
   ): Promise<void> {
     const startTime = performance.now();
+    if (this.followerConnections.has(account.id)) {
+      throw new Error(`Follower account is already part of the active copy session: ${account.name}`);
+    }
+
     const brokerAccountId = this.resolveBrokerAccountId(account, brokerConfig);
+    const accountRiskBreached = evaluateAccountRisk({ account }).status === 'BREACHED';
     
     const accountScaling = account.positionScaling ?? 100;
     const globalScalingPercent = globalScaling ?? 100;
@@ -386,6 +409,7 @@ export class TradeCopyEngine extends EventEmitter {
     const baseRuntime = {
       accountId: account.id,
       brokerAccountId,
+      accountRiskBreached,
       positionScaling: normalizedPositionScaling,
       maxContracts: account.maxContracts ?? undefined,
       copySizingMode: (account.copySizingMode as FollowerSizingMode | null | undefined) ?? 'MULTIPLIER',
@@ -406,6 +430,7 @@ export class TradeCopyEngine extends EventEmitter {
         ws: null,
         accessToken: brokerConfig.accessToken,
         isReady: false,
+        reconnectAttempts: 0,
         adapter: undefined as unknown as BrokerAdapter,
       };
 
@@ -432,7 +457,7 @@ export class TradeCopyEngine extends EventEmitter {
     await this.subscribeFollowerExecutionEventsIfSupported(followerRuntime);
     
     const setupTime = performance.now() - startTime;
-    console.log(`[TradeCopy] Follower ${account.name} added in ${setupTime.toFixed(2)}ms`);
+    this.logVerbose(`[TradeCopy] Follower ${account.name} added in ${setupTime.toFixed(2)}ms`);
   }
 
   async connectRithmicMasterAccount(accountId: string, rithmicApi: RithmicAPI): Promise<void> {
@@ -447,7 +472,7 @@ export class TradeCopyEngine extends EventEmitter {
       this.handleRithmicMasterFill(fill);
     });
 
-    console.log('[TradeCopy] Rithmic master fill stream connected');
+    this.logVerbose('[TradeCopy] Rithmic master fill stream connected');
   }
 
   setRithmicMasterBrokerAccountId(brokerAccountId: string): void {
@@ -603,6 +628,8 @@ export class TradeCopyEngine extends EventEmitter {
       connection.ws = new WebSocket(wsUrl);
       
       connection.ws.on('open', () => {
+        this.clearFollowerReconnectTimer(connection.accountId);
+
         // Authenticate
         connection.ws?.send(JSON.stringify({
           type: 'authorize',
@@ -610,6 +637,7 @@ export class TradeCopyEngine extends EventEmitter {
         }));
         
         connection.isReady = true;
+        connection.reconnectAttempts = 0;
         resolve();
       });
       
@@ -619,20 +647,54 @@ export class TradeCopyEngine extends EventEmitter {
       
       connection.ws.on('close', () => {
         connection.isReady = false;
-        console.log(`[TradeCopy] Follower ${connection.accountId} WebSocket closed`);
-        
-        // Only reconnect if engine is still active
-        if (this.isActive) {
-          const timeout = setTimeout(() => {
-            this.reconnectTimeouts.delete(timeout);
-            if (this.isActive) {
-              this.connectFollowerWebSocket(connection);
-            }
-          }, 5000);
-          this.reconnectTimeouts.add(timeout);
-        }
+        connection.ws = null;
+        this.logVerbose(`[TradeCopy] Follower ${connection.accountId} WebSocket closed`);
+
+        this.scheduleFollowerReconnect(connection);
       });
     });
+  }
+
+  private scheduleFollowerReconnect(connection: FollowerConnection): void {
+    if (!this.isActive || this.followerReconnectTimeouts.has(connection.accountId)) {
+      return;
+    }
+
+    if (connection.reconnectAttempts >= MAX_LEGACY_FOLLOWER_RECONNECT_ATTEMPTS) {
+      console.warn(
+        `[TradeCopy] Follower ${connection.accountId} marked unavailable after ${connection.reconnectAttempts} reconnect attempts`,
+      );
+      return;
+    }
+
+    connection.reconnectAttempts += 1;
+    const reconnectDelayMs = Math.min(5000 * connection.reconnectAttempts, 30000);
+    this.logVerbose(
+      `[TradeCopy] Reconnecting follower ${connection.accountId} in ${reconnectDelayMs}ms (attempt ${connection.reconnectAttempts})`,
+    );
+
+    const timeout = setTimeout(() => {
+      this.reconnectTimeouts.delete(timeout);
+      this.followerReconnectTimeouts.delete(connection.accountId);
+
+      if (this.isActive) {
+        this.connectFollowerWebSocket(connection);
+      }
+    }, reconnectDelayMs);
+
+    this.reconnectTimeouts.add(timeout);
+    this.followerReconnectTimeouts.set(connection.accountId, timeout);
+  }
+
+  private clearFollowerReconnectTimer(accountId: string): void {
+    const timeout = this.followerReconnectTimeouts.get(accountId);
+    if (!timeout) {
+      return;
+    }
+
+    clearTimeout(timeout);
+    this.reconnectTimeouts.delete(timeout);
+    this.followerReconnectTimeouts.delete(accountId);
   }
 
   private async subscribeFollowerExecutionEventsIfSupported(
@@ -650,42 +712,14 @@ export class TradeCopyEngine extends EventEmitter {
     );
 
     if (subscribed) {
-      console.log(
+      this.logVerbose(
         `[TradeCopy] Execution fill stream active for follower ${followerRuntime.accountId}`,
       );
     }
   }
 
   private handleFollowerExecutionFill(fill: BrokerExecutionFillEvent): void {
-    const candidate = [...this.executionManager.getAllExecutions()]
-      .reverse()
-      .find((record) => {
-        if (record.brokerKey !== fill.brokerKey) {
-          return false;
-        }
-
-        if (record.request.accountId !== fill.accountId) {
-          return false;
-        }
-
-        if (record.request.symbol !== fill.symbol) {
-          return false;
-        }
-
-        if (record.request.side !== fill.side) {
-          return false;
-        }
-
-        if (record.status !== 'COMPLETED') {
-          return false;
-        }
-
-        if (record.filledAt) {
-          return false;
-        }
-
-        return true;
-      });
+    const candidate = this.executionManager.findOpenExecutionForFill(fill);
 
     if (!candidate) {
       console.warn(
@@ -695,13 +729,28 @@ export class TradeCopyEngine extends EventEmitter {
     }
 
     try {
-      this.executionManager.recordFill(candidate.intentId, {
+      const remainingQuantity = candidate.remainingQuantity ?? candidate.request.quantity;
+      const incrementalFilledQuantity = fill.filledQuantity ?? remainingQuantity;
+      const cumulativeFilledQuantity = Math.min(
+        (candidate.filledQuantity ?? 0) + incrementalFilledQuantity,
+        candidate.request.quantity,
+      );
+
+      const fillPayload = {
         brokerOrderId: fill.brokerOrderId,
         fillId: fill.fillId,
         filledAt: fill.filledAt,
-        filledQuantity: fill.filledQuantity,
+        filledQuantity: incrementalFilledQuantity,
+        cumulativeFilledQuantity,
+        remainingQuantity: Math.max(candidate.request.quantity - cumulativeFilledQuantity, 0),
         averageFillPrice: fill.averageFillPrice,
-      });
+      };
+
+      if (cumulativeFilledQuantity >= candidate.request.quantity) {
+        this.executionManager.recordFill(candidate.intentId, fillPayload);
+      } else {
+        this.executionManager.recordPartialFill(candidate.intentId, fillPayload);
+      }
     } catch (error) {
       console.error(
         `[TradeCopy] Failed to record follower fill for intent ${candidate.intentId}:`,
@@ -808,6 +857,7 @@ export class TradeCopyEngine extends EventEmitter {
           },
           follower: {
             enabled: true,
+            isRiskBreached: follower.accountRiskBreached,
             allowedSymbols: null,
             blockedSymbols: follower.blockedTickers,
             allowedDirections: null,
@@ -849,7 +899,7 @@ export class TradeCopyEngine extends EventEmitter {
             symbol: trade.symbol,
             reasonCode: ruleResult.reasonCode,
           });
-          console.log(
+          this.logVerbose(
             `[TradeCopy] Skipping ${follower.accountId} for ${trade.symbol}: ${ruleResult.reasonCode}`
           );
           return { success: false, reason: 'rule_skipped' };
@@ -995,11 +1045,11 @@ export class TradeCopyEngine extends EventEmitter {
       this.latencyMetrics = this.latencyMetrics.slice(-500);
     }
     
-    console.log(`[TradeCopy] Trade ${metrics.tradeId} copied in ${metrics.totalLatency.toFixed(2)}ms`);
+    this.logVerbose(`[TradeCopy] Trade ${metrics.tradeId} copied in ${metrics.totalLatency.toFixed(2)}ms`);
     
     // Log per-follower latency
     metrics.followerLatencies.forEach((latency, accountId) => {
-      console.log(`  └─ ${accountId}: ${latency.toFixed(2)}ms`);
+      this.logVerbose(`  └─ ${accountId}: ${latency.toFixed(2)}ms`);
     });
   }
 
@@ -1103,28 +1153,32 @@ export class TradeCopyEngine extends EventEmitter {
     const followers = Array.from(this.followerConnections.values()).map((connection) => {
       const currentState = connection.adapter.getConnectionState();
       connection.connectionState = currentState;
-
-      // Some broker adapters can complete startup successfully even when their
-      // low-level liveness probe briefly reports false. Keep the session status
-      // aligned with the last known successful authenticated connection.
-      const connected =
-        connection.adapter.isConnected() ||
-        (currentState.connected === true && currentState.authenticated === true);
+      const connected = connection.adapter.isConnected();
+      const health: 'ready' | 'reconnecting' | 'unavailable' =
+        connected
+          ? 'ready'
+          : this.isLegacyFollowerRuntime(connection) &&
+              (connection.reconnectAttempts > 0 || this.followerReconnectTimeouts.has(connection.accountId))
+            ? 'reconnecting'
+            : 'unavailable';
 
       return {
         accountId: connection.accountId,
         brokerKind: connection.brokerKind,
         connected,
+        health,
       };
     });
 
     const connectedFollowerCount = followers.filter((follower) => follower.connected).length;
-    const masterConnectionType = this.masterRithmicApi
+    const rithmicMasterConnected = this.masterRithmicApi?.isAuthenticated() ?? false;
+    const tradovateMasterConnected = this.masterWebSocket?.readyState === WebSocket.OPEN;
+    const masterConnectionType = rithmicMasterConnected
       ? 'rithmic'
-      : this.masterWebSocket
+      : tradovateMasterConnected
         ? 'tradovate'
         : 'none';
-    const masterConnected = masterConnectionType !== 'none';
+    const masterConnected = rithmicMasterConnected || tradovateMasterConnected;
 
     return {
       masterAccountId: this.masterAccountId,
@@ -1148,6 +1202,7 @@ export class TradeCopyEngine extends EventEmitter {
 
     const followerAccountIds = Array.from(this.followerConnections.keys());
     for (const followerAccountId of followerAccountIds) {
+      this.clearFollowerReconnectTimer(followerAccountId);
       await this.executionManager.unregisterBrokerAdapter(
         this.getFollowerBrokerKey(followerAccountId)
       );
@@ -1186,7 +1241,7 @@ export class TradeCopyEngine extends EventEmitter {
     }
     
     this.followerConnections.clear();
-    console.log('[TradeCopy] All connections closed, engine stopped');
+    this.logVerbose('[TradeCopy] All connections closed, engine stopped');
   }
 
   private getFollowerBrokerKey(accountId: string): string {

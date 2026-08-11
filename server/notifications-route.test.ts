@@ -8,7 +8,7 @@ test("routes expose the authenticated notifications endpoint", () => {
   assert.match(routesSource, /app\.get\("\/api\/notifications"/);
   assert.match(routesSource, /req\.session\?\.userId/);
   assert.match(routesSource, /buildNotifications/);
-  assert.match(routesSource, /copyGroupManager\.getAllGroups\(\)/);
+  assert.match(routesSource, /copyGroupManager\s*\.\s*getAllGroups\(\)/);
   assert.match(routesSource, /tradovateInstances/);
   assert.match(routesSource, /tradeifyInstances/);
 });

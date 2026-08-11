@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Logo } from "@/components/logo";
+import { RithmicAttribution } from "@/components/rithmic-attribution";
 import {
   Copy,
   Zap,
@@ -400,7 +401,10 @@ export default function Landing() {
       {/* Footer */}
       <footer className="relative border-t">
         <div className="mx-auto max-w-7xl px-6 py-12 lg:px-8">
-          <div className="text-center">
+          <div className="space-y-6 text-center">
+            <div className="mx-auto max-w-3xl">
+              <RithmicAttribution />
+            </div>
             <p className="text-sm text-muted-foreground" data-testid="text-footer">
               Propcopia © {new Date().getFullYear()}
             </p>

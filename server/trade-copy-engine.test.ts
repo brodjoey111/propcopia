@@ -854,6 +854,33 @@ test('rejected rule decisions do not enqueue or increment failedSends', async ()
   assert.equal(getFailedSends(engine), 0);
 });
 
+test('breached follower risk rejects live copy attempts before enqueue', async () => {
+  const tradeIntentManager = new TradeIntentManager();
+  const engine = new TradeCopyEngine('demo', tradeIntentManager);
+  const socket = new FakeFollowerWebSocket();
+  const rejectedReasons: string[] = [];
+
+  engine.on('ruleRejected', (payload) => {
+    rejectedReasons.push(payload.reasonCode ?? 'UNKNOWN');
+  });
+
+  await addFollowerWithWebSocket(
+    engine,
+    createFollowerAccount('follower-risk-breached', {
+      pnl: '-1250',
+      maxDailyLoss: '1000',
+    }),
+    socket,
+  );
+
+  await copyTrade(engine, 'fill-risk-breached');
+
+  assert.equal(getExecutionManager(engine).getAllExecutions().length, 0);
+  assert.equal(tradeIntentManager.getAllIntents().length, 0);
+  assert.equal(getFailedSends(engine), 0);
+  assert.deepEqual(rejectedReasons, ['RISK_LIMIT_BREACHED']);
+});
+
 test('TradeCopyEngine does not perform duplicate post-enqueue intent transitions', async () => {
   const tradeIntentManager = new TradeIntentManager();
   const engine = new TradeCopyEngine('demo', tradeIntentManager);
@@ -919,6 +946,102 @@ test('multiple eligible followers can execute concurrently', async () => {
   );
 });
 
+test('addFollowerAccount rejects duplicate followers in the active session', async () => {
+  const engine = new TradeCopyEngine('demo', new TradeIntentManager());
+  const socket = new FakeFollowerWebSocket();
+  await addFollowerWithWebSocket(engine, createFollowerAccount('follower-duplicate'), socket);
+
+  await assert.rejects(
+    () =>
+      engine.addFollowerAccount(
+        createFollowerAccount('follower-duplicate'),
+        {
+          kind: 'legacy_websocket',
+          accessToken: 'access-token',
+        },
+      ),
+    {
+      message: 'Follower account is already part of the active copy session: Follower follower-duplicate',
+    },
+  );
+});
+
+test('follower reconnect scheduling uses backoff and avoids duplicate pending timers', () => {
+  const engine = new TradeCopyEngine('demo', new TradeIntentManager());
+  const recordedDelays: number[] = [];
+  const originalSetTimeout = global.setTimeout;
+  const originalClearTimeout = global.clearTimeout;
+
+  global.setTimeout = ((callback: (...args: any[]) => void, delay?: number) => {
+    recordedDelays.push(delay ?? 0);
+    return { callback, delay } as unknown as NodeJS.Timeout;
+  }) as typeof setTimeout;
+  global.clearTimeout = (() => {}) as typeof clearTimeout;
+
+  try {
+    const connection = {
+      accountId: 'follower-reconnect',
+      positionScaling: 100,
+      maxContracts: undefined,
+      copySizingMode: 'MULTIPLIER' as const,
+      fixedQuantity: undefined,
+      reverseCopying: false,
+      blockedTickers: [],
+      ws: null,
+      accessToken: 'access-token',
+      isReady: false,
+      reconnectAttempts: 0,
+    };
+
+    (engine as any).scheduleFollowerReconnect(connection);
+    (engine as any).scheduleFollowerReconnect(connection);
+    assert.deepEqual(recordedDelays, [5000]);
+
+    (engine as any).clearFollowerReconnectTimer(connection.accountId);
+    (engine as any).scheduleFollowerReconnect(connection);
+    assert.deepEqual(recordedDelays, [5000, 10000]);
+  } finally {
+    global.setTimeout = originalSetTimeout;
+    global.clearTimeout = originalClearTimeout;
+  }
+});
+
+test('follower reconnect scheduling stops after the maximum retry attempts', () => {
+  const engine = new TradeCopyEngine('demo', new TradeIntentManager());
+  const recordedDelays: number[] = [];
+  const originalSetTimeout = global.setTimeout;
+  const originalClearTimeout = global.clearTimeout;
+
+  global.setTimeout = ((callback: (...args: any[]) => void, delay?: number) => {
+    recordedDelays.push(delay ?? 0);
+    return { callback, delay } as unknown as NodeJS.Timeout;
+  }) as typeof setTimeout;
+  global.clearTimeout = (() => {}) as typeof clearTimeout;
+
+  try {
+    const connection = {
+      accountId: 'follower-retry-cap',
+      positionScaling: 100,
+      maxContracts: undefined,
+      copySizingMode: 'MULTIPLIER' as const,
+      fixedQuantity: undefined,
+      reverseCopying: false,
+      blockedTickers: [],
+      ws: null,
+      accessToken: 'access-token',
+      isReady: false,
+      reconnectAttempts: 5,
+    };
+
+    (engine as any).scheduleFollowerReconnect(connection);
+    assert.deepEqual(recordedDelays, []);
+    assert.equal(connection.reconnectAttempts, 5);
+  } finally {
+    global.setTimeout = originalSetTimeout;
+    global.clearTimeout = originalClearTimeout;
+  }
+});
+
 test('disconnect unregisters follower adapters', async () => {
   const engine = new TradeCopyEngine('demo', new TradeIntentManager());
   const socket = new FakeFollowerWebSocket();
@@ -962,11 +1085,12 @@ test('getStatus reports readiness from master and follower connections', async (
       accountId: 'follower-status',
       brokerKind: 'legacy_websocket',
       connected: true,
+      health: 'ready',
     },
   ]);
 });
 
-test('getStatus keeps a follower ready after a successful authenticated connect state snapshot', async () => {
+test('getStatus marks a follower disconnected when the live adapter probe fails', async () => {
   const engine = new TradeCopyEngine('demo', new TradeIntentManager());
   const fake = createFakeBrokerAdapter();
 
@@ -1001,12 +1125,108 @@ test('getStatus keeps a follower ready after a successful authenticated connect 
   );
 
   const status = engine.getStatus();
-  assert.equal(status.connectedFollowerCount, 1);
+  assert.equal(status.connectedFollowerCount, 0);
   assert.deepEqual(status.followers, [
     {
       accountId: 'follower-snapshot',
       brokerKind: 'rithmic',
-      connected: true,
+      connected: false,
+      health: 'unavailable',
+    },
+  ]);
+  assert.equal(status.ready, false);
+});
+
+test('getStatus drops out of ready when the live master connection is no longer available', async () => {
+  const engine = new TradeCopyEngine('demo', new TradeIntentManager());
+  const socket = new FakeFollowerWebSocket();
+  await addFollowerWithWebSocket(engine, createFollowerAccount('follower-master-drop'), socket);
+
+  const fakeMaster = createFakeRithmicMasterApi();
+  engine.setRithmicMasterBrokerAccountId('master-broker-drop');
+  await engine.connectRithmicMasterAccount('master-rithmic-drop', fakeMaster.api as any);
+
+  const beforeDisconnect = engine.getStatus();
+  assert.equal(beforeDisconnect.masterConnected, true);
+  assert.equal(beforeDisconnect.ready, true);
+
+  await fakeMaster.api.disconnect();
+
+  const afterDisconnect = engine.getStatus();
+  assert.equal(afterDisconnect.masterAccountId, 'master-rithmic-drop');
+  assert.equal(afterDisconnect.masterConnected, false);
+  assert.equal(afterDisconnect.masterConnectionType, 'none');
+  assert.equal(afterDisconnect.connectedFollowerCount, 1);
+  assert.equal(afterDisconnect.ready, false);
+});
+
+test('getStatus drops out of ready when a connected follower becomes unavailable', async () => {
+  const engine = new TradeCopyEngine('demo', new TradeIntentManager());
+  const fake = createFakeBrokerAdapter();
+
+  (engine as any).createFollowerBrokerAdapter = () => fake.adapter;
+
+  await engine.addFollowerAccount(
+    createFollowerAccount('follower-ready-then-unavailable', {
+      platform: 'Rithmic',
+      rithmicAccountId: 'snapshot-broker-2',
+      rithmicSystemName: 'Rithmic Test',
+    }),
+    {
+      kind: 'rithmic',
+      environment: 'test',
+      username: 'user-2',
+      password: 'pass-2',
+      exchange: 'CME',
+      systemName: 'Rithmic Test',
+    },
+  );
+
+  const fakeMaster = createFakeRithmicMasterApi();
+  engine.setRithmicMasterBrokerAccountId('master-broker-ready');
+  await engine.connectRithmicMasterAccount('master-rithmic-ready', fakeMaster.api as any);
+
+  const beforeFollowerDrop = engine.getStatus();
+  assert.equal(beforeFollowerDrop.masterConnected, true);
+  assert.equal(beforeFollowerDrop.connectedFollowerCount, 1);
+  assert.equal(beforeFollowerDrop.ready, true);
+
+  await fake.adapter.disconnect();
+
+  const afterFollowerDrop = engine.getStatus();
+  assert.equal(afterFollowerDrop.masterConnected, true);
+  assert.equal(afterFollowerDrop.connectedFollowerCount, 0);
+  assert.equal(afterFollowerDrop.ready, false);
+  assert.deepEqual(afterFollowerDrop.followers, [
+    {
+      accountId: 'follower-ready-then-unavailable',
+      brokerKind: 'rithmic',
+      connected: false,
+      health: 'unavailable',
+    },
+  ]);
+});
+
+test('getStatus marks legacy followers as reconnecting while a reconnect retry is pending', async () => {
+  const engine = new TradeCopyEngine('demo', new TradeIntentManager());
+  const socket = new FakeFollowerWebSocket();
+  await addFollowerWithWebSocket(engine, createFollowerAccount('follower-reconnecting'), socket);
+
+  const runtime = getFollowerConnection(engine, 'follower-reconnecting');
+  runtime.isReady = false;
+  runtime.reconnectAttempts = 1;
+  (engine as any).followerReconnectTimeouts.set(
+    'follower-reconnecting',
+    {} as NodeJS.Timeout,
+  );
+
+  const status = engine.getStatus();
+  assert.deepEqual(status.followers, [
+    {
+      accountId: 'follower-reconnecting',
+      brokerKind: 'legacy_websocket',
+      connected: false,
+      health: 'reconnecting',
     },
   ]);
 });
@@ -1069,4 +1289,70 @@ test('follower execution fill stream records FILLED status for matching complete
   assert.equal(tradeIntentManager.getIntent(execution.intentId)?.status, 'FILLED');
   assert.equal(executionManager.getExecutionState(execution.intentId)?.fillId, 'follower-fill-1');
   assert.equal(executionManager.getExecutionState(execution.intentId)?.averageFillPrice, 6402.5);
+});
+
+test('follower execution fill stream rolls repeated fills from partial to final state', async () => {
+  const tradeIntentManager = new TradeIntentManager();
+  const engine = new TradeCopyEngine('demo', tradeIntentManager);
+  const fake = createFillStreamingBrokerAdapter();
+
+  (engine as any).createFollowerBrokerAdapter = () => fake.adapter;
+
+  await engine.addFollowerAccount(
+    createFollowerAccount('follower-rithmic-partial', {
+      platform: 'Rithmic',
+      rithmicAccountId: 'rithmic-partial-account',
+      rithmicSystemName: 'Rithmic Test',
+    }),
+    {
+      kind: 'rithmic',
+      environment: 'test',
+      username: 'user-1',
+      password: 'pass-1',
+      exchange: 'CME',
+      systemName: 'Rithmic Test',
+    },
+  );
+
+  await copyTrade(engine, 'fill-rithmic-partial');
+
+  const executionManager = getExecutionManager(engine);
+  const execution = executionManager.getAllExecutions()[0];
+  assert.equal(execution.status, 'COMPLETED');
+  assert.equal(tradeIntentManager.getIntent(execution.intentId)?.status, 'SENT');
+
+  fake.emitFill({
+    accountId: 'rithmic-partial-account',
+    brokerKey: 'follower-ws:follower-rithmic-partial',
+    symbol: 'ES',
+    side: 'BUY',
+    brokerOrderId: execution.brokerOrderId,
+    fillId: 'follower-partial-1',
+    filledAt: '2026-08-04T13:00:05.000Z',
+    filledQuantity: 1,
+    averageFillPrice: 6402.25,
+  });
+
+  assert.equal(tradeIntentManager.getIntent(execution.intentId)?.status, 'ACKNOWLEDGED');
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.filledQuantity, 1);
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.remainingQuantity, 1);
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.filledAt, undefined);
+
+  fake.emitFill({
+    accountId: 'rithmic-partial-account',
+    brokerKey: 'follower-ws:follower-rithmic-partial',
+    symbol: 'ES',
+    side: 'BUY',
+    brokerOrderId: execution.brokerOrderId,
+    fillId: 'follower-partial-2',
+    filledAt: '2026-08-04T13:00:06.000Z',
+    filledQuantity: 1,
+    averageFillPrice: 6402.5,
+  });
+
+  assert.equal(tradeIntentManager.getIntent(execution.intentId)?.status, 'FILLED');
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.filledQuantity, 2);
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.remainingQuantity, 0);
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.filledAt, '2026-08-04T13:00:06.000Z');
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.fillId, 'follower-partial-2');
 });

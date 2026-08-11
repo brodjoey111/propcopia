@@ -18,6 +18,20 @@ export const users = pgTable("users", {
   dailyTradingStreak: integer("daily_trading_streak").default(0),
   safeTradingDays: integer("safe_trading_days").default(0),
   riskEducationCompleted: boolean("risk_education_completed").default(false),
+  autoCopyEnabled: boolean("auto_copy_enabled").default(true),
+  copyExitsEnabled: boolean("copy_exits_enabled").default(true),
+  copyModificationsEnabled: boolean("copy_modifications_enabled").default(true),
+  bidirectionalSyncEnabled: boolean("bidirectional_sync_enabled").default(false),
+  notifyTrades: boolean("notify_trades").default(true),
+  notifyErrors: boolean("notify_errors").default(true),
+  notifyConnection: boolean("notify_connection").default(true),
+  showReviewedNotifications: boolean("show_reviewed_notifications").default(true),
+  copyGroupsUngroupedName: text("copy_groups_ungrouped_name").default("Ungrouped"),
+  activityQueueSort: text("activity_queue_sort").default("recent"),
+  activityQueueAuditFocus: text("activity_queue_audit_focus").default("all"),
+  copyGroupHealthReviewFilter: text("copy_group_health_review_filter").default("all"),
+  copyGroupHealthReviewsJson: text("copy_group_health_reviews_json"),
+  riskFollowUpReviewsJson: text("risk_follow_up_reviews_json"),
   badges: text("badges").array().default(sql`ARRAY[]::text[]`),
   lastActiveDate: timestamp("last_active_date"),
   dailyLossLimit: decimal("daily_loss_limit", { precision: 12, scale: 2 }),
@@ -42,9 +56,27 @@ export const updateGlobalRiskSettingsSchema = createInsertSchema(users).pick({
   globalBlockedTickers: true,
 });
 
+export const updateUserSettingsSchema = createInsertSchema(users).pick({
+  autoCopyEnabled: true,
+  copyExitsEnabled: true,
+  copyModificationsEnabled: true,
+  bidirectionalSyncEnabled: true,
+  notifyTrades: true,
+  notifyErrors: true,
+  notifyConnection: true,
+  showReviewedNotifications: true,
+  copyGroupsUngroupedName: true,
+  activityQueueSort: true,
+  activityQueueAuditFocus: true,
+  copyGroupHealthReviewFilter: true,
+  copyGroupHealthReviewsJson: true,
+  riskFollowUpReviewsJson: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type UpdateUserProfile = z.infer<typeof updateUserProfileSchema>;
 export type UpdateGlobalRiskSettings = z.infer<typeof updateGlobalRiskSettingsSchema>;
+export type UpdateUserSettings = z.infer<typeof updateUserSettingsSchema>;
 export type User = typeof users.$inferSelect;
 
 export const accounts = pgTable("accounts", {
@@ -218,3 +250,67 @@ export const insertWatchlistItemSchema = createInsertSchema(watchlistItems).omit
 
 export type InsertWatchlistItem = z.infer<typeof insertWatchlistItemSchema>;
 export type WatchlistItem = typeof watchlistItems.$inferSelect;
+
+export const copyGroupActivityEvents = pgTable("copy_group_activity_events", {
+  eventId: varchar("event_id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  groupId: varchar("group_id").notNull(),
+  timestamp: timestamp("timestamp").notNull(),
+  severity: text("severity").notNull(),
+  category: text("category").notNull(),
+  message: text("message").notNull(),
+  intentId: varchar("intent_id"),
+  followerAccountId: varchar("follower_account_id"),
+  detailsJson: text("details_json"),
+});
+
+export type CopyGroupActivityEvent = typeof copyGroupActivityEvents.$inferSelect;
+export type InsertCopyGroupActivityEvent = typeof copyGroupActivityEvents.$inferInsert;
+
+export const copyGroupRegistrations = pgTable("copy_group_registrations", {
+  groupId: varchar("group_id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  groupJson: text("group_json").notNull(),
+  followersJson: text("followers_json").notNull(),
+  boardJson: text("board_json"),
+  runtimeStateJson: text("runtime_state_json"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type CopyGroupRegistration = typeof copyGroupRegistrations.$inferSelect;
+export type InsertCopyGroupRegistration = typeof copyGroupRegistrations.$inferInsert;
+
+export const positionSyncReviews = pgTable("position_sync_reviews", {
+  reviewKey: varchar("review_key").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  groupId: varchar("group_id").notNull(),
+  followerAccountId: varchar("follower_account_id").notNull(),
+  status: text("status").notNull(),
+  note: text("note"),
+  operatorName: text("operator_name"),
+  operatorHistoryJson: text("operator_history_json"),
+  reviewedAt: timestamp("reviewed_at"),
+  simulatedAt: timestamp("simulated_at"),
+  approvedAt: timestamp("approved_at"),
+  handedOffAt: timestamp("handed_off_at"),
+  completedManuallyAt: timestamp("completed_manually_at"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type PositionSyncReview = typeof positionSyncReviews.$inferSelect;
+export type InsertPositionSyncReview = typeof positionSyncReviews.$inferInsert;
+
+export const riskFollowUpReviews = pgTable("risk_follow_up_reviews", {
+  reviewKey: varchar("review_key").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  accountId: varchar("account_id").notNull(),
+  status: text("status").notNull(),
+  note: text("note"),
+  operatorName: text("operator_name"),
+  operatorHistoryJson: text("operator_history_json"),
+  reviewedAt: timestamp("reviewed_at"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type RiskFollowUpReview = typeof riskFollowUpReviews.$inferSelect;
+export type InsertRiskFollowUpReview = typeof riskFollowUpReviews.$inferInsert;

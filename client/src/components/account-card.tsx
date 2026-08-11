@@ -21,8 +21,13 @@ interface AccountCardProps {
   maxContracts?: number;
   blockedTickers?: string[];
   riskMode?: 'global' | 'custom';
+  riskStatusLabel?: string;
+  riskStatusTone?: "ok" | "warn" | "danger" | "muted";
   onConnect?: () => void;
   onDisconnect?: () => void;
+  accountActionDisabled?: boolean;
+  connectButtonLabel?: string;
+  disconnectButtonLabel?: string;
   configureButton?: React.ReactNode;
 }
 
@@ -44,13 +49,26 @@ export function AccountCard({
   maxContracts,
   blockedTickers = [],
   riskMode,
+  riskStatusLabel,
+  riskStatusTone = "muted",
   onConnect,
   onDisconnect,
+  accountActionDisabled = false,
+  connectButtonLabel = "Connect",
+  disconnectButtonLabel = "Disconnect",
   configureButton,
 }: AccountCardProps) {
   const isPnlPositive = pnl >= 0;
   const hasRestrictions = maxContracts !== undefined || blockedTickers.length > 0;
   const isUsingGlobalSettings = riskMode === 'global';
+  const riskToneClass =
+    riskStatusTone === "ok"
+      ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+      : riskStatusTone === "warn"
+        ? "border-amber-400/20 bg-amber-400/10 text-amber-300"
+        : riskStatusTone === "danger"
+          ? "border-rose-400/20 bg-rose-400/10 text-rose-300"
+          : "border-white/10 bg-white/[0.04] text-zinc-300";
   const sessionToneClass =
     sessionStatusTone === "ok"
       ? "text-emerald-400"
@@ -74,6 +92,15 @@ export function AccountCard({
                   Global
                 </Badge>
               )}
+              {riskStatusLabel && (
+                <Badge
+                  variant="outline"
+                  className={`text-xs ${riskToneClass}`}
+                  data-testid={`badge-risk-status-${id}`}
+                >
+                  {riskStatusLabel}
+                </Badge>
+              )}
             </div>
             <p className="mt-1 text-xs uppercase tracking-[0.18em] text-muted-foreground">{platform}</p>
           </div>
@@ -81,7 +108,7 @@ export function AccountCard({
             <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.7)]' : 'bg-rose-400 shadow-[0_0_14px_rgba(251,113,133,0.35)]'}`} />
             <div className="text-right">
               <div className="text-xs text-muted-foreground">
-                {isConnected ? 'Connected' : 'Disconnected'}
+                {isConnected ? 'Connected' : 'Not connected'}
               </div>
               {isConnected && !hasLiveBrokerData && (
                 <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">
@@ -167,10 +194,10 @@ export function AccountCard({
                 : ''
             }`}
             onClick={onConnect}
-            disabled={isConnected}
+            disabled={isConnected || accountActionDisabled}
             data-testid={`button-connect-${id}`}
           >
-            Connect
+            {connectButtonLabel}
           </Button>
           <Button
             size="sm"
@@ -180,10 +207,10 @@ export function AccountCard({
                 : 'bg-muted text-muted-foreground hover:bg-muted/80'
             }`}
             onClick={onDisconnect}
-            disabled={!isConnected}
+            disabled={!isConnected || accountActionDisabled}
             data-testid={`button-disconnect-${id}`}
           >
-            Disconnect
+            {disconnectButtonLabel}
           </Button>
         </div>
 

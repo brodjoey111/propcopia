@@ -7,7 +7,22 @@ interface User {
   id: string;
   username: string;
   bio?: string | null;
+  title?: string | null;
   profilePicture?: string | null;
+  autoCopyEnabled?: boolean;
+  copyExitsEnabled?: boolean;
+  copyModificationsEnabled?: boolean;
+  bidirectionalSyncEnabled?: boolean;
+  notifyTrades?: boolean;
+  notifyErrors?: boolean;
+  notifyConnection?: boolean;
+  showReviewedNotifications?: boolean;
+  copyGroupsUngroupedName?: string | null;
+  activityQueueSort?: string | null;
+  activityQueueAuditFocus?: string | null;
+  copyGroupHealthReviewFilter?: string | null;
+  copyGroupHealthReviewsJson?: string | null;
+  riskFollowUpReviewsJson?: string | null;
 }
 
 interface AuthResponse {

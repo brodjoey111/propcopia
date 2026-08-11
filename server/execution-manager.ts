@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { propCopiaEventBus } from './event-bus';
 import type { BrokerAdapter } from './brokers/BrokerAdapter';
+import type { BrokerExecutionFillEvent } from './brokers/BrokerAdapter';
 import { TradeIntentManager } from './trade-intent-manager';
 import type {
   ExecutionAcknowledgement,
@@ -212,6 +213,44 @@ export class ExecutionManager extends EventEmitter {
     return Array.from(this.executions.values());
   }
 
+  findOpenExecutionForFill(fill: BrokerExecutionFillEvent): ExecutionRecord | undefined {
+    const openExecutions = this.getAllExecutions()
+      .reverse()
+      .filter((record) => {
+        if (record.brokerKey !== fill.brokerKey) {
+          return false;
+        }
+
+        if (record.request.accountId !== fill.accountId) {
+          return false;
+        }
+
+        if (record.request.symbol !== fill.symbol) {
+          return false;
+        }
+
+        if (record.request.side !== fill.side) {
+          return false;
+        }
+
+        if (record.status !== 'COMPLETED') {
+          return false;
+        }
+
+        if (record.filledAt) {
+          return false;
+        }
+
+        return true;
+      });
+
+    return (
+      (fill.brokerOrderId
+        ? openExecutions.find((record) => record.brokerOrderId === fill.brokerOrderId)
+        : null) ?? openExecutions[0]
+    );
+  }
+
   acknowledge(intentId: string, acknowledgement?: Partial<ExecutionAcknowledgement>): ExecutionRecord {
     const record = this.executions.get(intentId);
     if (!record) {
@@ -254,6 +293,79 @@ export class ExecutionManager extends EventEmitter {
     return record;
   }
 
+  recordPartialFill(intentId: string, fill: Partial<ExecutionFill> = {}): ExecutionRecord {
+    const record = this.executions.get(intentId);
+    if (!record) {
+      throw new Error(`Execution not found for intent ${intentId}.`);
+    }
+
+    if (record.status !== 'COMPLETED') {
+      throw new Error(`Execution must be COMPLETED before partial fill recording: ${intentId}`);
+    }
+
+    const currentIntent = this.tradeIntentManager.getIntent(intentId);
+    if (!currentIntent) {
+      throw new Error(`Trade intent not found: ${intentId}`);
+    }
+
+    if (currentIntent.status === 'SENT') {
+      this.acknowledge(intentId, {
+        acknowledgedAt: fill.filledAt ?? new Date().toISOString(),
+        brokerOrderId: fill.brokerOrderId,
+      });
+    } else if (currentIntent.status === 'ACKNOWLEDGED') {
+      // continue
+    } else if (currentIntent.status === 'FILLED') {
+      throw new Error(`Cannot record partial fill after full fill for intent ${intentId}.`);
+    } else {
+      throw new Error(`Cannot record partial fill from intent status ${currentIntent.status}: ${intentId}`);
+    }
+
+    const fillTimestamp = fill.filledAt ?? new Date().toISOString();
+    const currentFilledQuantity = record.filledQuantity ?? 0;
+    const incrementalFilledQuantity = fill.filledQuantity ?? 0;
+    const cumulativeFilledQuantity = Math.min(
+      fill.cumulativeFilledQuantity ?? currentFilledQuantity + incrementalFilledQuantity,
+      record.request.quantity,
+    );
+    const remainingQuantity = Math.max(
+      fill.remainingQuantity ?? record.request.quantity - cumulativeFilledQuantity,
+      0,
+    );
+
+    if (remainingQuantity === 0) {
+      return this.recordFill(intentId, {
+        ...fill,
+        filledAt: fillTimestamp,
+        filledQuantity: cumulativeFilledQuantity,
+      });
+    }
+
+    record.fillId = fill.fillId ?? record.fillId;
+    record.filledQuantity = cumulativeFilledQuantity;
+    record.remainingQuantity = remainingQuantity;
+    record.partialFillCount = (record.partialFillCount ?? 0) + 1;
+    record.averageFillPrice = fill.averageFillPrice ?? record.averageFillPrice;
+    record.brokerOrderId = fill.brokerOrderId ?? record.brokerOrderId;
+    record.updatedAt = fillTimestamp;
+
+    propCopiaEventBus.publish('execution.partial_fill', {
+      intentId: record.intentId,
+      followerAccountId: record.intent.followerAccountId,
+      brokerKey: record.brokerKey,
+      brokerOrderId: record.brokerOrderId,
+      fillId: record.fillId,
+      filledQuantity: incrementalFilledQuantity || fill.filledQuantity,
+      cumulativeFilledQuantity,
+      remainingQuantity,
+      averageFillPrice: record.averageFillPrice,
+      filledAt: fillTimestamp,
+    });
+    this.emit('executionPartialFill', record);
+
+    return record;
+  }
+
   recordFill(intentId: string, fill: Partial<ExecutionFill> = {}): ExecutionRecord {
     const record = this.executions.get(intentId);
     if (!record) {
@@ -289,7 +401,12 @@ export class ExecutionManager extends EventEmitter {
 
     record.filledAt = fill.filledAt ?? new Date().toISOString();
     record.fillId = fill.fillId ?? record.fillId;
-    record.filledQuantity = fill.filledQuantity ?? record.filledQuantity ?? record.request.quantity;
+    record.filledQuantity =
+      fill.cumulativeFilledQuantity ??
+      fill.filledQuantity ??
+      record.filledQuantity ??
+      record.request.quantity;
+    record.remainingQuantity = 0;
     record.averageFillPrice = fill.averageFillPrice ?? record.averageFillPrice;
     record.brokerOrderId = fill.brokerOrderId ?? record.brokerOrderId;
     record.updatedAt = record.filledAt;

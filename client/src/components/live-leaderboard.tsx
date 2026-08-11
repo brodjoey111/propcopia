@@ -31,13 +31,14 @@ interface MarketPrice {
   timestamp: number;
 }
 
-export function LiveLeaderboard() {
+export function LiveLeaderboard({ active = true }: { active?: boolean }) {
   const [traders, setTraders] = useState<Trader[]>([]);
   const [isLive, setIsLive] = useState(false);
 
   const { data: leaderboardData } = useQuery<{ success: boolean; data: Trader[] }>({
     queryKey: ['/api/leaderboard'],
-    refetchInterval: 5000,
+    enabled: active,
+    refetchInterval: false,
   });
 
   useEffect(() => {
@@ -47,6 +48,11 @@ export function LiveLeaderboard() {
   }, [leaderboardData]);
 
   useEffect(() => {
+    if (!active) {
+      setIsLive(false);
+      return;
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/market`;
     
@@ -100,7 +106,7 @@ export function LiveLeaderboard() {
         ws.close();
       }
     };
-  }, []);
+  }, [active]);
 
   const updateTraderPnl = useCallback((symbol: string, priceData: MarketPrice) => {
     setTraders(prevTraders => {

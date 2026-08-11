@@ -3,7 +3,7 @@ import { Link } from "wouter";
 
 import { Button } from "@/components/ui/button";
 import { useNotifications } from "@/hooks/use-notifications";
-import { getTopNotification } from "@/lib/notifications";
+import { clusterNotifications, getTopNotification } from "@/lib/notifications";
 
 function getBannerStyles(severity: "info" | "warn" | "error") {
   switch (severity) {
@@ -27,7 +27,9 @@ function getBannerStyles(severity: "info" | "warn" | "error") {
 
 export function TopNotificationBanner() {
   const { data } = useNotifications();
-  const topNotification = getTopNotification(data?.notifications ?? []);
+  const clusteredNotifications = clusterNotifications(data?.notifications ?? []);
+  const topNotification =
+    getTopNotification(clusteredNotifications) as (typeof clusteredNotifications)[number] | null;
 
   if (!topNotification) {
     return null;
@@ -41,6 +43,12 @@ export function TopNotificationBanner() {
       <span className="min-w-0 flex-1 truncate">
         <strong>{topNotification.title}</strong>
         <span className="opacity-90"> · {topNotification.message}</span>
+        {"relatedCount" in topNotification && topNotification.relatedCount > 0 ? (
+          <span className="opacity-75">
+            {" "}
+            +{topNotification.relatedCount} earlier update{topNotification.relatedCount === 1 ? "" : "s"}
+          </span>
+        ) : null}
       </span>
       <Button
         asChild
