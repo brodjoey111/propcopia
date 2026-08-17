@@ -4338,7 +4338,12 @@ export function registerRoutes(app: Express): Server {
           price: trade.price.toString(),
           status: 'copied',
         }).catch(err => {
-          console.error('[TradeCopy] Error logging trade:', err);
+          operationalLogger.error("trade_copy.trade_log_failed", {
+            error: err,
+            userId,
+            masterAccountId: trade.accountId,
+            symbol: trade.symbol,
+          });
         });
 
         console.log(`[TradeCopy] Trade copied to ${followerCount} followers in ${metrics.totalLatency.toFixed(2)}ms`);
@@ -4430,7 +4435,10 @@ export function registerRoutes(app: Express): Server {
           tradeCopyEngines.delete(reservedUserId);
         }
         await pendingEngine.disconnect().catch((disconnectError) => {
-          console.error('[TradeCopy] Error cleaning up failed session start:', disconnectError);
+          operationalLogger.warn("trade_copy.start_cleanup_failed", {
+            error: disconnectError,
+            userId: reservedUserId ?? req.session?.userId,
+          });
         });
       }
       operationalLogger.error("trade_copy.start_failed", {
@@ -5292,10 +5300,13 @@ Be concise, friendly, and helpful. Focus on explaining features, answering quest
         message: reply,
       });
     } catch (error) {
-      console.error('Error in AI chat:', error);
+      operationalLogger.error("ai.chat_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Failed to get AI response',
+        message: "Failed to get AI response",
       });
     }
   });
@@ -5336,7 +5347,9 @@ Be concise, friendly, and helpful. Focus on explaining features, answering quest
     });
 
     ws.on('error', (error) => {
-      console.error('[WebSocket] Error:', error);
+      operationalLogger.warn("market.websocket_client_error", {
+        error,
+      });
     });
   });
 
@@ -5372,7 +5385,10 @@ Be concise, friendly, and helpful. Focus on explaining features, answering quest
           tradeCopyEngines.delete(userId);
           stopped.push(userId);
         } catch (e) {
-          console.error(`[KillSwitch] Failed to stop engine for user ${userId}:`, e);
+          operationalLogger.error("kill_switch.engine_stop_failed", {
+            error: e,
+            userId,
+          });
         }
       }
 
@@ -5416,7 +5432,13 @@ Be concise, friendly, and helpful. Focus on explaining features, answering quest
               skipped.push(`${account.name} (${account.platform} — automated close not yet supported, close manually)`);
             }
           } catch (e) {
-            console.error(`[KillSwitch] Error closing positions for account ${account.name}:`, e);
+            operationalLogger.error("kill_switch.account_close_failed", {
+              error: e,
+              userId,
+              accountId: account.id,
+              accountName: account.name,
+              platform: account.platform,
+            });
             closedPositions.push({ account: account.name, platform: account.platform, closed: 0, errors: [e instanceof Error ? e.message : String(e)] });
           }
         }));
@@ -5434,10 +5456,13 @@ Be concise, friendly, and helpful. Focus on explaining features, answering quest
         activatedAt: killSwitchState.activatedAt,
       });
     } catch (error) {
-      console.error('[KillSwitch] Error during activation:', error);
+      operationalLogger.error("kill_switch.activation_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: "Failed to activate kill switch",
       });
     }
   });

@@ -40,6 +40,17 @@ test("kill-switch activation blocks new starts before asynchronous shutdown work
 
   assert.ok(activeIndex >= 0);
   assert.ok(shutdownIndex > activeIndex);
+  assert.match(activationRoute, /operationalLogger\.error\("kill_switch\.engine_stop_failed"/);
+  assert.match(activationRoute, /operationalLogger\.error\("kill_switch\.account_close_failed"/);
+  assert.match(activationRoute, /operationalLogger\.error\("kill_switch\.activation_failed"/);
+  assert.match(activationRoute, /message: "Failed to activate kill switch"/);
+  assert.doesNotMatch(activationRoute, /\[KillSwitch\] Failed to stop engine/);
+  assert.doesNotMatch(activationRoute, /\[KillSwitch\] Error closing positions for account/);
+  assert.doesNotMatch(activationRoute, /\[KillSwitch\] Error during activation:/);
+  assert.doesNotMatch(
+    activationRoute,
+    /message: error instanceof Error \? error\.message : 'Unknown error'/,
+  );
 });
 
 test("kill-switch state and engine shutdown are isolated to the authenticated user", () => {
@@ -47,4 +58,13 @@ test("kill-switch state and engine shutdown are isolated to the authenticated us
   assert.match(source, /getKillSwitchState\(req\.session\.userId\)/);
   assert.match(source, /const activeEngine = tradeCopyEngines\.get\(userId\)/);
   assert.doesNotMatch(source, /for \(const \[uid, engine\] of Array\.from\(tradeCopyEngines\.entries\(\)\)\)/);
+});
+
+test("trade-copy startup and market websocket runtime failures use structured logging", () => {
+  assert.match(startRoute, /operationalLogger\.error\("trade_copy\.trade_log_failed"/);
+  assert.match(startRoute, /operationalLogger\.warn\("trade_copy\.start_cleanup_failed"/);
+  assert.doesNotMatch(startRoute, /\[TradeCopy\] Error logging trade:/);
+  assert.doesNotMatch(startRoute, /\[TradeCopy\] Error cleaning up failed session start:/);
+  assert.match(source, /operationalLogger\.warn\("market\.websocket_client_error"/);
+  assert.doesNotMatch(source, /\[WebSocket\] Error:/);
 });
