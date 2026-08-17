@@ -1,7 +1,11 @@
 import type { Account } from "@shared/schema";
 import type { RegisteredCopyGroup } from "./copy-group-manager";
 import type { CopyGroupActivity } from "./copy-group-types";
-import { buildPositionSnapshots, type PositionSnapshotDependencies } from "./position-snapshot-service";
+import {
+  buildPositionSnapshots,
+  type PositionSnapshotDependencies,
+  type PositionSnapshotResult,
+} from "./position-snapshot-service";
 import {
   tradeHistoryStore,
   type TradeHistoryLifecycleStatus,
@@ -60,6 +64,7 @@ interface BuildOperationsOverviewInput {
   } | undefined;
   getRecentActivity: (groupId: string) => CopyGroupActivity[];
   positionSnapshotDependencies: PositionSnapshotDependencies;
+  positionSnapshot?: PositionSnapshotResult;
 }
 
 const FAILED_TRADE_STATUSES = new Set<TradeHistoryLifecycleStatus>([
@@ -70,7 +75,7 @@ const FAILED_TRADE_STATUSES = new Set<TradeHistoryLifecycleStatus>([
 export async function buildOperationsOverview(
   input: BuildOperationsOverviewInput,
 ): Promise<OperationsOverviewResult> {
-  const positionSnapshots = await buildPositionSnapshots(
+  const positionSnapshots = input.positionSnapshot ?? await buildPositionSnapshots(
     input.userAccounts,
     input.positionSnapshotDependencies,
   );

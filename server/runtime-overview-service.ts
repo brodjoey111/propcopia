@@ -583,6 +583,8 @@ interface BuildAccountsRuntimeOverviewInput {
   registeredGroups?: RegisteredCopyGroup[];
   positionSnapshotDependencies: PositionSnapshotDependencies;
   accountLiveMetricsDependencies: AccountLiveMetricsDependencies;
+  positionSnapshot?: PositionSnapshotResult;
+  accountLiveMetrics?: AccountLiveMetricsResult;
 }
 
 interface BuildDashboardRuntimeOverviewInput extends BuildAccountsRuntimeOverviewInput {
@@ -1001,8 +1003,8 @@ export async function buildAccountsRuntimeOverview(
   input: BuildAccountsRuntimeOverviewInput,
 ): Promise<AccountsRuntimeOverviewResult> {
   const [positionSnapshot, accountLiveMetrics] = await Promise.all([
-    buildPositionSnapshots(input.userAccounts, input.positionSnapshotDependencies),
-    buildAccountLiveMetrics(input.userAccounts, input.accountLiveMetricsDependencies),
+    input.positionSnapshot ?? buildPositionSnapshots(input.userAccounts, input.positionSnapshotDependencies),
+    input.accountLiveMetrics ?? buildAccountLiveMetrics(input.userAccounts, input.accountLiveMetricsDependencies),
   ]);
   const accountRiskOverview = buildAccountRiskOverview({
     accounts: input.userAccounts,
@@ -1027,25 +1029,32 @@ export async function buildAccountsRuntimeOverview(
 export async function buildDashboardRuntimeOverview(
   input: BuildDashboardRuntimeOverviewInput,
 ): Promise<DashboardRuntimeOverviewResult> {
-  const [accountsOverview, operationsOverview] = await Promise.all([
-    buildAccountsRuntimeOverview(input),
-    buildOperationsOverview({
-      userAccounts: input.userAccounts,
-      registeredGroups: input.registeredGroups,
-      getRuntime: input.getRuntime as BuildDashboardRuntimeOverviewInput["getRuntime"] & ((groupId: string) => {
-        state: {
-          status: string;
-          connectedFollowerCount: number;
-          totalFollowerCount: number;
-        };
-        health: {
-          status: string;
-        };
-      } | undefined),
-      getRecentActivity: input.getRecentActivity,
-      positionSnapshotDependencies: input.positionSnapshotDependencies,
-    }),
+  const [positionSnapshot, accountLiveMetrics] = await Promise.all([
+    buildPositionSnapshots(input.userAccounts, input.positionSnapshotDependencies),
+    buildAccountLiveMetrics(input.userAccounts, input.accountLiveMetricsDependencies),
   ]);
+  const accountsOverview = await buildAccountsRuntimeOverview({
+    ...input,
+    positionSnapshot,
+    accountLiveMetrics,
+  });
+  const operationsOverview = await buildOperationsOverview({
+    userAccounts: input.userAccounts,
+    registeredGroups: input.registeredGroups,
+    getRuntime: input.getRuntime as BuildDashboardRuntimeOverviewInput["getRuntime"] & ((groupId: string) => {
+      state: {
+        status: string;
+        connectedFollowerCount: number;
+        totalFollowerCount: number;
+      };
+      health: {
+        status: string;
+      };
+    } | undefined),
+    getRecentActivity: input.getRecentActivity,
+    positionSnapshotDependencies: input.positionSnapshotDependencies,
+    positionSnapshot,
+  });
   const accountIds = input.userAccounts.map((account) => account.id);
   const recentTrades = tradeHistoryStore.listRecent({
     accountIds,

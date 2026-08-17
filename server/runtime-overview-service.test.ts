@@ -66,6 +66,16 @@ test("dashboard runtime overview exposes compact trade logger observability for 
   assert.match(source, /tradeLogger:\s*tradeLogger\.getStats\(\),/);
 });
 
+test("dashboard runtime overview shares one position snapshot across account and operations summaries", () => {
+  const source = readFileSync("server/runtime-overview-service.ts", "utf8");
+  const dashboardBuilder = source.slice(source.indexOf("export async function buildDashboardRuntimeOverview"));
+  const snapshotCalls = dashboardBuilder.match(/buildPositionSnapshots\(/g) ?? [];
+
+  assert.equal(snapshotCalls.length, 1);
+  assert.match(dashboardBuilder, /buildAccountsRuntimeOverview\(\{[\s\S]*positionSnapshot,[\s\S]*accountLiveMetrics,/);
+  assert.match(dashboardBuilder, /buildOperationsOverview\(\{[\s\S]*positionSnapshot,/);
+});
+
 test("summarizeExecutionRecovery adds checkpoint and recovery-window context for failed, stale, and partial items", () => {
   const result = summarizeExecutionRecovery(
     [
