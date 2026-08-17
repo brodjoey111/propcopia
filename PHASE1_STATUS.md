@@ -30,6 +30,7 @@ Branch: `feature/broker-manager`
 - Activity execution follow-up boards now surface broker-wait and fill-wait labels directly in the operator queue instead of collapsing every live execution into a generic active state
 - Dashboard execution-recovery summary cards now break broker-submission waits and acknowledged fill waits out into separate counts instead of one generic active bucket
 - Server execution-recovery top-level summaries now describe broker-submission waits and acknowledged fill waits explicitly instead of using one generic in-flight sentence
+- Execution follow-up notifications now describe stale broker submissions, acknowledged waits, and partial-fill stalls with state-specific wording instead of one generic in-flight alert
 
 ## Current Verification Baseline
 
@@ -40,6 +41,7 @@ Branch: `feature/broker-manager`
 - Focused activity execution follow-up suite: `10/10` passing on 2026-08-17
 - Focused dashboard execution-recovery suite: `5/5` passing on 2026-08-17
 - Focused execution recovery summary suite: `13/13` passing on 2026-08-17
+- Focused notification suite: `32/32` passing on 2026-08-17
 
 ## Remaining Phase 1 Work
 

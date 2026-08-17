@@ -364,6 +364,26 @@ function buildExecutionFollowUpNotifications(input: {
   const notifications: NotificationItem[] = [];
   const nowMs = input.now.getTime();
 
+  const buildStaleExecutionMessage = (
+    record: ReturnType<typeof tradeHistoryStore.get> extends infer T ? Exclude<T, undefined> : never,
+    ageMinutes: number,
+    ownerLabel: string,
+  ): string => {
+    if (record.lifecycleStatus === "SENT") {
+      return `Broker acknowledgement has not arrived ${ageMinutes} minutes after submission.${ownerLabel}`;
+    }
+
+    if (record.lifecycleStatus === "ACKNOWLEDGED") {
+      return `Broker acknowledgement is ${ageMinutes} minutes old without a fill update.${ownerLabel}`;
+    }
+
+    if (record.lifecycleStatus === "PARTIALLY_FILLED") {
+      return `Partial fill progress has been stalled for ${ageMinutes} minutes without a new fill update.${ownerLabel}`;
+    }
+
+    return `${formatTradeLifecycleLabel(record.lifecycleStatus)} has been in flight for ${ageMinutes} minutes without a new lifecycle update.${ownerLabel}`;
+  };
+
   for (const record of input.records) {
     const review = input.reviewsByHistoryId.get(record.historyId);
     const reviewStatus = review?.status ?? record.reviewStatus;
@@ -433,7 +453,7 @@ function buildExecutionFollowUpNotifications(input: {
       severity: "warn",
       category: "trade",
       title: `${record.symbol} broker recheck overdue`,
-      message: `${formatTradeLifecycleLabel(record.lifecycleStatus)} has been in flight for ${ageMinutes} minutes without a new lifecycle update.${ownerLabel}`,
+      message: buildStaleExecutionMessage(record, ageMinutes, ownerLabel),
       accountId: record.followerAccountId,
       storyKey: record.historyId,
       tradeSummary: withOperatorTradeSummary({

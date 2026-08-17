@@ -1078,13 +1078,13 @@ test("buildNotifications includes overdue execution follow-up alerts for open re
           id: "execution-follow-up:ack-stale:stale",
           severity: "warn",
           title: "NQ broker recheck overdue",
-          message: "acknowledged has been in flight for 12 minutes without a new lifecycle update. No operator assigned.",
+          message: "Broker acknowledgement is 12 minutes old without a fill update. No operator assigned.",
         },
         {
           id: "execution-follow-up:sent-stale:stale",
           severity: "warn",
           title: "MES broker recheck overdue",
-          message: "sent has been in flight for 14 minutes without a new lifecycle update. No operator assigned.",
+          message: "Broker acknowledgement has not arrived 14 minutes after submission. No operator assigned.",
         },
         {
           id: "execution-follow-up:failed-open:review",
