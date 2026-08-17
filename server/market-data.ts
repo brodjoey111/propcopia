@@ -1,7 +1,19 @@
 import WebSocket from 'ws';
 
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY || '';
+const SIMULATED_MARKET_DATA_ENABLED = process.env.ENABLE_SIMULATED_MARKET_DATA === 'true';
 const FINNHUB_WS_URL = 'wss://ws.finnhub.io';
+
+export type MarketDataMode = 'FINNHUB' | 'SIMULATED' | 'UNAVAILABLE';
+
+export function resolveMarketDataMode(input: {
+  apiKey?: string;
+  simulatedEnabled?: boolean;
+}): MarketDataMode {
+  if (input.apiKey && input.apiKey.length > 10) return 'FINNHUB';
+  if (input.simulatedEnabled) return 'SIMULATED';
+  return 'UNAVAILABLE';
+}
 
 interface MarketPrice {
   symbol: string;
@@ -9,6 +21,7 @@ interface MarketPrice {
   change: number;
   changePercent: number;
   timestamp: number;
+  source: Exclude<MarketDataMode, 'UNAVAILABLE'>;
 }
 
 interface PriceUpdateCallback {
@@ -32,13 +45,19 @@ class MarketDataService {
   };
 
   constructor() {
-    if (FINNHUB_API_KEY && FINNHUB_API_KEY.length > 10) {
+    const mode = resolveMarketDataMode({
+      apiKey: FINNHUB_API_KEY,
+      simulatedEnabled: SIMULATED_MARKET_DATA_ENABLED,
+    });
+    if (mode === 'FINNHUB') {
       console.log('[MarketData] Using Finnhub API for real-time data');
       this.connect();
+    } else if (mode === 'SIMULATED') {
+      console.warn('[MarketData] Simulated data explicitly enabled for development');
+      this.startSimulatedUpdates();
     } else {
-      //console.log('[MarketData] No API key configured, using simulated market data');
+      console.log('[MarketData] Real market data is unavailable; simulated prices are disabled');
     }
-    this.startSimulatedUpdates();
   }
 
   private connect() {
@@ -126,6 +145,7 @@ class MarketDataService {
         change: (Math.random() - 0.5) * 20,
         changePercent: (Math.random() - 0.5) * 0.5,
         timestamp: Date.now(),
+        source: 'SIMULATED',
       });
     });
 
@@ -137,7 +157,7 @@ class MarketDataService {
         const lastUpdate = this.lastLiveUpdate.get(symbol) || 0;
         const isStale = now - lastUpdate > staleThreshold;
 
-        if (!FINNHUB_API_KEY || isStale) {
+        if (SIMULATED_MARKET_DATA_ENABLED && (!FINNHUB_API_KEY || isStale)) {
           const current = this.currentPrices.get(symbol);
           if (current) {
             const volatility = 0.0002;
@@ -154,6 +174,7 @@ class MarketDataService {
               change: newChange,
               changePercent: newChangePercent,
               timestamp: Date.now(),
+              source: 'SIMULATED',
             };
 
             this.currentPrices.set(symbol, updatedPrice);
@@ -176,6 +197,7 @@ class MarketDataService {
       change,
       changePercent,
       timestamp: Date.now(),
+      source: 'FINNHUB',
     };
 
     this.currentPrices.set(symbol, priceData);
@@ -217,6 +239,27 @@ class MarketDataService {
 
   getAllPrices(): Map<string, MarketPrice> {
     return new Map(this.currentPrices);
+  }
+
+  getStatus() {
+    const mode = resolveMarketDataMode({
+      apiKey: FINNHUB_API_KEY,
+      simulatedEnabled: SIMULATED_MARKET_DATA_ENABLED,
+    });
+    const hasRecentLiveUpdate = Array.from(this.lastLiveUpdate.values())
+      .some((timestamp) => Date.now() - timestamp <= 30_000);
+    const isLive = mode === 'FINNHUB' && hasRecentLiveUpdate;
+
+    return {
+      mode,
+      status: isLive ? 'LIVE' : mode === 'SIMULATED' ? 'SIMULATED' : 'UNAVAILABLE',
+      isLive,
+      message: isLive
+        ? 'Receiving real Finnhub market updates.'
+        : mode === 'SIMULATED'
+          ? 'Developer simulation is enabled. Prices are not real.'
+          : 'No verified real-time market feed is connected.',
+    } as const;
   }
 
   close() {

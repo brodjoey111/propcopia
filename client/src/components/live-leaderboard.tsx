@@ -29,11 +29,13 @@ interface MarketPrice {
   change: number;
   changePercent: number;
   timestamp: number;
+  source: 'FINNHUB' | 'SIMULATED';
 }
 
 export function LiveLeaderboard({ active = true }: { active?: boolean }) {
   const [traders, setTraders] = useState<Trader[]>([]);
   const [isLive, setIsLive] = useState(false);
+  const [feedLabel, setFeedLabel] = useState('No real market feed');
 
   const { data: leaderboardData } = useQuery<{ success: boolean; data: Trader[] }>({
     queryKey: ['/api/leaderboard'],
@@ -65,14 +67,20 @@ export function LiveLeaderboard({ active = true }: { active?: boolean }) {
 
         ws.onopen = () => {
           console.log('[LiveLeaderboard] WebSocket connected');
-          setIsLive(true);
+          setIsLive(false);
         };
 
         ws.onmessage = (event) => {
           try {
             const message = JSON.parse(event.data);
             if (message.type === 'price_update') {
+              const isVerifiedLivePrice = message.data?.source === 'FINNHUB';
+              setIsLive(isVerifiedLivePrice);
+              setFeedLabel(isVerifiedLivePrice ? 'Live Finnhub feed' : 'Simulated development feed');
               updateTraderPnl(message.symbol, message.data);
+            } else if (message.type === 'market_status') {
+              setIsLive(message.data?.isLive === true);
+              setFeedLabel(message.data?.message ?? 'No real market feed');
             }
           } catch (error) {
             console.error('[LiveLeaderboard] Error parsing message:', error);
@@ -157,7 +165,7 @@ export function LiveLeaderboard({ active = true }: { active?: boolean }) {
         <div className="flex items-center gap-2">
           <Activity className={`h-4 w-4 ${isLive ? 'text-chart-2 animate-pulse' : 'text-muted-foreground'}`} data-testid="indicator-live" />
           <span className="text-sm text-muted-foreground">
-            {isLive ? 'Live' : 'Connecting...'}
+            {isLive ? 'Live' : feedLabel}
           </span>
         </div>
       </div>

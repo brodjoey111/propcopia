@@ -3920,6 +3920,7 @@ export function registerRoutes(app: Express): Server {
 
       return res.json({
         success: true,
+        feed: marketDataService.getStatus(),
         data: pricesArray,
       });
     } catch (error) {
@@ -4650,6 +4651,11 @@ Be concise, friendly, and helpful. Focus on explaining features, answering quest
 
   wss.on('connection', (ws) => {
     console.log('[WebSocket] Client connected to market data');
+
+    ws.send(JSON.stringify({
+      type: 'market_status',
+      data: marketDataService.getStatus(),
+    }));
 
     const symbols = ['ES', 'NQ', 'YM', 'RTY'];
     const callbacks = new Map<string, (symbol: string, price: MarketPrice) => void>();
