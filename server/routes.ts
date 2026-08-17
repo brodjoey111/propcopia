@@ -94,6 +94,50 @@ const tradeifyInstances = new Map<string, TradeifyAPI>();
 const rithmicInstances = new Map<string, RithmicAPI>();
 const rithmicReconnectValidationStore = new RithmicReconnectValidationStore();
 const tradeCopyEngines = new Map<string, TradeCopyEngine>();
+let marketDataWebSocketServer: WebSocketServer | null = null;
+
+export async function shutdownRouteRuntime(): Promise<void> {
+  const failures: unknown[] = [];
+  const settlePhase = async (tasks: Array<() => Promise<unknown>>) => {
+    const results = await Promise.allSettled(tasks.map((task) => task()));
+    failures.push(...results
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) => result.reason));
+  };
+
+  const engineCleanups: Array<() => Promise<unknown>> = [];
+  for (const [userId, engine] of Array.from(tradeCopyEngines.entries())) {
+    tradeCopyEngines.delete(userId);
+    engineCleanups.push(() => engine.disconnect());
+  }
+  await settlePhase(engineCleanups);
+
+  const groupCleanups: Array<() => Promise<unknown>> = [];
+  for (const registration of copyGroupManager.getAllGroups()) {
+    groupCleanups.push(() => copyGroupManager.unregisterGroup(registration.group.groupId));
+  }
+  await settlePhase(groupCleanups);
+
+  const sessionCleanups: Array<() => Promise<unknown>> = [];
+  for (const [username, api] of Array.from(rithmicInstances.entries())) {
+    rithmicInstances.delete(username);
+    sessionCleanups.push(() => api.disconnect());
+  }
+  await settlePhase(sessionCleanups);
+
+  marketDataService.close();
+  if (marketDataWebSocketServer) {
+    const socketServer = marketDataWebSocketServer;
+    marketDataWebSocketServer = null;
+    for (const client of Array.from(socketServer.clients)) {
+      client.terminate();
+    }
+    await settlePhase([() => new Promise<void>((resolve) => socketServer.close(() => resolve()))]);
+  }
+  if (failures.length > 0) {
+    throw new Error(`Failed to close ${failures.length} route runtime resource(s)`);
+  }
+}
 
 const tradeHistoryStatuses = new Set<TradeHistoryLifecycleStatus>([
   "RULE_SKIPPED",
@@ -4587,6 +4631,7 @@ Be concise, friendly, and helpful. Focus on explaining features, answering quest
   });
 
   const wss = new WebSocketServer({ server, path: '/ws/market' });
+  marketDataWebSocketServer = wss;
 
   wss.on('connection', (ws) => {
     console.log('[WebSocket] Client connected to market data');

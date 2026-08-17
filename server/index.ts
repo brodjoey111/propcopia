@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import pg from "pg";
-import { registerRoutes } from "./routes";
+import { registerRoutes, shutdownRouteRuntime } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { buildSessionCookieSettings } from "./session-config";
 import { resetStaleAccountConnections } from "./startup-connection-reconciliation";
@@ -11,6 +11,9 @@ import { buildLivenessPayload, buildRuntimeConfig } from "./runtime-config";
 import { operationalLogger } from "./operational-logger";
 import { buildRequestLogDecision } from "./request-observability";
 import { normalizeHttpError } from "./http-error-boundary";
+import { closeDatabasePool } from "./db";
+import { tradeLogger } from "./trade-logger";
+import { GracefulShutdownCoordinator, closeHttpServer } from "./graceful-shutdown";
 
 const app = express();
 const startedAtMs = Date.now();
@@ -145,4 +148,45 @@ app.use((req, res, next) => {
   server.listen(port, "127.0.0.1", () => {
     log(`serving on port ${port}`);
   });
+
+  const httpClose = { promise: null as Promise<void> | null };
+  const shutdownCoordinator = new GracefulShutdownCoordinator([
+    {
+      name: "stop-accepting-requests",
+      run: () => {
+        httpClose.promise ??= closeHttpServer(server);
+      },
+    },
+    { name: "route-runtime", run: shutdownRouteRuntime },
+    {
+      name: "http-server",
+      run: async () => {
+        await httpClose.promise;
+      },
+    },
+    { name: "trade-logger", run: () => tradeLogger.shutdown() },
+    { name: "application-database", run: closeDatabasePool },
+    { name: "session-database", run: () => pgPool.end() },
+  ]);
+
+  const handleShutdownSignal = (signal: string) => {
+    operationalLogger.info("server.shutdown_started", { signal });
+    void shutdownCoordinator.shutdown(signal).then((result) => {
+      if (result.failedSteps.length > 0) {
+        process.exitCode = 1;
+        operationalLogger.error("server.shutdown_incomplete", {
+          signal,
+          failures: result.failedSteps,
+        });
+        return;
+      }
+      operationalLogger.info("server.shutdown_completed", {
+        signal,
+        completedSteps: result.completedSteps,
+      });
+    });
+  };
+
+  process.once("SIGTERM", () => handleShutdownSignal("SIGTERM"));
+  process.once("SIGINT", () => handleShutdownSignal("SIGINT"));
 })();
