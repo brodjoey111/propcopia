@@ -2598,20 +2598,32 @@ export function registerRoutes(app: Express): Server {
       return res.json({ success: true, message: "Logged out successfully" });
     }
 
-    session.destroy((err) => {
-      if (userId) usersLoggingOut.delete(userId);
-      if (err) {
-        return res.status(500).json({
-          success: false,
-          message: "Failed to logout",
+    try {
+      session.destroy((err) => {
+        if (userId) usersLoggingOut.delete(userId);
+        if (err) {
+          return res.status(500).json({
+            success: false,
+            message: "Failed to logout",
+          });
+        }
+        res.clearCookie('connect.sid');
+        return res.json({
+          success: true,
+          message: "Logged out successfully",
         });
-      }
-      res.clearCookie('connect.sid');
-      return res.json({
-        success: true,
-        message: "Logged out successfully",
       });
-    });
+    } catch (error) {
+      if (userId) usersLoggingOut.delete(userId);
+      operationalLogger.error("auth.logout_session_destroy_failed", {
+        error,
+        userId,
+      });
+      return res.status(500).json({
+        success: false,
+        message: "Failed to logout",
+      });
+    }
   });
 
   app.post("/api/auth/change-password", authRateLimit, async (req, res) => {

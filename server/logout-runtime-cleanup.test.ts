@@ -35,3 +35,10 @@ test("logout still destroys the browser session when runtime cleanup fails", () 
   assert.match(logout, /operationalLogger\.error\("auth\.logout_cleanup_failed"/);
   assert.match(logout, /session\.destroy\(\(err\) => \{/);
 });
+
+test("logout clears logout-in-progress state if session destruction throws", () => {
+  assert.match(logout, /try \{\s*session\.destroy\(\(err\) => \{/);
+  assert.match(logout, /catch \(error\) \{\s*if \(userId\) usersLoggingOut\.delete\(userId\)/);
+  assert.match(logout, /operationalLogger\.error\("auth\.logout_session_destroy_failed"/);
+  assert.match(logout, /message: "Failed to logout"/);
+});

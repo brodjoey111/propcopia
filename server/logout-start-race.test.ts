@@ -29,3 +29,13 @@ test("trade-copy startup checks logout state before and after broker wiring", ()
   assert.match(startRoute.slice(finalGuard, registration), /await engine\.disconnect\(\)/);
   assert.match(startRoute.slice(finalGuard, registration), /await cleanupUserRouteRuntime\(userId\)/);
 });
+
+test("user runtime cleanup removes registered resources before disconnect side effects run", () => {
+  const cleanupStart = source.indexOf("async function cleanupUserRouteRuntime");
+  const cleanupEnd = source.indexOf("const tradeHistoryStatuses", cleanupStart);
+  const cleanup = source.slice(cleanupStart, cleanupEnd);
+
+  assert.match(cleanup, /tradeCopyEngines\.delete\(userId\);\s*cleanups\.push\(\(\) => engine\.disconnect\(\)\)/);
+  assert.match(cleanup, /for \(const \{ session \} of rithmicInstances\.removeUser\(userId\)\) \{\s*cleanups\.push\(\(\) => session\.disconnect\(\)\);\s*\}/);
+  assert.match(cleanup, /const results = await Promise\.allSettled\(cleanups\.map\(\(cleanup\) => cleanup\(\)\)\)/);
+});
