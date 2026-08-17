@@ -10,6 +10,7 @@ import { accountConnectionRecoveryStore } from "./account-connection-recovery-st
 import { buildLivenessPayload, buildRuntimeConfig } from "./runtime-config";
 import { operationalLogger } from "./operational-logger";
 import { buildRequestLogDecision } from "./request-observability";
+import { normalizeHttpError } from "./http-error-boundary";
 
 const app = express();
 const startedAtMs = Date.now();
@@ -105,12 +106,26 @@ app.use((req, res, next) => {
 
   const server = await registerRoutes(app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+  app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+    if (res.headersSent) {
+      return next(err);
+    }
 
-    res.status(status).json({ message });
-    throw err;
+    const normalized = normalizeHttpError(err);
+    const context = {
+      method: req.method,
+      path: req.path,
+      statusCode: normalized.statusCode,
+      userId: req.session.userId,
+      error: err,
+    };
+    if (normalized.logLevel === "error") {
+      operationalLogger.error("http.unhandled_error", context);
+    } else {
+      operationalLogger.warn("http.request_error", context);
+    }
+
+    return res.status(normalized.statusCode).json({ message: normalized.publicMessage });
   });
 
   // importantly only setup vite in development and after
