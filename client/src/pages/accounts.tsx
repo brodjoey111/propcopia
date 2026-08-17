@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useDeferredValue, useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AccountCard } from "@/components/account-card";
 import { AddAccountDialog } from "@/components/add-account-dialog";
@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/empty-state";
 import { AccountGroupsView } from "@/components/account-groups";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAccountsPositionSyncReview } from "@/hooks/use-accounts-position-sync-review";
 import { useAccountsPagePreferences } from "@/hooks/use-accounts-page-preferences";
@@ -60,6 +61,11 @@ import {
 } from "@/lib/account-runtime-view";
 import { buildLicenseSummary } from "@/lib/license-summary";
 import {
+  filterAndSortAccountRoster,
+  type AccountRosterFilter,
+  type AccountRosterSort,
+} from "@/lib/account-roster";
+import {
   buildRithmicReadinessViewItems,
   getRithmicAccounts,
   getRithmicReadinessBannerLabel,
@@ -74,7 +80,7 @@ import {
   SESSION_STATUS_POLL_MS,
 } from "@/lib/live-query-config";
 import type { AccountsRuntimeOverviewResponse } from "@/lib/runtime-overview";
-import { ShieldAlert, Loader2, LayoutGrid, List, Table2, Settings, Globe, Layers, Trash2, Pencil } from "lucide-react";
+import { ShieldAlert, Loader2, LayoutGrid, List, Table2, Settings, Globe, Layers, Trash2, Pencil, Search } from "lucide-react";
 import type { Account } from "@shared/schema";
 import type { LicenseSnapshot } from "@shared/billing";
 
@@ -126,6 +132,10 @@ export default function Accounts() {
     accountId: string;
     accountName: string;
   }>({ open: false, accountId: '', accountName: '' });
+  const [rosterQuery, setRosterQuery] = useState("");
+  const [rosterFilter, setRosterFilter] = useState<AccountRosterFilter>("all");
+  const [rosterSort, setRosterSort] = useState<AccountRosterSort>("name");
+  const deferredRosterQuery = useDeferredValue(rosterQuery);
 
   const { data: accountsData, isLoading } = useQuery<{ success: boolean; accounts: Account[] }>({
     queryKey: ['/api/accounts'],
@@ -1005,7 +1015,20 @@ export default function Accounts() {
     balanceMetricsById: accountBalanceMetricsById,
     getSessionStatus: getAccountSessionStatus,
   });
-  const hasFollowerAccounts = accountRuntimeViewModels.some(
+  const visibleAccountRuntimeViewModels = filterAndSortAccountRoster(accountRuntimeViewModels, {
+    query: deferredRosterQuery,
+    filter: rosterFilter,
+    sort: rosterSort,
+  });
+  const rosterFilterOptions: Array<{ value: AccountRosterFilter; label: string }> = [
+    { value: "all", label: "All" },
+    { value: "connected", label: "Connected" },
+    { value: "disconnected", label: "Offline" },
+    { value: "master", label: "Masters" },
+    { value: "follower", label: "Followers" },
+  ];
+  const rosterFiltersActive = rosterQuery.trim().length > 0 || rosterFilter !== "all";
+  const hasFollowerAccounts = visibleAccountRuntimeViewModels.some(
     ({ account }) => account.accountType === 'follower',
   );
   const breachedRiskCount = accountRiskOverview?.summary.breachedAccounts ?? 0;
@@ -2055,6 +2078,49 @@ export default function Accounts() {
 
       </div>
 
+      {hasAccounts && viewMode !== 'groups' ? (
+        <div className="panel-surface flex flex-col gap-3 rounded-[1.2rem] p-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative min-w-0 flex-1 lg:max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={rosterQuery}
+              onChange={(event) => setRosterQuery(event.target.value)}
+              placeholder="Search accounts, roles, or platforms"
+              className="pl-9"
+              data-testid="input-account-roster-search"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {rosterFilterOptions.map((option) => (
+              <Button
+                key={option.value}
+                type="button"
+                size="sm"
+                variant={rosterFilter === option.value ? "default" : "ghost"}
+                onClick={() => setRosterFilter(option.value)}
+                data-testid={`button-account-filter-${option.value}`}
+              >
+                {option.label}
+              </Button>
+            ))}
+            <select
+              value={rosterSort}
+              onChange={(event) => setRosterSort(event.target.value as AccountRosterSort)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              aria-label="Sort accounts"
+              data-testid="select-account-roster-sort"
+            >
+              <option value="name">Name</option>
+              <option value="connection">Connected first</option>
+              <option value="role">Role</option>
+            </select>
+            <Badge variant="outline" className="tabular-nums">
+              {visibleAccountRuntimeViewModels.length} of {accountRuntimeViewModels.length}
+            </Badge>
+          </div>
+        </div>
+      ) : null}
+
       {!hasAccounts ? (
         <AccountGroupsView
           accounts={accounts}
@@ -2079,9 +2145,29 @@ export default function Accounts() {
         />
       ) : (
         <>
-          {viewMode === 'grid' && (
+          {visibleAccountRuntimeViewModels.length === 0 ? (
+            <div className="panel-surface rounded-[1.4rem] p-8 text-center" data-testid="account-roster-empty-filter">
+              <p className="font-semibold text-white">No accounts match these filters</p>
+              <p className="mt-1 text-sm text-muted-foreground">Clear the search and filters to return to the full roster.</p>
+              {rosterFiltersActive ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => {
+                    setRosterQuery("");
+                    setRosterFilter("all");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+          {visibleAccountRuntimeViewModels.length > 0 && viewMode === 'grid' && (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {accountRuntimeViewModels.map((viewModel) => {
+              {visibleAccountRuntimeViewModels.map((viewModel) => {
                 const { account } = viewModel;
                 const effectiveAccount = getEffectiveSettings(account);
                 return (
@@ -2129,9 +2215,9 @@ export default function Accounts() {
             </div>
           )}
 
-          {viewMode === 'list' && (
+          {visibleAccountRuntimeViewModels.length > 0 && viewMode === 'list' && (
             <div className="space-y-2">
-              {accountRuntimeViewModels.map((viewModel) => {
+              {visibleAccountRuntimeViewModels.map((viewModel) => {
                 const { account } = viewModel;
                 const effectiveAccount = getEffectiveSettings(account);
                 
@@ -2177,7 +2263,7 @@ export default function Accounts() {
             </div>
           )}
 
-          {viewMode === 'table' && (
+          {visibleAccountRuntimeViewModels.length > 0 && viewMode === 'table' && (
             <div className="panel-surface overflow-hidden rounded-[1.4rem]">
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -2197,7 +2283,7 @@ export default function Accounts() {
                     </tr>
                   </thead>
                   <tbody>
-                    {accountRuntimeViewModels.map((viewModel) => {
+                    {visibleAccountRuntimeViewModels.map((viewModel) => {
                       const { account } = viewModel;
                       const effectiveAccount = getEffectiveSettings(account);
 
