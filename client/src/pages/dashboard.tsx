@@ -57,6 +57,7 @@ import {
 import {
   LIVE_QUERY_POLL_MS,
   LIVE_QUERY_STALE_MS,
+  PASSIVE_QUERY_POLL_MS,
   SESSION_STATUS_POLL_MS,
 } from "@/lib/live-query-config";
 import type { OperationsOverviewResponse } from "@/lib/operations-overview";
@@ -315,7 +316,7 @@ export default function Dashboard() {
       return responses;
     },
     enabled: !!authData?.user?.id && hasRithmicAccounts,
-    refetchInterval: LIVE_QUERY_POLL_MS,
+    refetchInterval: PASSIVE_QUERY_POLL_MS,
     refetchIntervalInBackground: false,
     staleTime: LIVE_QUERY_STALE_MS,
   });

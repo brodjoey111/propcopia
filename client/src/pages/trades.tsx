@@ -21,6 +21,10 @@ import {
   type TradeHistoryResponse,
 } from "@/lib/trade-history";
 import { getQueryFn } from "@/lib/queryClient";
+import {
+  LIVE_QUERY_STALE_MS,
+  OPERATOR_QUERY_POLL_MS,
+} from "@/lib/live-query-config";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -46,8 +50,8 @@ export default function Trades() {
   const { data, isLoading, error } = useQuery<TradeHistoryResponse>({
     queryKey: [`/api/trades/history${queryString}`],
     queryFn: getQueryFn({ on401: "throw" }),
-    staleTime: 15000,
-    refetchInterval: 15000,
+    staleTime: LIVE_QUERY_STALE_MS,
+    refetchInterval: OPERATOR_QUERY_POLL_MS,
   });
 
   const records = data?.records ?? [];

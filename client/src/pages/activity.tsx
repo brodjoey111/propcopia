@@ -46,8 +46,8 @@ import {
   type RiskFollowUpReviewEntry,
 } from "@/lib/follow-up-operator";
 import {
-  LIVE_QUERY_POLL_MS,
   LIVE_QUERY_STALE_MS,
+  OPERATOR_QUERY_POLL_MS,
 } from "@/lib/live-query-config";
 import {
   buildCopyGroupHealthWatchlist,
@@ -286,14 +286,14 @@ export default function Activity() {
   } = useQuery<ActivityPageData>({
     queryKey: ["/api/copy-groups", "activity-page"],
     queryFn: loadActivityPageData,
-    refetchInterval: LIVE_QUERY_POLL_MS,
+    refetchInterval: OPERATOR_QUERY_POLL_MS,
     refetchIntervalInBackground: false,
     staleTime: LIVE_QUERY_STALE_MS,
   });
   const { data: copyGroupAlertsData } = useQuery<CopyGroupAlertsResponse>({
     queryKey: ["/api/copy-groups", "alerts"],
     queryFn: () => getJson<CopyGroupAlertsResponse>("/api/copy-groups/alerts"),
-    refetchInterval: LIVE_QUERY_POLL_MS,
+    refetchInterval: OPERATOR_QUERY_POLL_MS,
     refetchIntervalInBackground: false,
     staleTime: LIVE_QUERY_STALE_MS,
   });

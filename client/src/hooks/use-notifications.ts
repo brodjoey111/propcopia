@@ -2,8 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 
 import { useUser } from "@/contexts/user-context";
 import {
-  LIVE_QUERY_POLL_MS,
   LIVE_QUERY_STALE_MS,
+  OPERATOR_QUERY_POLL_MS,
 } from "@/lib/live-query-config";
 import {
   applyNotificationPreferences,
@@ -35,7 +35,7 @@ export function useNotifications() {
   return useQuery<NotificationsResponse | null, Error, NotificationsResponse | null>({
     queryKey: notificationsQueryKey,
     queryFn: fetchNotifications,
-    refetchInterval: LIVE_QUERY_POLL_MS,
+    refetchInterval: OPERATOR_QUERY_POLL_MS,
     refetchIntervalInBackground: false,
     staleTime: LIVE_QUERY_STALE_MS,
     select: (data) => {

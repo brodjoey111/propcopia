@@ -68,6 +68,7 @@ import {
 import {
   LIVE_QUERY_POLL_MS,
   LIVE_QUERY_STALE_MS,
+  PASSIVE_QUERY_POLL_MS,
   SESSION_STATUS_POLL_MS,
 } from "@/lib/live-query-config";
 import type { AccountsRuntimeOverviewResponse } from "@/lib/runtime-overview";
@@ -226,7 +227,7 @@ export default function Accounts() {
       return responses;
     },
     enabled: !!authData?.user?.id && rithmicAccounts.length > 0,
-    refetchInterval: LIVE_QUERY_POLL_MS,
+    refetchInterval: PASSIVE_QUERY_POLL_MS,
     refetchIntervalInBackground: false,
     staleTime: LIVE_QUERY_STALE_MS,
   });
