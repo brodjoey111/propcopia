@@ -4,4 +4,4 @@
 - [x] Describe active broker-submission waits and acknowledged fill waits explicitly in the recovery summary detail
 - [x] Add focused coverage for active broker-state wording in the execution recovery summary
 - [x] Verify the focused execution recovery summary suite and `npm run check`
-- [ ] Commit and push the Phase 65 checkpoint
+- [x] Commit and push the Phase 65 checkpoint
