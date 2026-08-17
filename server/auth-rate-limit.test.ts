@@ -30,9 +30,11 @@ test("tracked authentication keys remain bounded", () => {
   assert.equal(limiter.trackedKeyCount, 2);
 });
 
-test("password changes use a user key while public authentication uses IP", () => {
+test("authenticated credential checks use a user key while public authentication uses IP", () => {
   assert.equal(buildAuthRateLimitKey({ path: "/api/auth/login", ip: "127.0.0.1", userId: "user-1" }), "/api/auth/login:ip:127.0.0.1");
+  assert.equal(buildAuthRateLimitKey({ path: "/api/auth/signup", ip: "127.0.0.1", userId: "user-1" }), "/api/auth/signup:ip:127.0.0.1");
   assert.equal(buildAuthRateLimitKey({ path: "/api/auth/change-password", ip: "127.0.0.1", userId: "user-1" }), "/api/auth/change-password:user:user-1");
+  assert.equal(buildAuthRateLimitKey({ path: "/api/rithmic/test-connection", ip: "127.0.0.1", userId: "user-1" }), "/api/rithmic/test-connection:user:user-1");
 });
 
 test("middleware returns retry guidance after the limit is reached", () => {

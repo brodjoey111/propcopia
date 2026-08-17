@@ -2649,7 +2649,7 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
-  app.post("/api/tradovate/test-connection", async (req, res) => {
+  app.post("/api/tradovate/test-connection", authRateLimit, async (req, res) => {
     try {
       if (!req.session?.userId) {
         return res.status(401).json({ success: false, message: "Not authenticated" });
@@ -2685,6 +2685,11 @@ export function registerRoutes(app: Express): Server {
 
       if (connectionTest.success) {
         tradovateInstances.set(username, tradovateAPI);
+        authAttemptLimiter.reset(buildAuthRateLimitKey({
+          path: req.path,
+          ip: req.ip,
+          userId: req.session.userId,
+        }));
       }
 
       return res.json({
@@ -2705,7 +2710,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.post("/api/tradeify/test-connection", async (req, res) => {
+  app.post("/api/tradeify/test-connection", authRateLimit, async (req, res) => {
     try {
       if (!req.session?.userId) {
         return res.status(401).json({ success: false, message: "Not authenticated" });
@@ -2731,6 +2736,11 @@ export function registerRoutes(app: Express): Server {
 
       if (connectionTest.success) {
         tradeifyInstances.set(username, tradeifyAPI);
+        authAttemptLimiter.reset(buildAuthRateLimitKey({
+          path: req.path,
+          ip: req.ip,
+          userId: req.session.userId,
+        }));
 
         const normalizedAccounts = connectionTest.data?.map((account: any) => ({
           id: String(account.id || account.accountId),
@@ -2764,7 +2774,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.post("/api/rithmic/test-connection", async (req, res) => {
+  app.post("/api/rithmic/test-connection", authRateLimit, async (req, res) => {
     try {
       if (!req.session?.userId) {
         return res.status(401).json({ success: false, message: "Not authenticated" });
@@ -2790,6 +2800,11 @@ export function registerRoutes(app: Express): Server {
 
       if (connectionTest.success) {
         rithmicInstances.set(username, rithmicAPI);
+        authAttemptLimiter.reset(buildAuthRateLimitKey({
+          path: req.path,
+          ip: req.ip,
+          userId: req.session.userId,
+        }));
 
         const normalizedAccounts = (connectionTest.data ?? []).map((account: any) => ({
           id: String(account.id),

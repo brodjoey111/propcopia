@@ -60,7 +60,8 @@ export class AttemptRateLimiter {
 }
 
 export function buildAuthRateLimitKey(input: { path: string; ip?: string; userId?: string }): string {
-  const actor = input.path === "/api/auth/change-password" && input.userId
+  const publicCredentialRoute = input.path === "/api/auth/login" || input.path === "/api/auth/signup";
+  const actor = input.userId && !publicCredentialRoute
     ? `user:${input.userId}`
     : `ip:${input.ip || "unknown"}`;
   return `${input.path}:${actor}`;
