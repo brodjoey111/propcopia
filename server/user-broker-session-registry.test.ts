@@ -33,3 +33,15 @@ test("drain returns every session and clears the registry", () => {
   ]);
   assert.equal(registry.userCount, 0);
 });
+
+test("removing one user preserves sessions owned by other users", () => {
+  const registry = new UserBrokerSessionRegistry<number>();
+  registry.forUser("user-a").set("shared", 1);
+  registry.forUser("user-b").set("shared", 2);
+
+  assert.deepEqual(registry.removeUser("user-a"), [
+    { userId: "user-a", username: "shared", session: 1 },
+  ]);
+  assert.equal(registry.forUser("user-b").get("shared"), 2);
+  assert.equal(registry.userCount, 1);
+});

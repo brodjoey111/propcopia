@@ -27,6 +27,20 @@ export class UserBrokerSessionRegistry<TSession> {
     return entries;
   }
 
+  removeUser(userId: string): UserBrokerSessionEntry<TSession>[] {
+    const sessions = this.sessionsByUser.get(userId);
+    if (!sessions) {
+      return [];
+    }
+
+    const entries: UserBrokerSessionEntry<TSession>[] = [];
+    sessions.forEach((session, username) => {
+      entries.push({ userId, username, session });
+    });
+    this.sessionsByUser.delete(userId);
+    return entries;
+  }
+
   get userCount(): number {
     return this.sessionsByUser.size;
   }

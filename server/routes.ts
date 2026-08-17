@@ -154,6 +154,37 @@ export async function shutdownRouteRuntime(): Promise<void> {
   }
 }
 
+async function cleanupUserRouteRuntime(userId: string): Promise<void> {
+  const cleanups: Array<() => Promise<unknown>> = [];
+  const engine = tradeCopyEngines.get(userId);
+  if (engine) {
+    tradeCopyEngines.delete(userId);
+    cleanups.push(() => engine.disconnect());
+  }
+
+  for (const registration of copyGroupManager.getAllGroups()) {
+    if (registration.group.userId === userId) {
+      cleanups.push(() => copyGroupManager.unregisterGroup(registration.group.groupId));
+    }
+  }
+
+  tradovateInstances.removeUser(userId);
+  tradeifyInstances.removeUser(userId);
+  for (const { session } of rithmicInstances.removeUser(userId)) {
+    cleanups.push(() => session.disconnect());
+  }
+  clearRuntimeSnapshotCache(userId);
+
+  const results = await Promise.allSettled(cleanups.map((cleanup) => cleanup()));
+  const failures = results.filter((result) => result.status === "rejected");
+  if (failures.length > 0) {
+    operationalLogger.warn("auth.logout_cleanup_incomplete", {
+      userId,
+      failureCount: failures.length,
+    });
+  }
+}
+
 const tradeHistoryStatuses = new Set<TradeHistoryLifecycleStatus>([
   "RULE_SKIPPED",
   "RULE_REJECTED",
@@ -2513,8 +2544,19 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.post("/api/auth/logout", (req, res) => {
-    req.session?.destroy((err) => {
+  app.post("/api/auth/logout", async (req, res) => {
+    const userId = req.session?.userId;
+    if (userId) {
+      await cleanupUserRouteRuntime(userId);
+    }
+
+    const session = req.session;
+    if (!session) {
+      res.clearCookie('connect.sid');
+      return res.json({ success: true, message: "Logged out successfully" });
+    }
+
+    session.destroy((err) => {
       if (err) {
         return res.status(500).json({
           success: false,
