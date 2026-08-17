@@ -5,6 +5,7 @@ import { AddAccountDialog } from "@/components/add-account-dialog";
 import { BrokerSettingsDialog } from "@/components/broker-settings-dialog";
 import { RiskSettingsDialog, type RiskSettings } from "@/components/risk-settings-dialog";
 import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
+import { RemoveAccountAlert } from "@/components/remove-account-alert";
 import { EmptyState } from "@/components/empty-state";
 import { AccountGroupsView } from "@/components/account-groups";
 import { Button } from "@/components/ui/button";
@@ -72,7 +73,7 @@ import {
   SESSION_STATUS_POLL_MS,
 } from "@/lib/live-query-config";
 import type { AccountsRuntimeOverviewResponse } from "@/lib/runtime-overview";
-import { ShieldAlert, Loader2, LayoutGrid, List, Table2, Settings, Globe, Layers } from "lucide-react";
+import { ShieldAlert, Loader2, LayoutGrid, List, Table2, Settings, Globe, Layers, Trash2 } from "lucide-react";
 import type { Account } from "@shared/schema";
 import type { LicenseSnapshot } from "@shared/billing";
 
@@ -115,6 +116,11 @@ export default function Accounts() {
   const { toast } = useToast();
   const [addGroupTrigger, setAddGroupTrigger] = useState(0);
   const [disconnectAlert, setDisconnectAlert] = useState<{
+    open: boolean;
+    accountId: string;
+    accountName: string;
+  }>({ open: false, accountId: '', accountName: '' });
+  const [removeAlert, setRemoveAlert] = useState<{
     open: boolean;
     accountId: string;
     accountName: string;
@@ -307,6 +313,29 @@ export default function Accounts() {
       refreshAccountSessionData();
     },
   });
+  const removeAccountMutation = useMutation({
+    mutationFn: async (accountId: string) => {
+      const response = await fetch(`/api/accounts/${accountId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.message ?? 'Failed to remove account');
+      }
+      return payload;
+    },
+    onSuccess: (_result, accountId) => {
+      queryClient.setQueryData<{ success: boolean; accounts: Account[] } | undefined>(
+        ['/api/accounts'],
+        (current) => current
+          ? { ...current, accounts: current.accounts.filter((account) => account.id !== accountId) }
+          : current,
+      );
+      refreshAccountSessionData();
+      queryClient.invalidateQueries({ queryKey: ['/api/billing/status'] });
+    },
+  });
   const revalidateRithmicReadinessMutation = useMutation({
     mutationFn: (accountId: string) => revalidateRithmicReadiness(accountId),
     onSuccess: () => {
@@ -359,6 +388,31 @@ export default function Accounts() {
     } catch (error) {
       toast({
         title: "Failed to Disconnect Account",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRemoveClick = (account: Account) => {
+    setRemoveAlert({
+      open: true,
+      accountId: account.id,
+      accountName: account.name,
+    });
+  };
+
+  const handleRemoveConfirm = async () => {
+    try {
+      await removeAccountMutation.mutateAsync(removeAlert.accountId);
+      toast({
+        title: "Account Removed",
+        description: `${removeAlert.accountName} has been permanently removed.`,
+      });
+      setRemoveAlert({ open: false, accountId: '', accountName: '' });
+    } catch (error) {
+      toast({
+        title: "Account Not Removed",
         description: error instanceof Error ? error.message : "Unknown error",
         variant: "destructive",
       });
@@ -728,7 +782,8 @@ export default function Accounts() {
   });
   const accountActionPending =
     connectAccountMutation.isPending ||
-    disconnectAccountMutation.isPending;
+    disconnectAccountMutation.isPending ||
+    removeAccountMutation.isPending;
   const accountControlsDisabled =
     sessionActionPending ||
     accountActionPending;
@@ -1066,6 +1121,23 @@ export default function Accounts() {
         {getConnectButtonLabel(account.id)}
       </Button>
     );
+  const renderRemoveAccountButton = (
+    account: Account,
+    options?: { className?: string; iconOnly?: boolean },
+  ) => (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={options?.className ?? "text-muted-foreground hover:text-destructive"}
+      onClick={() => handleRemoveClick(account)}
+      disabled={accountControlsDisabled || !!account.isConnected}
+      title={account.isConnected ? "Disconnect this account before removing it" : "Remove saved account"}
+      data-testid={`button-remove-account-${account.id}`}
+    >
+      <Trash2 className="h-4 w-4" />
+      {!options?.iconOnly && <span className="ml-2">Remove saved account</span>}
+    </Button>
+  );
   const renderCompactAccountActions = (account: Account) => (
     <>
       {renderSessionMasterButton(account, {
@@ -1081,6 +1153,7 @@ export default function Accounts() {
         title: account.riskMode === 'global' ? 'Using global defaults' : 'Custom risk settings',
       })}
       {renderAccountConnectionButton(account)}
+      {renderRemoveAccountButton(account, { iconOnly: true })}
     </>
   );
   const renderAccountIdentityBadges = (account: Account) => (
@@ -1975,6 +2048,7 @@ export default function Accounts() {
                         {renderAccountTypeButton(account, { className: 'w-full' })}
                         {renderBrokerSettingsButton(account, { className: 'w-full' })}
                         {renderRiskSettingsButton(account, { className: 'w-full' })}
+                        {renderRemoveAccountButton(account, { className: 'w-full text-destructive' })}
                       </div>
                     }
                   />
@@ -2122,6 +2196,13 @@ export default function Accounts() {
         onOpenChange={(open) => setDisconnectAlert(prev => ({ ...prev, open }))}
         accountName={disconnectAlert.accountName}
         onConfirm={handleDisconnectConfirm}
+      />
+      <RemoveAccountAlert
+        open={removeAlert.open}
+        onOpenChange={(open) => setRemoveAlert((previous) => ({ ...previous, open }))}
+        accountName={removeAlert.accountName}
+        onConfirm={handleRemoveConfirm}
+        isRemoving={removeAccountMutation.isPending}
       />
     </div>
   );

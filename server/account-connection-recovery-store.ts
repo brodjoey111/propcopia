@@ -58,6 +58,13 @@ export class AccountConnectionRecoveryStore {
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
+  remove(userId: string, accountId: string): void {
+    const record = this.records.get(accountId);
+    if (record?.userId === userId) {
+      this.records.delete(accountId);
+    }
+  }
+
   clear(): void {
     this.records.clear();
   }

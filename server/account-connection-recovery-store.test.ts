@@ -28,3 +28,17 @@ test("startup recovery records explain that no live session was restored", () =>
   assert.match(record.message ?? "", /safe offline state/i);
   assert.equal(record.attempts, 0);
 });
+
+test("recovery records can be removed for one owned account", () => {
+  const store = new AccountConnectionRecoveryStore();
+  store.disconnected("user-1", "account-1");
+  store.disconnected("user-1", "account-2");
+
+  store.remove("user-1", "account-1");
+  store.remove("another-user", "account-2");
+
+  assert.deepEqual(
+    store.listForUser("user-1").map((record) => record.accountId),
+    ["account-2"],
+  );
+});

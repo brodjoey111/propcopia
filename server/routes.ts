@@ -55,6 +55,7 @@ import { RithmicReconnectValidationStore } from "./rithmic-reconnect-validation"
 import { reconnectSavedRithmicTestAccount } from "./rithmic-saved-reconnect-service";
 import { rithmicReconnectCoordinator } from "./reconnect-coordinator";
 import { accountConnectionRecoveryStore } from "./account-connection-recovery-store";
+import { evaluateAccountRemoval } from "./account-removal-guard";
 import {
   buildAccountsRuntimeOverview,
   buildDashboardRuntimeOverview,
@@ -3549,6 +3550,78 @@ export function registerRoutes(app: Express): Server {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  });
+
+  app.delete("/api/accounts/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const { id } = req.params;
+      const userId = req.session.userId;
+      const [existing] = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, id), eq(accounts.userId, userId)));
+
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          message: "Account not found",
+        });
+      }
+
+      await ensurePersistedCopyGroupsLoaded(userId);
+      const userGroups = copyGroupManager
+        .getAllGroups()
+        .filter((registration) => registration.group.userId === userId)
+        .map((registration) => registration.group);
+      const removalDecision = evaluateAccountRemoval({
+        accountId: id,
+        isConnected: !!existing.isConnected,
+        copyGroups: userGroups,
+        tradeCopyStatus: tradeCopyEngines.get(userId)?.getStatus(),
+      });
+
+      if (!removalDecision.allowed) {
+        return res.status(409).json({
+          success: false,
+          reason: removalDecision.reason,
+          message: removalDecision.message,
+        });
+      }
+
+      const [removed] = await db
+        .delete(accounts)
+        .where(and(eq(accounts.id, id), eq(accounts.userId, userId)))
+        .returning({ id: accounts.id, name: accounts.name });
+
+      if (!removed) {
+        return res.status(404).json({
+          success: false,
+          message: "Account not found",
+        });
+      }
+
+      rithmicReconnectValidationStore.clear(id);
+      accountConnectionRecoveryStore.remove(userId, id);
+      clearRuntimeSnapshotCache(userId);
+
+      return res.json({
+        success: true,
+        account: removed,
+      });
+    } catch (error) {
+      console.error("Error removing account:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
       });
     }
   });
