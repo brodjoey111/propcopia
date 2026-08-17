@@ -791,6 +791,32 @@ test('ExecutionManager', { concurrency: false }, async (t) => {
     assert.equal(harness.acknowledgedEvents[0].brokerStatus, 'WORKING');
   });
 
+  await t.test('duplicate acknowledgements are idempotent and conflicting broker IDs fail safely', async () => {
+    const harness = createHarness();
+    t.after(harness.cleanup);
+
+    harness.adapter.queueAccepted({ brokerOrderId: 'broker-order-stable' });
+    const intent = createReadyIntent(harness.tradeIntentManager, 'acknowledge-duplicate');
+    await harness.executionManager.enqueue(createContext(intent));
+    await waitForStatus(harness.executionManager, intent.intentId, 'COMPLETED');
+
+    const first = harness.executionManager.acknowledge(intent.intentId, {
+      acknowledgedAt: '2026-08-04T12:00:03.000Z',
+      brokerOrderId: 'broker-order-stable',
+    });
+    const duplicate = harness.executionManager.acknowledge(intent.intentId, {
+      acknowledgedAt: '2026-08-04T12:00:02.000Z',
+      brokerOrderId: 'broker-order-stable',
+    });
+
+    assert.equal(duplicate, first);
+    assert.equal(duplicate.acknowledgedAt, '2026-08-04T12:00:03.000Z');
+    assert.equal(harness.acknowledgedEvents.length, 1);
+    assert.throws(() => harness.executionManager.acknowledge(intent.intentId, {
+      brokerOrderId: 'broker-order-conflict',
+    }), /Conflicting broker order ID/);
+  });
+
   await t.test('recordFill auto-acknowledges SENT intents and publishes a fill event', async () => {
     const harness = createHarness();
     t.after(harness.cleanup);
@@ -840,6 +866,104 @@ test('ExecutionManager', { concurrency: false }, async (t) => {
     assert.equal(harness.acknowledgedEvents.length, 1);
     assert.equal(harness.partialFillEvents.length, 1);
     assert.equal(harness.partialFillEvents[0].cumulativeFilledQuantity, 1);
+  });
+
+  await t.test('duplicate and stale partial fills cannot double count or move progress backward', async () => {
+    const harness = createHarness();
+    t.after(harness.cleanup);
+
+    harness.adapter.queueAccepted({ brokerOrderId: 'broker-order-idempotent-fill' });
+    const intent = createReadyIntent(harness.tradeIntentManager, 'partial-idempotent', 4);
+    await harness.executionManager.enqueue(createContext(intent));
+    await waitForStatus(harness.executionManager, intent.intentId, 'COMPLETED');
+
+    harness.executionManager.recordPartialFill(intent.intentId, {
+      filledAt: '2027-08-04T12:00:04.000Z',
+      fillId: 'fill-partial-a',
+      cumulativeFilledQuantity: 2,
+      remainingQuantity: 2,
+    });
+    harness.executionManager.recordPartialFill(intent.intentId, {
+      filledAt: '2027-08-04T12:00:03.000Z',
+      fillId: 'fill-partial-a',
+      cumulativeFilledQuantity: 2,
+      remainingQuantity: 2,
+    });
+    const record = harness.executionManager.recordPartialFill(intent.intentId, {
+      filledAt: '2027-08-04T12:00:02.000Z',
+      fillId: 'fill-partial-stale',
+      cumulativeFilledQuantity: 1,
+      remainingQuantity: 3,
+    });
+
+    assert.equal(record.filledQuantity, 2);
+    assert.equal(record.remainingQuantity, 2);
+    assert.equal(record.partialFillCount, 1);
+    assert.equal(record.updatedAt, '2027-08-04T12:00:04.000Z');
+    assert.equal(harness.partialFillEvents.length, 1);
+  });
+
+  await t.test('new cumulative fill progress advances once and transitions to final fill', async () => {
+    const harness = createHarness();
+    t.after(harness.cleanup);
+
+    harness.adapter.queueAccepted({ brokerOrderId: 'broker-order-progressive-fill' });
+    const intent = createReadyIntent(harness.tradeIntentManager, 'partial-progressive', 3);
+    await harness.executionManager.enqueue(createContext(intent));
+    await waitForStatus(harness.executionManager, intent.intentId, 'COMPLETED');
+
+    harness.executionManager.recordPartialFill(intent.intentId, {
+      fillId: 'fill-progress-a',
+      cumulativeFilledQuantity: 1,
+      filledAt: '2026-08-04T12:00:04.000Z',
+    });
+    harness.executionManager.recordPartialFill(intent.intentId, {
+      fillId: 'fill-progress-b',
+      cumulativeFilledQuantity: 2,
+      filledAt: '2026-08-04T12:00:05.000Z',
+    });
+    const record = harness.executionManager.recordPartialFill(intent.intentId, {
+      fillId: 'fill-progress-c',
+      cumulativeFilledQuantity: 3,
+      filledAt: '2026-08-04T12:00:06.000Z',
+    });
+
+    assert.equal(record.filledQuantity, 3);
+    assert.equal(record.remainingQuantity, 0);
+    assert.equal(harness.tradeIntentManager.getIntent(intent.intentId)?.status, 'FILLED');
+    assert.equal(harness.partialFillEvents.length, 2);
+    assert.equal(harness.partialFillEvents[1].filledQuantity, 1);
+    assert.equal(harness.filledEvents.length, 1);
+  });
+
+  await t.test('final incremental fill completes prior partial progress without changing broker identity', async () => {
+    const harness = createHarness();
+    t.after(harness.cleanup);
+
+    harness.adapter.queueAccepted({ brokerOrderId: 'broker-order-final-increment' });
+    const intent = createReadyIntent(harness.tradeIntentManager, 'final-increment', 3);
+    await harness.executionManager.enqueue(createContext(intent));
+    await waitForStatus(harness.executionManager, intent.intentId, 'COMPLETED');
+
+    harness.executionManager.recordPartialFill(intent.intentId, {
+      brokerOrderId: 'broker-order-final-increment',
+      fillId: 'fill-increment-a',
+      cumulativeFilledQuantity: 2,
+    });
+    const record = harness.executionManager.recordFill(intent.intentId, {
+      brokerOrderId: 'broker-order-final-increment',
+      fillId: 'fill-increment-b',
+      filledQuantity: 1,
+    });
+
+    assert.equal(record.filledQuantity, 3);
+    assert.equal(record.remainingQuantity, 0);
+    assert.equal(harness.tradeIntentManager.getIntent(intent.intentId)?.status, 'FILLED');
+    assert.throws(() => harness.executionManager.recordFill(intent.intentId, {
+      brokerOrderId: 'different-order-id',
+      fillId: 'fill-increment-b',
+      filledQuantity: 1,
+    }), /Conflicting broker order ID/);
   });
 
   await t.test('findOpenExecutionForFill prefers an exact broker order match across multiple open executions', async () => {

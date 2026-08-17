@@ -270,6 +270,17 @@ export class ExecutionManager extends EventEmitter {
       throw new Error(`Trade intent not found: ${intentId}`);
     }
 
+    if (currentIntent.status === 'ACKNOWLEDGED' && record.acknowledgedAt) {
+      if (
+        acknowledgement?.brokerOrderId &&
+        record.brokerOrderId &&
+        acknowledgement.brokerOrderId !== record.brokerOrderId
+      ) {
+        throw new Error(`Conflicting broker order ID for acknowledged intent ${intentId}.`);
+      }
+      return record;
+    }
+
     if (currentIntent.status === 'SENT') {
       this.tradeIntentManager.markAcknowledged(intentId);
     } else if (currentIntent.status !== 'ACKNOWLEDGED') {
@@ -278,7 +289,7 @@ export class ExecutionManager extends EventEmitter {
 
     record.acknowledgedAt = acknowledgement?.acknowledgedAt ?? new Date().toISOString();
     record.brokerOrderId = acknowledgement?.brokerOrderId ?? record.brokerOrderId;
-    record.updatedAt = record.acknowledgedAt;
+    record.updatedAt = this.latestTimestamp(record.updatedAt, record.acknowledgedAt);
 
     propCopiaEventBus.publish('execution.acknowledged', {
       intentId: record.intentId,
@@ -302,6 +313,7 @@ export class ExecutionManager extends EventEmitter {
     if (record.status !== 'COMPLETED') {
       throw new Error(`Execution must be COMPLETED before partial fill recording: ${intentId}`);
     }
+    this.assertBrokerOrderIdentity(record, fill.brokerOrderId);
 
     const currentIntent = this.tradeIntentManager.getIntent(intentId);
     if (!currentIntent) {
@@ -323,31 +335,55 @@ export class ExecutionManager extends EventEmitter {
 
     const fillTimestamp = fill.filledAt ?? new Date().toISOString();
     const currentFilledQuantity = record.filledQuantity ?? 0;
+    const processedFillQuantity = fill.fillId
+      ? record.processedFillQuantities?.[fill.fillId]
+      : undefined;
+    if (typeof processedFillQuantity === 'number' && fill.cumulativeFilledQuantity == null) {
+      return record;
+    }
+
+    const reportedCumulativeQuantity =
+      fill.cumulativeFilledQuantity ??
+      (typeof fill.remainingQuantity === 'number'
+        ? record.request.quantity - fill.remainingQuantity
+        : undefined);
     const incrementalFilledQuantity = fill.filledQuantity ?? 0;
     const cumulativeFilledQuantity = Math.min(
-      fill.cumulativeFilledQuantity ?? currentFilledQuantity + incrementalFilledQuantity,
+      reportedCumulativeQuantity ?? currentFilledQuantity + incrementalFilledQuantity,
       record.request.quantity,
     );
-    const remainingQuantity = Math.max(
-      fill.remainingQuantity ?? record.request.quantity - cumulativeFilledQuantity,
-      0,
-    );
+
+    if (
+      cumulativeFilledQuantity <= currentFilledQuantity ||
+      (typeof processedFillQuantity === 'number' && cumulativeFilledQuantity <= processedFillQuantity)
+    ) {
+      return record;
+    }
+
+    const effectiveIncrementalQuantity = cumulativeFilledQuantity - currentFilledQuantity;
+    const remainingQuantity = Math.max(record.request.quantity - cumulativeFilledQuantity, 0);
 
     if (remainingQuantity === 0) {
       return this.recordFill(intentId, {
         ...fill,
         filledAt: fillTimestamp,
-        filledQuantity: cumulativeFilledQuantity,
+        cumulativeFilledQuantity,
       });
     }
 
     record.fillId = fill.fillId ?? record.fillId;
+    if (fill.fillId) {
+      record.processedFillQuantities = {
+        ...record.processedFillQuantities,
+        [fill.fillId]: cumulativeFilledQuantity,
+      };
+    }
     record.filledQuantity = cumulativeFilledQuantity;
     record.remainingQuantity = remainingQuantity;
     record.partialFillCount = (record.partialFillCount ?? 0) + 1;
     record.averageFillPrice = fill.averageFillPrice ?? record.averageFillPrice;
     record.brokerOrderId = fill.brokerOrderId ?? record.brokerOrderId;
-    record.updatedAt = fillTimestamp;
+    record.updatedAt = this.latestTimestamp(record.updatedAt, fillTimestamp);
 
     propCopiaEventBus.publish('execution.partial_fill', {
       intentId: record.intentId,
@@ -355,7 +391,7 @@ export class ExecutionManager extends EventEmitter {
       brokerKey: record.brokerKey,
       brokerOrderId: record.brokerOrderId,
       fillId: record.fillId,
-      filledQuantity: incrementalFilledQuantity || fill.filledQuantity,
+      filledQuantity: effectiveIncrementalQuantity,
       cumulativeFilledQuantity,
       remainingQuantity,
       averageFillPrice: record.averageFillPrice,
@@ -375,6 +411,7 @@ export class ExecutionManager extends EventEmitter {
     if (record.status !== 'COMPLETED') {
       throw new Error(`Execution must be COMPLETED before fill recording: ${intentId}`);
     }
+    this.assertBrokerOrderIdentity(record, fill.brokerOrderId);
 
     const currentIntent = this.tradeIntentManager.getIntent(intentId);
     if (!currentIntent) {
@@ -397,19 +434,40 @@ export class ExecutionManager extends EventEmitter {
       throw new Error(`Cannot record fill from intent status ${currentIntent.status}: ${intentId}`);
     }
 
+    const currentFilledQuantity = record.filledQuantity ?? 0;
+    const finalFilledQuantity = Math.min(
+      fill.cumulativeFilledQuantity ??
+        (typeof fill.filledQuantity === 'number' && currentFilledQuantity > 0
+          ? currentFilledQuantity + fill.filledQuantity
+          : fill.filledQuantity) ??
+        record.request.quantity,
+      record.request.quantity,
+    );
+    const processedFillQuantity = fill.fillId
+      ? record.processedFillQuantities?.[fill.fillId]
+      : undefined;
+    if (typeof processedFillQuantity === 'number' && finalFilledQuantity <= processedFillQuantity) {
+      return record;
+    }
+    if (finalFilledQuantity < currentFilledQuantity) {
+      return record;
+    }
+
     this.tradeIntentManager.markFilled(intentId);
 
     record.filledAt = fill.filledAt ?? new Date().toISOString();
     record.fillId = fill.fillId ?? record.fillId;
-    record.filledQuantity =
-      fill.cumulativeFilledQuantity ??
-      fill.filledQuantity ??
-      record.filledQuantity ??
-      record.request.quantity;
+    record.filledQuantity = finalFilledQuantity;
+    if (fill.fillId) {
+      record.processedFillQuantities = {
+        ...record.processedFillQuantities,
+        [fill.fillId]: finalFilledQuantity,
+      };
+    }
     record.remainingQuantity = 0;
     record.averageFillPrice = fill.averageFillPrice ?? record.averageFillPrice;
     record.brokerOrderId = fill.brokerOrderId ?? record.brokerOrderId;
-    record.updatedAt = record.filledAt;
+    record.updatedAt = this.latestTimestamp(record.updatedAt, record.filledAt);
 
     propCopiaEventBus.publish('execution.filled', {
       intentId: record.intentId,
@@ -424,6 +482,16 @@ export class ExecutionManager extends EventEmitter {
     this.emit('executionFilled', record);
 
     return record;
+  }
+
+  private latestTimestamp(current: string, candidate: string): string {
+    return candidate > current ? candidate : current;
+  }
+
+  private assertBrokerOrderIdentity(record: ExecutionRecord, brokerOrderId?: string): void {
+    if (brokerOrderId && record.brokerOrderId && brokerOrderId !== record.brokerOrderId) {
+      throw new Error(`Conflicting broker order ID for intent ${record.intentId}.`);
+    }
   }
 
   waitForExecution(intentId: string): Promise<ExecutionWaitResult> {

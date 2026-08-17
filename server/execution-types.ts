@@ -104,6 +104,7 @@ export interface ExecutionRecord {
   remainingQuantity?: number;
   filledAt?: string;
   fillId?: string;
+  processedFillQuantities?: Record<string, number>;
   filledQuantity?: number;
   averageFillPrice?: number;
   lastResult?: BrokerOrderResult;
