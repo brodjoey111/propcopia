@@ -12,6 +12,8 @@ interface AccountCardProps {
   sessionStatusLabel?: string;
   sessionStatusTone?: "neutral" | "ok" | "warn";
   hasLiveBrokerData?: boolean;
+  hasLiveBalance?: boolean;
+  hasLivePositionData?: boolean;
   liveBrokerStatus?: "LIVE" | "DISCONNECTED" | "UNAVAILABLE" | "ERROR" | "NONE";
   liveBrokerReason?: string;
   balance: number;
@@ -40,6 +42,8 @@ export function AccountCard({
   sessionStatusLabel,
   sessionStatusTone = "neutral",
   hasLiveBrokerData = false,
+  hasLiveBalance = false,
+  hasLivePositionData = false,
   liveBrokerStatus = "NONE",
   liveBrokerReason,
   balance,
@@ -127,7 +131,7 @@ export function AccountCard({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <p className="text-xs text-muted-foreground">
-              {hasLiveBrokerData ? "Balance" : "Saved Balance"}
+              {hasLiveBalance ? "Balance" : "Saved Balance"}
             </p>
             <p className="mt-1 text-base font-semibold tabular-nums text-white" data-testid={`text-balance-${id}`}>
               ${balance.toLocaleString()}
@@ -135,7 +139,7 @@ export function AccountCard({
           </div>
           <div>
             <p className="text-xs text-muted-foreground">
-              {hasLiveBrokerData ? "Positions" : "Saved Positions"}
+              {hasLivePositionData ? "Positions" : "Saved Positions"}
             </p>
             <p className="mt-1 text-base font-semibold tabular-nums text-white" data-testid={`text-positions-${id}`}>
               {openPositions}
@@ -143,7 +147,7 @@ export function AccountCard({
           </div>
           <div>
             <p className="text-xs text-muted-foreground">
-              {hasLiveBrokerData ? "P&L" : "Saved P&L"}
+              {hasLivePositionData ? "Unrealized P&L" : "Saved P&L"}
             </p>
             <p className={`mt-1 text-base font-semibold tabular-nums ${isPnlPositive ? 'text-chart-2' : 'text-destructive'}`} data-testid={`text-pnl-${id}`}>
               {isPnlPositive ? '+' : ''}${pnl.toLocaleString()}
@@ -159,13 +163,17 @@ export function AccountCard({
           )}
         </div>
 
-        {isConnected && !hasLiveBrokerData && (
+        {isConnected && (!hasLiveBalance || !hasLivePositionData) && (
           <div className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-[11px] leading-5 text-zinc-400">
-            {liveBrokerReason
+            {hasLiveBalance
+              ? "Live balance is available. P&L and positions still show saved values."
+              : hasLivePositionData
+                ? "Live P&L and positions are available. Balance still shows its saved value."
+                : liveBrokerReason
               ? liveBrokerReason
               : liveBrokerStatus === "DISCONNECTED"
                 ? "Broker link is verified, but the live position session is disconnected."
-                : "Broker link is verified. Balance, P&amp;L, and positions are still showing saved placeholder values."}
+                : "Broker link is verified. Balance, P&L, and positions still show saved values."}
           </div>
         )}
 

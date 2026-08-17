@@ -85,6 +85,8 @@ test("prepareAccountRuntimeViewModels prefers live balance and position data whe
   assert.equal(viewModel.balance, 5600.25);
   assert.equal(viewModel.pnl, 125.75);
   assert.equal(viewModel.openPositions, 3);
+  assert.equal(viewModel.hasLiveBalance, true);
+  assert.equal(viewModel.hasLivePositionData, true);
   assert.equal(viewModel.hasLiveBrokerData, true);
   assert.equal(viewModel.liveBrokerStatus, "LIVE");
   assert.equal(viewModel.sessionStatus.label, "copy ready");
@@ -101,6 +103,30 @@ test("prepareAccountRuntimeViewModels falls back to saved account values when li
   assert.equal(viewModel.balance, 1800.5);
   assert.equal(viewModel.pnl, -10.25);
   assert.equal(viewModel.openPositions, 2);
+  assert.equal(viewModel.hasLiveBalance, false);
+  assert.equal(viewModel.hasLivePositionData, false);
   assert.equal(viewModel.hasLiveBrokerData, false);
   assert.equal(viewModel.liveBrokerStatus, "NONE");
+});
+
+test("prepareAccountRuntimeViewModels keeps metric sources separate when only balance is live", () => {
+  const [viewModel] = prepareAccountRuntimeViewModels({
+    accounts: [createAccount({ id: "acct-partial", balance: "1800.50", pnl: "45.25", openPositions: 2 })],
+    positionMetricsById: {},
+    balanceMetricsById: {
+      "acct-partial": {
+        hasLiveBrokerData: true,
+        status: "LIVE",
+        balance: 7200.25,
+      },
+    },
+    getSessionStatus: () => ({ tone: "neutral" }),
+  });
+
+  assert.equal(viewModel.balance, 7200.25);
+  assert.equal(viewModel.pnl, 45.25);
+  assert.equal(viewModel.openPositions, 2);
+  assert.equal(viewModel.hasLiveBalance, true);
+  assert.equal(viewModel.hasLivePositionData, false);
+  assert.equal(viewModel.hasLiveBrokerData, true);
 });

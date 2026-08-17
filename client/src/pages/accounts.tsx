@@ -1922,6 +1922,8 @@ export default function Accounts() {
                     sessionStatusLabel={viewModel.sessionStatus.label}
                     sessionStatusTone={viewModel.sessionStatus.tone}
                     hasLiveBrokerData={viewModel.hasLiveBrokerData}
+                    hasLiveBalance={viewModel.hasLiveBalance}
+                    hasLivePositionData={viewModel.hasLivePositionData}
                     liveBrokerStatus={viewModel.liveBrokerStatus}
                     liveBrokerReason={viewModel.liveBrokerReason}
                     balance={viewModel.balance}
@@ -1976,16 +1978,16 @@ export default function Accounts() {
 
                     <div className="flex items-center gap-8">
                       {renderAccountValueBlock(
-                        viewModel.hasLiveBrokerData ? 'Balance' : 'Saved Balance',
+                        viewModel.hasLiveBalance ? 'Balance' : 'Saved Balance',
                         `$${viewModel.balance.toLocaleString()}`,
                         { className: 'text-right' },
                       )}
                       {renderAccountPnlValueBlock(
-                        viewModel.hasLiveBrokerData ? 'P&L' : 'Saved P&L',
+                        viewModel.hasLivePositionData ? 'Unrealized P&L' : 'Saved P&L',
                         viewModel.pnl,
                       )}
                       {renderAccountValueBlock(
-                        viewModel.hasLiveBrokerData ? 'Positions' : 'Saved Positions',
+                        viewModel.hasLivePositionData ? 'Positions' : 'Saved Positions',
                         viewModel.openPositions,
                         { className: 'text-right' },
                       )}
@@ -2046,11 +2048,24 @@ export default function Accounts() {
                               textClassName: 'text-sm',
                             })}
                           </td>
-                          <td className="p-3 text-right font-semibold tabular-nums" title={viewModel.hasLiveBrokerData ? 'Live broker value' : 'Saved placeholder value'}>${viewModel.balance.toLocaleString()}</td>
+                          <td className="p-3 text-right font-semibold tabular-nums" title={viewModel.hasLiveBalance ? 'Live broker balance' : 'Saved balance, not live'}>
+                            ${viewModel.balance.toLocaleString()}
+                            <div className="text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+                              {viewModel.hasLiveBalance ? 'Live' : 'Saved'}
+                            </div>
+                          </td>
                           <td className={`p-3 text-right font-semibold tabular-nums ${viewModel.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             ${viewModel.pnl >= 0 ? '+' : ''}{viewModel.pnl.toLocaleString()}
+                            <div className="text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+                              {viewModel.hasLivePositionData ? 'Live unrealized' : 'Saved'}
+                            </div>
                           </td>
-                          <td className="p-3 text-right tabular-nums">{viewModel.openPositions}</td>
+                          <td className="p-3 text-right tabular-nums">
+                            {viewModel.openPositions}
+                            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              {viewModel.hasLivePositionData ? 'Live' : 'Saved'}
+                            </div>
+                          </td>
                           {hasFollowerAccounts && (
                             <td className="p-3 text-right tabular-nums">
                               {renderFollowerScalingValue(account, effectiveAccount)}
