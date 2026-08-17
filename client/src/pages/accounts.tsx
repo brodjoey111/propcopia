@@ -63,7 +63,7 @@ import {
   getRithmicReadinessBannerLabel,
   getRithmicReadinessBannerToneClass,
   summarizeRithmicReadiness,
-  type RithmicReadinessResponse,
+  type RithmicReadinessListResponse,
 } from "@/lib/rithmic-readiness";
 import {
   LIVE_QUERY_POLL_MS,
@@ -204,27 +204,17 @@ export default function Accounts() {
     enabled: !!authData?.user?.id && hasConnectedAccounts,
     staleTime: LIVE_QUERY_STALE_MS,
   });
-  const { data: rithmicReadinessData } = useQuery<RithmicReadinessResponse[] | null>({
+  const { data: rithmicReadinessData } = useQuery<RithmicReadinessListResponse | null>({
     queryKey: authData?.user?.id
       ? ['/api/accounts/rithmic-readiness', authData.user.id, rithmicAccounts.map((account) => account.id).join(',')]
       : ['/api/accounts/rithmic-readiness', 'anonymous'],
     queryFn: async () => {
-      const responses = await Promise.all(
-        rithmicAccounts.map(async (account) => {
-          const res = await fetch(`/api/accounts/${account.id}/rithmic-readiness`, {
-            credentials: 'include',
-          });
-
-          if (!res.ok) {
-            const text = (await res.text()) || res.statusText;
-            throw new Error(`${res.status}: ${text}`);
-          }
-
-          return res.json() as Promise<RithmicReadinessResponse>;
-        }),
-      );
-
-      return responses;
+      const res = await fetch('/api/accounts/rithmic-readiness', { credentials: 'include' });
+      if (!res.ok) {
+        const text = (await res.text()) || res.statusText;
+        throw new Error(`${res.status}: ${text}`);
+      }
+      return res.json() as Promise<RithmicReadinessListResponse>;
     },
     enabled: !!authData?.user?.id && rithmicAccounts.length > 0,
     refetchInterval: PASSIVE_QUERY_POLL_MS,
@@ -251,7 +241,7 @@ export default function Accounts() {
   const accountRiskOverview = runtimeOverviewData?.accountRiskOverview;
   const accountRiskById = buildAccountRiskById(accountRiskOverview?.accounts ?? []);
   const positionSyncOverview = runtimeOverviewData?.positionSyncOverview ?? null;
-  const rithmicReadinessItems = rithmicReadinessData?.map((response) => response.readiness) ?? [];
+  const rithmicReadinessItems = rithmicReadinessData?.accounts.map((response) => response.readiness) ?? [];
   const rithmicReadinessSummary = summarizeRithmicReadiness(rithmicReadinessItems);
   const rithmicReadinessViewItems = buildRithmicReadinessViewItems(rithmicReadinessItems);
   const positionSyncWorkflowState = positionSyncWorkflowData?.reviews

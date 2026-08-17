@@ -33,6 +33,11 @@ export interface RithmicReadinessResponse {
   readiness: RithmicAccountReadiness;
 }
 
+export interface RithmicReadinessListResponse {
+  success: boolean;
+  accounts: RithmicReadinessResponse[];
+}
+
 export interface RithmicReadinessSummary {
   total: number;
   readyCount: number;

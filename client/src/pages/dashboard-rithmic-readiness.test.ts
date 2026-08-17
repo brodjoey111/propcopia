@@ -13,7 +13,8 @@ test("dashboard wires saved-session Rithmic readiness follow-up into the summary
   assert.match(source, /rithmicReadinessReviewData/);
   assert.match(source, /rithmicReadinessReviewsByStoryKey/);
   assert.match(source, /hasRithmicAccounts/);
-  assert.match(source, /\/api\/accounts\/\$\{account\.id\}\/rithmic-readiness/);
+  assert.match(source, /fetch\("\/api\/accounts\/rithmic-readiness"/);
+  assert.doesNotMatch(source, /\/api\/accounts\/\$\{account\.id\}\/rithmic-readiness/);
   assert.match(source, /rithmicReadinessByAccountId/);
   assert.match(source, /visibleRithmicReadinessFollowUpItems/);
   assert.match(source, /rithmicReadinessFollowUpSummary/);

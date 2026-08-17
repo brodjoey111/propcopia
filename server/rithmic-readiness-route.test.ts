@@ -4,6 +4,19 @@ import fs from "node:fs";
 
 const routesSource = fs.readFileSync(new URL("./routes.ts", import.meta.url), "utf8");
 
+test("Rithmic readiness list is owner-scoped and precedes the parameter route", () => {
+  const listRouteIndex = routesSource.indexOf('app.get("/api/accounts/rithmic-readiness"');
+  const accountRouteIndex = routesSource.indexOf('app.get("/api/accounts/:id/rithmic-readiness"');
+  const listRoute = routesSource.slice(listRouteIndex, accountRouteIndex);
+
+  assert.ok(listRouteIndex >= 0);
+  assert.ok(accountRouteIndex > listRouteIndex);
+  assert.match(listRoute, /eq\(accounts\.userId, userId\)/);
+  assert.match(listRoute, /eq\(accounts\.platform, "Rithmic"\)/);
+  assert.match(listRoute, /rithmicInstances\.forUser\(userId\)/);
+  assert.match(listRoute, /accounts: readinessAccounts/);
+});
+
 test("Rithmic readiness route is account-scoped and requires an authenticated session", () => {
   assert.match(routesSource, /app\.get\(\"\/api\/accounts\/:id\/rithmic-readiness\"/);
   assert.match(routesSource, /if \(!req\.session\.userId\) \{/);

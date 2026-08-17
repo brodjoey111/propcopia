@@ -2925,6 +2925,46 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  app.get("/api/accounts/rithmic-readiness", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const userId = req.session.userId;
+      const savedAccounts = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.userId, userId), eq(accounts.platform, "Rithmic")));
+      const userInstances = rithmicInstances.forUser(userId);
+      const readinessAccounts = savedAccounts.map((account) => {
+        const instance = account.rithmicUsername
+          ? userInstances.get(account.rithmicUsername)
+          : undefined;
+        const reconnectValidation = rithmicReconnectValidationStore.get(account.id);
+
+        return {
+          success: true,
+          readiness: buildRithmicReadiness(account, instance, reconnectValidation),
+        };
+      });
+
+      return res.json({
+        success: true,
+        accounts: readinessAccounts,
+      });
+    } catch (error) {
+      console.error("Error loading Rithmic readiness list:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
   app.get("/api/accounts/:id/rithmic-readiness", async (req, res) => {
     try {
       if (!req.session.userId) {

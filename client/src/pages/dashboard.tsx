@@ -47,7 +47,7 @@ import {
 import {
   buildRithmicReadinessViewItems,
   getRithmicAccounts,
-  type RithmicReadinessResponse,
+  type RithmicReadinessListResponse,
 } from "@/lib/rithmic-readiness";
 import {
   type PositionSyncWorkflowSaveInput,
@@ -291,27 +291,17 @@ export default function Dashboard() {
     refetchIntervalInBackground: false,
     staleTime: LIVE_QUERY_STALE_MS,
   });
-  const { data: rithmicReadinessData } = useQuery<RithmicReadinessResponse[] | null>({
+  const { data: rithmicReadinessData } = useQuery<RithmicReadinessListResponse | null>({
     queryKey: authData?.user?.id
       ? ["/api/accounts/rithmic-readiness", authData.user.id, rithmicAccounts.map((account) => account.id).join(",")]
       : ["/api/accounts/rithmic-readiness", "anonymous"],
     queryFn: async () => {
-      const responses = await Promise.all(
-        rithmicAccounts.map(async (account) => {
-          const res = await fetch(`/api/accounts/${account.id}/rithmic-readiness`, {
-            credentials: "include",
-          });
-
-          if (!res.ok) {
-            const text = (await res.text()) || res.statusText;
-            throw new Error(`${res.status}: ${text}`);
-          }
-
-          return res.json() as Promise<RithmicReadinessResponse>;
-        }),
-      );
-
-      return responses;
+      const res = await fetch("/api/accounts/rithmic-readiness", { credentials: "include" });
+      if (!res.ok) {
+        const text = (await res.text()) || res.statusText;
+        throw new Error(`${res.status}: ${text}`);
+      }
+      return res.json() as Promise<RithmicReadinessListResponse>;
     },
     enabled: !!authData?.user?.id && hasRithmicAccounts,
     refetchInterval: PASSIVE_QUERY_POLL_MS,
@@ -375,7 +365,7 @@ export default function Dashboard() {
   } = rithmicReadinessFollowUpSummary;
   const rithmicReadinessByAccountId = Object.fromEntries(
     buildRithmicReadinessViewItems(
-      rithmicReadinessData?.map((response) => response.readiness) ?? [],
+      rithmicReadinessData?.accounts.map((response) => response.readiness) ?? [],
     ).map((item) => [item.accountId, item]),
   );
 
