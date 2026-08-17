@@ -1132,13 +1132,13 @@ export function registerRoutes(app: Express): Server {
         })),
       });
     } catch (error) {
-      operationalLogger.error("trade_history.export_failed", {
+      operationalLogger.error("trade_history.list_failed", {
         error,
         userId: req.session?.userId,
       });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load trade history",
       });
     }
   });
@@ -2174,9 +2174,13 @@ export function registerRoutes(app: Express): Server {
       );
       return res.send(csv);
     } catch (error) {
+      operationalLogger.error("trade_history.export_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to export trade history",
       });
     }
   });
