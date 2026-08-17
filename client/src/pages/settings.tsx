@@ -12,6 +12,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Save, Upload, User as UserIcon, Users } from "lucide-react";
 import { useUser } from "@/contexts/user-context";
@@ -20,6 +21,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { EmptyState } from "@/components/empty-state";
 import type { Account } from "@shared/schema";
+import { PASSWORD_MIN_LENGTH } from "@shared/auth";
 
 type QueueSortPreference = "recent" | "age" | "owner" | "reassignments";
 type QueueAuditFocusPreference = "all" | "overdue" | "unassigned" | "reassigned";
@@ -35,6 +37,9 @@ export default function Settings() {
   const { toast } = useToast();
   const [bio, setBio] = useState(user?.bio || "");
   const [profilePicture, setProfilePicture] = useState(user?.profilePicture || "");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Trade copying settings
@@ -176,6 +181,49 @@ export default function Settings() {
     },
   });
 
+  const changePasswordMutation = useMutation({
+    mutationFn: async (data: { currentPassword: string; newPassword: string }) => {
+      const response = await apiRequest("POST", "/api/auth/change-password", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      toast({
+        title: "Password updated",
+        description: "Your new password is active and you remain signed in.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Password update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleChangePassword = () => {
+    if (newPassword.length < PASSWORD_MIN_LENGTH) {
+      toast({
+        title: "Password too short",
+        description: `Use at least ${PASSWORD_MIN_LENGTH} characters.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      toast({
+        title: "Passwords do not match",
+        description: "Re-enter the same new password in both fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+    changePasswordMutation.mutate({ currentPassword, newPassword });
+  };
+
   const saveFollowerScalingMutation = useMutation({
     mutationFn: async ({
       accountId,
@@ -297,6 +345,66 @@ export default function Settings() {
                   </Button>
                 </div>
               </div>
+            </div>
+          </Card>
+        </div>
+        <div>
+          <h2 className="mb-4 text-xl font-semibold">Account Security</h2>
+          <Card className="card-3d p-6">
+            <div className="max-w-xl space-y-5">
+              <div>
+                <p className="font-medium text-white">Change password</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Confirm your current password before choosing a new one.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="current-password">Current password</Label>
+                <PasswordInput
+                  id="current-password"
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  data-testid="input-current-password"
+                />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="new-password">New password</Label>
+                  <PasswordInput
+                    id="new-password"
+                    autoComplete="new-password"
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    data-testid="input-new-password"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-new-password">Confirm new password</Label>
+                  <PasswordInput
+                    id="confirm-new-password"
+                    autoComplete="new-password"
+                    value={confirmNewPassword}
+                    onChange={(event) => setConfirmNewPassword(event.target.value)}
+                    data-testid="input-confirm-new-password"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Use at least {PASSWORD_MIN_LENGTH} characters. Longer passphrases are encouraged.
+              </p>
+              <Button
+                onClick={handleChangePassword}
+                disabled={
+                  changePasswordMutation.isPending ||
+                  !currentPassword ||
+                  !newPassword ||
+                  !confirmNewPassword
+                }
+                data-testid="button-change-password"
+              >
+                {changePasswordMutation.isPending ? "Updating..." : "Update Password"}
+              </Button>
             </div>
           </Card>
         </div>

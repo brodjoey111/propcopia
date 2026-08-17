@@ -12,6 +12,7 @@ import { RithmicAttribution } from "@/components/rithmic-attribution";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { PASSWORD_MIN_LENGTH } from "@shared/auth";
 
 export default function Auth() {
   const [, setLocation] = useLocation();
@@ -103,10 +104,10 @@ export default function Auth() {
       });
       return;
     }
-    if (signupPassword.length < 6) {
+    if (signupPassword.length < PASSWORD_MIN_LENGTH) {
       toast({
         title: "Password too short",
-        description: "Password must be at least 6 characters long",
+        description: `Password must be at least ${PASSWORD_MIN_LENGTH} characters long`,
         variant: "destructive",
       });
       return;
@@ -205,7 +206,7 @@ export default function Auth() {
                   <PasswordInput
                     id="signup-password"
                     data-testid="input-signup-password"
-                    placeholder="Choose a password (min 6 characters)"
+                    placeholder={`Choose a password (min ${PASSWORD_MIN_LENGTH} characters)`}
                     value={signupPassword}
                     onChange={(e) => setSignupPassword(e.target.value)}
                     autoComplete="new-password"

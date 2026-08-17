@@ -9,7 +9,6 @@ import { storage } from "./storage";
 import { db } from "./db";
 import bcrypt from "bcrypt";
 import {
-  insertUserSchema,
   updateUserProfileSchema,
   updateUserSettingsSchema,
   insertWatchlistItemSchema,
@@ -77,6 +76,12 @@ import { riskFollowUpReviewStore } from "./risk-follow-up-review-store";
 import { executionFollowUpReviewStore } from "./execution-follow-up-review-store";
 import { rithmicReadinessReviewStore } from "./rithmic-readiness-review-store";
 import { z } from "zod";
+import {
+  changePasswordSchema,
+  loginCredentialsSchema,
+  signupCredentialsSchema,
+} from "@shared/auth";
+import { establishAuthenticatedSession } from "./auth-session";
 
 tradeHistoryPersistence.attach(tradeHistoryStore);
 
@@ -2315,7 +2320,7 @@ export function registerRoutes(app: Express): Server {
   // Authentication routes
   app.post("/api/auth/signup", async (req, res) => {
     try {
-      const result = insertUserSchema.safeParse(req.body);
+      const result = signupCredentialsSchema.safeParse(req.body);
       if (!result.success) {
         return res.status(400).json({
           success: false,
@@ -2353,21 +2358,21 @@ export function registerRoutes(app: Express): Server {
       console.error('Signup error:', error);
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to create account",
       });
     }
   });
 
   app.post("/api/auth/login", async (req, res) => {
     try {
-      const { username, password } = req.body;
-
-      if (!username || !password) {
+      const result = loginCredentialsSchema.safeParse(req.body);
+      if (!result.success) {
         return res.status(400).json({
           success: false,
           message: "Username and password are required",
         });
       }
+      const { username, password } = result.data;
 
       // Find user
       const user = await storage.getUserByUsername(username);
@@ -2387,29 +2392,17 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // Set session (will be automatically saved)
-      req.session.userId = user.id;
-      req.session.username = user.username;
-      req.session.save((error) => {
-        if (error) {
-          console.error('Login session save error:', error);
-          return res.status(500).json({
-            success: false,
-            message: "Failed to persist login session",
-          });
-        }
-
-        return res.json({
-          success: true,
-          message: "Login successful",
-          user: { id: user.id, username: user.username },
-        });
+      await establishAuthenticatedSession(req, user);
+      return res.json({
+        success: true,
+        message: "Login successful",
+        user: { id: user.id, username: user.username },
       });
     } catch (error) {
       console.error('Login error:', error);
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to complete login",
       });
     }
   });
@@ -2428,6 +2421,54 @@ export function registerRoutes(app: Express): Server {
         message: "Logged out successfully",
       });
     });
+  });
+
+  app.post("/api/auth/change-password", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const result = changePasswordSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          message: result.error.issues[0]?.message ?? "Invalid password change request",
+        });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || !(await bcrypt.compare(result.data.currentPassword, user.password))) {
+        return res.status(400).json({
+          success: false,
+          message: "Current password is incorrect",
+        });
+      }
+
+      const hashedPassword = await bcrypt.hash(result.data.newPassword, 10);
+      const updated = await storage.updateUserPassword(user.id, hashedPassword);
+      if (!updated) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      await establishAuthenticatedSession(req, user);
+      return res.json({
+        success: true,
+        message: "Password updated successfully",
+      });
+    } catch (error) {
+      console.error("Password change error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update password",
+      });
+    }
   });
 
   app.get("/api/auth/me", async (req, res) => {

@@ -10,6 +10,7 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserPassword(id: string, password: string): Promise<boolean>;
   updateUserProfile(id: string, profile: UpdateUserProfile): Promise<User | undefined>;
   updateUserSettings(id: string, settings: UpdateUserSettings): Promise<User | undefined>;
   updateOnboarding(
@@ -83,6 +84,15 @@ export class MemStorage implements IStorage {
     };
     this.users.set(id, user);
     return user;
+  }
+
+  async updateUserPassword(id: string, password: string): Promise<boolean> {
+    const user = this.users.get(id);
+    if (!user) {
+      return false;
+    }
+    this.users.set(id, { ...user, password });
+    return true;
   }
 
   async updateUserProfile(id: string, profile: UpdateUserProfile): Promise<User | undefined> {
@@ -216,6 +226,15 @@ export class DbStorage implements IStorage {
       .where(eq(users.id, id))
       .returning();
     return result[0];
+  }
+
+  async updateUserPassword(id: string, password: string): Promise<boolean> {
+    const result = await db
+      .update(users)
+      .set({ password })
+      .where(eq(users.id, id))
+      .returning({ id: users.id });
+    return result.length === 1;
   }
 
   async updateOnboarding(
