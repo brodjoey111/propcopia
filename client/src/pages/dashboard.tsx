@@ -1357,7 +1357,7 @@ export default function Dashboard() {
               </div>
 
               <p className="mt-3 text-xs text-zinc-500">
-                Stale executions are orders that have been in flight for more than {executionRecovery.staleThresholdMinutes} minutes.
+                Stale executions are broker submissions, acknowledged orders, or partial fills that have gone more than {executionRecovery.staleThresholdMinutes} minutes without the next lifecycle update.
               </p>
 
               <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-white/8 bg-black/10 p-4">

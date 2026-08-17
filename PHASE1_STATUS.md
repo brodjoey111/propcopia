@@ -32,6 +32,7 @@ Branch: `feature/broker-manager`
 - Server execution-recovery top-level summaries now describe broker-submission waits and acknowledged fill waits explicitly instead of using one generic in-flight sentence
 - Execution follow-up notifications now describe stale broker submissions, acknowledged waits, and partial-fill stalls with state-specific wording instead of one generic in-flight alert
 - Client notification attention helpers and types now recognize `SENT` trade alerts explicitly so broker-submission waits are labeled separately from acknowledged fill waits
+- Dashboard execution-recovery help text now explains stale executions in broker-state terms instead of using a generic in-flight description
 
 ## Current Verification Baseline
 
@@ -44,6 +45,7 @@ Branch: `feature/broker-manager`
 - Focused execution recovery summary suite: `13/13` passing on 2026-08-17
 - Focused notification suite: `32/32` passing on 2026-08-17
 - Focused notification label suite: `32/32` passing on 2026-08-17 after `SENT` label coverage updates
+- Focused dashboard wording suite: `1/1` passing on 2026-08-17
 
 ## Remaining Phase 1 Work
 

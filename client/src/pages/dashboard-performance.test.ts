@@ -38,6 +38,7 @@ test("dashboard reuses its overview payload and defers optional detail panels", 
   assert.match(source, /Trade Logger/);
   assert.match(source, /Broker wait/);
   assert.match(source, /Fill wait/);
+  assert.match(source, /Stale executions are broker submissions, acknowledged orders, or partial fills/);
   assert.match(source, /Queued records/);
   assert.match(source, /Peak queue/);
   assert.match(source, /Failed flushes/);
