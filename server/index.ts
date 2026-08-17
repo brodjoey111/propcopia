@@ -7,8 +7,16 @@ import { setupVite, serveStatic, log } from "./vite";
 import { buildSessionCookieSettings } from "./session-config";
 import { resetStaleAccountConnections } from "./startup-connection-reconciliation";
 import { accountConnectionRecoveryStore } from "./account-connection-recovery-store";
+import { buildLivenessPayload, buildRuntimeConfig } from "./runtime-config";
 
 const app = express();
+const startedAtMs = Date.now();
+const runtimeConfig = buildRuntimeConfig(process.env);
+
+// Liveness stays ahead of sessions and database-backed middleware.
+app.get("/api/health", (_req, res) => {
+  return res.json(buildLivenessPayload(runtimeConfig, startedAtMs));
+});
 
 // Trust Replit proxy for secure cookies
 app.set('trust proxy', 1);
@@ -29,8 +37,6 @@ declare module 'http' {
 
 // Session configuration with PostgreSQL store
 const PgSession = connectPgSimple(session);
-const sessionSecret = process.env.SESSION_SECRET || 'dev-secret-please-change-in-production';
-
 const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
 });
@@ -39,7 +45,7 @@ const cookieSettings = buildSessionCookieSettings(app.get("env"));
 
 app.use(
   session({
-    secret: sessionSecret,
+    secret: runtimeConfig.sessionSecret,
     resave: false,
     saveUninitialized: false,
     store: new PgSession({
@@ -119,7 +125,7 @@ app.use((req, res, next) => {
   // Other ports are firewalled. Default to 5000 if not specified.
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || '5000', 10);
+  const port = runtimeConfig.port;
   server.listen(port, "127.0.0.1", () => {
   log(`serving on port ${port}`);
 });
