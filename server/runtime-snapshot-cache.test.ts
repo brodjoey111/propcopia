@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   clearRuntimeSnapshotCache,
+  getRuntimeSnapshotCacheStats,
   getOrCreateRuntimeSnapshot,
+  MAX_RUNTIME_SNAPSHOT_CACHE_ENTRIES,
 } from "./runtime-snapshot-cache";
 
 test("getOrCreateRuntimeSnapshot reuses cached values within the ttl window", async () => {
@@ -151,4 +153,80 @@ test("getOrCreateRuntimeSnapshot clears failed loads so the next request can ret
 
   assert.equal(loadCount, 2);
   assert.deepEqual(recovered, { ok: true, loadCount: 2 });
+});
+
+test("expired snapshots are pruned when cache statistics are read", async () => {
+  clearRuntimeSnapshotCache();
+  const evictionsBefore = getRuntimeSnapshotCacheStats().evictions;
+
+  await getOrCreateRuntimeSnapshot({
+    scope: "expired",
+    userId: "user-expired",
+    ttlMs: 0,
+    loader: async () => ({ ok: true }),
+  });
+
+  const stats = getRuntimeSnapshotCacheStats();
+  assert.equal(stats.entryCount, 0);
+  assert.equal(stats.evictions, evictionsBefore + 1);
+});
+
+test("runtime snapshot cache remains bounded under many unique users and scopes", async () => {
+  clearRuntimeSnapshotCache();
+
+  for (let index = 0; index < MAX_RUNTIME_SNAPSHOT_CACHE_ENTRIES + 25; index += 1) {
+    await getOrCreateRuntimeSnapshot({
+      scope: `scope-${index}`,
+      userId: `user-${index}`,
+      ttlMs: 60_000,
+      loader: async () => index,
+    });
+  }
+
+  const stats = getRuntimeSnapshotCacheStats();
+  assert.equal(stats.entryCount, MAX_RUNTIME_SNAPSHOT_CACHE_ENTRIES);
+  assert.equal(stats.maxEntryCount, MAX_RUNTIME_SNAPSHOT_CACHE_ENTRIES);
+  assert.ok(stats.evictions >= 25);
+});
+
+test("cache statistics count hits, shared in-flight loads, and failures", async () => {
+  clearRuntimeSnapshotCache();
+  const before = getRuntimeSnapshotCacheStats();
+  let releaseLoad: (() => void) | undefined;
+  const loader = () => new Promise<number>((resolve) => {
+    releaseLoad = () => resolve(42);
+  });
+
+  const first = getOrCreateRuntimeSnapshot({
+    scope: "stats",
+    userId: "user-stats",
+    ttlMs: 10_000,
+    loader,
+  });
+  const shared = getOrCreateRuntimeSnapshot({
+    scope: "stats",
+    userId: "user-stats",
+    ttlMs: 10_000,
+    loader,
+  });
+  releaseLoad?.();
+  await Promise.all([first, shared]);
+  await getOrCreateRuntimeSnapshot({
+    scope: "stats",
+    userId: "user-stats",
+    ttlMs: 10_000,
+    loader,
+  });
+  await assert.rejects(() => getOrCreateRuntimeSnapshot({
+    scope: "stats-failure",
+    userId: "user-stats",
+    ttlMs: 10_000,
+    loader: async () => { throw new Error("expected failure"); },
+  }));
+
+  const after = getRuntimeSnapshotCacheStats();
+  assert.equal(after.inFlightHits, before.inFlightHits + 1);
+  assert.equal(after.hits, before.hits + 1);
+  assert.equal(after.loadsSucceeded, before.loadsSucceeded + 1);
+  assert.equal(after.loadsFailed, before.loadsFailed + 1);
 });
