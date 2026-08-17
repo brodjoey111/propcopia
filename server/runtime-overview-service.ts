@@ -363,6 +363,84 @@ function buildExecutionRecoveryWindow(input: {
   };
 }
 
+function buildExecutionRecoveryHeadline(input: {
+  record: TradeHistoryRecord;
+  category: DashboardExecutionRecoveryItem["category"];
+}): string {
+  if (input.category === "stale") {
+    switch (input.record.lifecycleStatus) {
+      case "SENT":
+        return "Broker acknowledgement overdue";
+      case "ACKNOWLEDGED":
+        return "Acknowledged trade is now stale";
+      case "PARTIALLY_FILLED":
+        return "Partial fill is now stale";
+      default:
+        return "Routing update is now stale";
+    }
+  }
+
+  if (input.category === "partial") {
+    return "Waiting on remaining fills";
+  }
+
+  if (input.category === "active") {
+    switch (input.record.lifecycleStatus) {
+      case "SENT":
+        return "Waiting on broker acknowledgement";
+      case "ACKNOWLEDGED":
+        return "Waiting on fill updates";
+      default:
+        return "Still in flight";
+    }
+  }
+
+  return "Needs review";
+}
+
+function buildExecutionRecoveryDetail(input: {
+  record: TradeHistoryRecord;
+  category: DashboardExecutionRecoveryItem["category"];
+  ageMinutes: number;
+}): string {
+  const ageLabel = formatRecoveryAgeLabel(input.ageMinutes);
+
+  if (input.category === "stale") {
+    switch (input.record.lifecycleStatus) {
+      case "SENT":
+        return `No broker acknowledgement has arrived ${ageLabel} after submission.`;
+      case "ACKNOWLEDGED":
+        return `No fill updates have arrived ${ageLabel} after broker acknowledgement.`;
+      case "PARTIALLY_FILLED":
+        return `No new partial fill updates have arrived in ${ageLabel}.`;
+      default:
+        return `No new lifecycle update for ${ageLabel}.`;
+    }
+  }
+
+  if (input.category === "partial") {
+    const filledQuantity = input.record.filledQuantity ?? 0;
+    const remainingQuantity = input.record.remainingQuantity ?? 0;
+
+    return remainingQuantity > 0
+      ? `${filledQuantity} filled, ${remainingQuantity} still open.`
+      : "Partial fills are still being processed.";
+  }
+
+  if (input.category === "active") {
+    switch (input.record.lifecycleStatus) {
+      case "SENT":
+        return `Broker submission left the local queue ${ageLabel} ago.`;
+      case "ACKNOWLEDGED":
+        return `Broker acknowledgement arrived ${ageLabel} ago.`;
+      default:
+        return `Last lifecycle update ${ageLabel} ago.`;
+    }
+  }
+
+  return input.record.lastErrorMessage ?? "Execution stopped before completion.";
+}
+
 function buildExecutionRecoveryItem(
   record: TradeHistoryRecord,
   nowMs: number,
@@ -455,8 +533,15 @@ function buildExecutionRecoveryItem(
       recommendedAction: "recheck_broker",
       recommendedActionLabel: "Recheck broker state",
       ageMinutes,
-      headline: "Possibly stalled",
-      detail: `No new lifecycle update for ${ageMinutes} minute${ageMinutes === 1 ? "" : "s"}.`,
+      headline: buildExecutionRecoveryHeadline({
+        record,
+        category: "stale",
+      }),
+      detail: buildExecutionRecoveryDetail({
+        record,
+        category: "stale",
+        ageMinutes,
+      }),
       checkpoint: buildExecutionRecoveryCheckpoint(record, "stale"),
       recoveryWindow: buildExecutionRecoveryWindow({
         record,
@@ -485,11 +570,15 @@ function buildExecutionRecoveryItem(
       recommendedAction: "monitor_fill",
       recommendedActionLabel: "Monitor fill progress",
       ageMinutes,
-      headline: "Waiting on remaining fills",
-      detail:
-        remainingQuantity > 0
-          ? `${filledQuantity} filled, ${remainingQuantity} still open.`
-          : "Partial fills are still being processed.",
+      headline: buildExecutionRecoveryHeadline({
+        record,
+        category: "partial",
+      }),
+      detail: buildExecutionRecoveryDetail({
+        record,
+        category: "partial",
+        ageMinutes,
+      }),
       checkpoint: buildExecutionRecoveryCheckpoint(record, "partial"),
       recoveryWindow: buildExecutionRecoveryWindow({
         record,
@@ -515,8 +604,15 @@ function buildExecutionRecoveryItem(
     recommendedAction: "wait_for_update",
     recommendedActionLabel: "Wait for next update",
     ageMinutes,
-    headline: "Still in flight",
-    detail: `Last lifecycle update ${ageMinutes} minute${ageMinutes === 1 ? "" : "s"} ago.`,
+    headline: buildExecutionRecoveryHeadline({
+      record,
+      category: "active",
+    }),
+    detail: buildExecutionRecoveryDetail({
+      record,
+      category: "active",
+      ageMinutes,
+    }),
     checkpoint: buildExecutionRecoveryCheckpoint(record, "active"),
     recoveryWindow: buildExecutionRecoveryWindow({
       record,

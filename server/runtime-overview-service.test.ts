@@ -117,6 +117,11 @@ test("summarizeExecutionRecovery adds checkpoint and recovery-window context for
   assert.equal(result.items[0]?.checkpoint.label, "Execution failed");
   assert.equal(result.items[0]?.recoveryWindow.label, "Review captured");
   assert.equal(result.items[1]?.historyId, "ack-stale");
+  assert.equal(result.items[1]?.headline, "Acknowledged trade is now stale");
+  assert.equal(
+    result.items[1]?.detail,
+    "No fill updates have arrived 25 minutes after broker acknowledgement.",
+  );
   assert.equal(result.items[1]?.checkpoint.label, "Broker acknowledged");
   assert.equal(result.items[1]?.recoveryWindow.label, "Fill update overdue");
   assert.equal(
@@ -124,6 +129,8 @@ test("summarizeExecutionRecovery adds checkpoint and recovery-window context for
     "25 minutes since broker acknowledgement (stale window 5m).",
   );
   assert.equal(result.items[2]?.historyId, "partial-fresh");
+  assert.equal(result.items[2]?.headline, "Waiting on remaining fills");
+  assert.equal(result.items[2]?.detail, "1 filled, 1 still open.");
   assert.equal(result.items[2]?.checkpoint.label, "Partial fill active");
   assert.equal(
     result.items[2]?.checkpoint.detail,
@@ -150,4 +157,47 @@ test("restart-interrupted executions require immediate review without broker rep
   assert.equal(result.items[0]?.category, "failed");
   assert.equal(result.items[0]?.headline, "Restart review required");
   assert.equal(result.items[0]?.recoveryWindow.label, "Automatic replay blocked");
+});
+
+test("summarizeExecutionRecovery distinguishes fresh and stale sent broker submissions", () => {
+  const result = summarizeExecutionRecovery(
+    [
+      createTradeRecord({
+        historyId: "sent-fresh",
+        lifecycleStatus: "SENT",
+        sentAt: "2026-08-12T12:08:00.000Z",
+        updatedAt: "2026-08-12T12:08:00.000Z",
+        acknowledgedAt: undefined,
+        brokerOrderId: "BRK-SENT-1",
+      }),
+      createTradeRecord({
+        historyId: "sent-stale",
+        lifecycleStatus: "SENT",
+        sentAt: "2026-08-12T11:59:00.000Z",
+        updatedAt: "2026-08-12T11:59:00.000Z",
+        acknowledgedAt: undefined,
+        brokerOrderId: "BRK-SENT-2",
+      }),
+    ],
+    {
+      now: "2026-08-12T12:10:00.000Z",
+      staleThresholdMinutes: 5,
+      limit: 5,
+    },
+  );
+
+  assert.equal(result.items[0]?.historyId, "sent-stale");
+  assert.equal(result.items[0]?.headline, "Broker acknowledgement overdue");
+  assert.equal(
+    result.items[0]?.detail,
+    "No broker acknowledgement has arrived 11 minutes after submission.",
+  );
+  assert.equal(result.items[0]?.recoveryWindow.label, "Acknowledgement overdue");
+  assert.equal(result.items[1]?.historyId, "sent-fresh");
+  assert.equal(result.items[1]?.headline, "Waiting on broker acknowledgement");
+  assert.equal(
+    result.items[1]?.detail,
+    "Broker submission left the local queue 2 minutes ago.",
+  );
+  assert.equal(result.items[1]?.recoveryWindow.label, "Fresh acknowledgement window");
 });

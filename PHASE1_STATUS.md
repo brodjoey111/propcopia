@@ -26,12 +26,14 @@ Branch: `feature/broker-manager`
 - Trade-copy engine runtime failures now emit structured operational log events instead of raw console errors
 - Overdue `SENT` executions now surface in execution follow-up notifications alongside stale acknowledged and partial orders
 - Client trade-history lifecycle summaries now distinguish broker-submission waits from acknowledged fill waits so `SENT` executions stay visible in dashboard/operator views
+- Server execution-recovery payloads now distinguish fresh and stale broker-submission waits from acknowledged and partial-fill states for dashboard and operator follow-up consumers
 
 ## Current Verification Baseline
 
 - `npm run check`: passing
 - Larger focused regression suite: `85/85` passing on 2026-08-17
 - Focused client execution-summary suite: `29/29` passing on 2026-08-17
+- Focused execution-recovery suite: `18/18` passing on 2026-08-17
 
 ## Remaining Phase 1 Work
 
@@ -45,4 +47,4 @@ Branch: `feature/broker-manager`
 
 1. Re-run the saved Rithmic reconnect path against a real Rithmic Test session after server restart.
 2. Validate order acknowledgement and fill state transitions using the existing offline execution pipeline.
-3. Extend the same broker-state clarity into server-rendered dashboard cards and remaining offline execution review flows before the next live Rithmic Test pass.
+3. Extend the broker-state review trail into remaining offline execution-review surfaces so live Rithmic Test validation can focus on reconnect and real acknowledgement/fill evidence.
