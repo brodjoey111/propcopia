@@ -9,7 +9,6 @@ import { storage } from "./storage";
 import { db } from "./db";
 import bcrypt from "bcrypt";
 import {
-  updateUserProfileSchema,
   updateUserSettingsSchema,
   insertWatchlistItemSchema,
   insertAccountSchema,
@@ -58,6 +57,7 @@ import { accountConnectionRecoveryStore } from "./account-connection-recovery-st
 import { evaluateAccountRemoval } from "./account-removal-guard";
 import { parseAccountName } from "./account-name";
 import { logAccountAuditEvent } from "./account-audit-logger";
+import { parseUserProfileUpdate, serializeProfilePicture } from "./user-profile-update";
 import {
   buildAccountsRuntimeOverview,
   buildDashboardRuntimeOverview,
@@ -771,7 +771,7 @@ function serializeAuthenticatedUser(user: Awaited<ReturnType<typeof storage.getU
     username: user.username,
     bio: user.bio,
     title: user.title,
-    profilePicture: user.profilePicture,
+    profilePicture: serializeProfilePicture(user.profilePicture),
     autoCopyEnabled: user.autoCopyEnabled ?? true,
     copyExitsEnabled: user.copyExitsEnabled ?? true,
     copyModificationsEnabled: user.copyModificationsEnabled ?? true,
@@ -2712,11 +2712,11 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      const result = updateUserProfileSchema.safeParse(req.body);
+      const result = parseUserProfileUpdate(req.body);
       if (!result.success) {
         return res.status(400).json({
           success: false,
-          message: "Invalid input: " + result.error.message,
+          message: result.message,
         });
       }
 

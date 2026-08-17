@@ -23,6 +23,7 @@ import { EmptyState } from "@/components/empty-state";
 import type { Account } from "@shared/schema";
 import { PASSWORD_MIN_LENGTH } from "@shared/auth";
 import type { LicenseSnapshot } from "@shared/billing";
+import { prepareProfileImage } from "@/lib/profile-image";
 
 type QueueSortPreference = "recent" | "age" | "owner" | "reassignments";
 type QueueAuditFocusPreference = "all" | "overdue" | "unassigned" | "reassigned";
@@ -38,6 +39,7 @@ export default function Settings() {
   const { toast } = useToast();
   const [bio, setBio] = useState(user?.bio || "");
   const [profilePicture, setProfilePicture] = useState(user?.profilePicture || "");
+  const [isProcessingProfilePicture, setIsProcessingProfilePicture] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
@@ -130,23 +132,22 @@ export default function Settings() {
     },
   });
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        toast({
-          title: "File too large",
-          description: "Please select an image smaller than 2MB",
-          variant: "destructive",
-        });
-        return;
-      }
+    if (!file) return;
 
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProfilePicture(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    setIsProcessingProfilePicture(true);
+    try {
+      setProfilePicture(await prepareProfileImage(file));
+    } catch (error) {
+      toast({
+        title: "Photo not ready",
+        description: error instanceof Error ? error.message : "The selected image could not be prepared.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessingProfilePicture(false);
+      e.target.value = "";
     }
   };
 
@@ -314,10 +315,11 @@ export default function Settings() {
                     variant="outline"
                     size="sm"
                     onClick={() => fileInputRef.current?.click()}
+                    disabled={isProcessingProfilePicture}
                     data-testid="button-upload-picture"
                   >
                     <Upload className="mr-2 h-3 w-3" />
-                    Upload Photo
+                    {isProcessingProfilePicture ? "Preparing..." : "Upload Photo"}
                   </Button>
                 </div>
 
@@ -346,7 +348,7 @@ export default function Settings() {
 
                   <Button
                     onClick={handleSaveProfile}
-                    disabled={updateProfileMutation.isPending}
+                    disabled={updateProfileMutation.isPending || isProcessingProfilePicture}
                     data-testid="button-save-profile"
                   >
                     <Save className="mr-2 h-4 w-4" />
