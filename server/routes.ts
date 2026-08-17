@@ -3769,12 +3769,24 @@ export function registerRoutes(app: Express): Server {
 
   app.post("/api/trade-copy/add-follower", async (req, res) => {
     try {
-      const { userId, accountId, positionScaling = 100, maxContracts, blockedTickers = [], exchange } = req.body;
+      if (!req.session?.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
 
-      if (!userId || !accountId) {
+      const userId = req.session.userId;
+      const { accountId, positionScaling = 100, maxContracts, blockedTickers = [], exchange } = req.body;
+
+      if (req.body.userId && req.body.userId !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: "The requested user does not match the authenticated session.",
+        });
+      }
+
+      if (!accountId) {
         return res.status(400).json({
           success: false,
-          message: "Missing required parameters: userId, accountId",
+          message: "Missing required parameter: accountId",
         });
       }
 
@@ -3864,12 +3876,16 @@ export function registerRoutes(app: Express): Server {
 
   app.post("/api/trade-copy/stop", async (req, res) => {
     try {
-      const { userId } = req.body;
+      if (!req.session?.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
 
-      if (!userId) {
-        return res.status(400).json({
+      const userId = req.session.userId;
+
+      if (req.body.userId && req.body.userId !== userId) {
+        return res.status(403).json({
           success: false,
-          message: "Missing required parameter: userId",
+          message: "The requested user does not match the authenticated session.",
         });
       }
 
@@ -3899,7 +3915,18 @@ export function registerRoutes(app: Express): Server {
 
   app.get("/api/trade-copy/stats/:userId", (req, res) => {
     try {
-      const { userId } = req.params;
+      if (!req.session?.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
+
+      if (req.params.userId !== req.session.userId) {
+        return res.status(403).json({
+          success: false,
+          message: "The requested user does not match the authenticated session.",
+        });
+      }
+
+      const userId = req.session.userId;
 
       const engine = tradeCopyEngines.get(userId);
       if (!engine) {
@@ -3926,7 +3953,18 @@ export function registerRoutes(app: Express): Server {
 
   app.get("/api/trade-copy/status/:userId", (req, res) => {
     try {
-      const { userId } = req.params;
+      if (!req.session?.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
+
+      if (req.params.userId !== req.session.userId) {
+        return res.status(403).json({
+          success: false,
+          message: "The requested user does not match the authenticated session.",
+        });
+      }
+
+      const userId = req.session.userId;
 
       const engine = tradeCopyEngines.get(userId);
       if (!engine) {
