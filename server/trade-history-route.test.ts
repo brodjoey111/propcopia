@@ -7,6 +7,7 @@ test('routes expose the authenticated trade history endpoint', () => {
 
   assert.match(routesSource, /app\.get\("\/api\/trades\/history"/);
   assert.match(routesSource, /tradeHistoryStore\.listRecent/);
+  assert.match(routesSource, /tradeHistoryPersistence\.hydrateUser/);
   assert.match(routesSource, /executionFollowUpReviewStore\.listReviews/);
   assert.match(routesSource, /req\.session\?\.userId/);
 });
@@ -17,6 +18,7 @@ test('routes expose the authenticated trade history CSV export endpoint', () => 
   assert.match(routesSource, /app\.get\("\/api\/trades\/history\/export\.csv"/);
   assert.match(routesSource, /serializeTradeHistoryCsv/);
   assert.match(routesSource, /Content-Disposition/);
+  assert.match(routesSource, /tradeHistoryPersistence\.hydrateUser/);
 });
 
 test('routes parse trade history status and query filters', () => {

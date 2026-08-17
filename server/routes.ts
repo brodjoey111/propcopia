@@ -36,6 +36,7 @@ import {
   tradeHistoryStore,
   type TradeHistoryLifecycleStatus,
 } from "./trade-history-store";
+import { tradeHistoryPersistence } from "./trade-history-persistence";
 import { tradeLogger } from "./trade-logger";
 import { DashboardController } from "./controllers/DashboardController";
 import { buildAccountLiveMetrics } from "./account-live-metrics-service";
@@ -75,6 +76,8 @@ import { executionFollowUpReviewStore } from "./execution-follow-up-review-store
 import { rithmicReadinessReviewStore } from "./rithmic-readiness-review-store";
 import { z } from "zod";
 
+tradeHistoryPersistence.attach(tradeHistoryStore);
+
 const RUNTIME_SNAPSHOT_TTL_MS = 3_000;
 const tradovateInstances = new Map<string, TradovateAPI>();
 const tradeifyInstances = new Map<string, TradeifyAPI>();
@@ -89,6 +92,7 @@ const tradeHistoryStatuses = new Set<TradeHistoryLifecycleStatus>([
   "QUEUED",
   "SENT",
   "ACKNOWLEDGED",
+  "PARTIALLY_FILLED",
   "FILLED",
   "FAILED",
   "CANCELLED",
@@ -231,6 +235,7 @@ function buildCopyGroupRuntimeSummary(input: {
 
 async function loadDashboardRuntimeOverviewForUser(userId: string) {
   await ensurePersistedCopyGroupsLoaded(userId);
+  await tradeHistoryPersistence.hydrateUser(userId, tradeHistoryStore);
   const userAccounts = await db
     .select()
     .from(accounts)
@@ -906,6 +911,8 @@ export function registerRoutes(app: Express): Server {
       const statuses = parseTradeHistoryStatuses(req.query.status);
       const query = typeof req.query.q === "string" ? req.query.q : undefined;
 
+      await tradeHistoryPersistence.hydrateUser(req.session.userId, tradeHistoryStore);
+
       const userAccounts = await db
         .select({
           id: accounts.id,
@@ -1572,6 +1579,7 @@ export function registerRoutes(app: Express): Server {
         .from(accounts)
         .where(eq(accounts.userId, req.session.userId));
       const ownedAccountIds = new Set(userAccounts.map((account) => account.id));
+      await tradeHistoryPersistence.hydrateUser(req.session.userId, tradeHistoryStore);
 
       for (const review of parsed.data.reviews) {
         const record = tradeHistoryStore.get(review.historyId);
@@ -1669,6 +1677,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       const { historyId } = req.params;
+      await tradeHistoryPersistence.hydrateUser(req.session.userId, tradeHistoryStore);
       const record = tradeHistoryStore.get(historyId);
       if (!record) {
         return res.status(404).json({
@@ -1694,6 +1703,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       if (
+        !record.recoveryRequired &&
         record.lifecycleStatus !== "FAILED" &&
         record.lifecycleStatus !== "CANCELLED" &&
         record.lifecycleStatus !== "RULE_SKIPPED" &&
@@ -1701,7 +1711,7 @@ export function registerRoutes(app: Express): Server {
       ) {
         return res.status(400).json({
           success: false,
-          message: "Only failed recovery items can be reviewed",
+          message: "Only failed or restart recovery items can be reviewed",
         });
       }
 
@@ -1712,6 +1722,7 @@ export function registerRoutes(app: Express): Server {
       const reviewedRecord = tradeHistoryStore.markRecoveryItemReviewed(historyId, {
         note,
       });
+      await tradeHistoryPersistence.flush();
 
       if (!reviewedRecord) {
         return res.status(404).json({
@@ -1761,6 +1772,7 @@ export function registerRoutes(app: Express): Server {
         userId: req.session.userId,
         ttlMs: RUNTIME_SNAPSHOT_TTL_MS,
         loader: async () => {
+          await tradeHistoryPersistence.hydrateUser(req.session.userId!, tradeHistoryStore);
           const userAccounts = await db
             .select()
             .from(accounts)
@@ -1814,6 +1826,7 @@ export function registerRoutes(app: Express): Server {
         userId: req.session.userId,
         ttlMs: RUNTIME_SNAPSHOT_TTL_MS,
         loader: async () => {
+          await tradeHistoryPersistence.hydrateUser(req.session.userId!, tradeHistoryStore);
           const userAccounts = await db
             .select()
             .from(accounts)
@@ -1883,6 +1896,7 @@ export function registerRoutes(app: Express): Server {
 
       const statuses = parseTradeHistoryStatuses(req.query.status);
       const query = typeof req.query.q === "string" ? req.query.q : undefined;
+      await tradeHistoryPersistence.hydrateUser(req.session.userId, tradeHistoryStore);
       const records = tradeHistoryStore.listRecent({
         accountIds: userAccounts.map((account) => account.id),
         limit: 1000,

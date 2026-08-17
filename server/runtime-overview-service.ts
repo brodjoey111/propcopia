@@ -378,6 +378,35 @@ function buildExecutionRecoveryItem(
     0,
   );
 
+  if (record.recoveryRequired) {
+    const reviewed = review?.status === "reviewed" || record.reviewStatus === "reviewed";
+    return {
+      historyId: record.historyId,
+      symbol: record.symbol,
+      followerAccountId: record.followerAccountId,
+      lifecycleStatus: record.lifecycleStatus,
+      category: "failed",
+      recommendedAction: "review_failure",
+      recommendedActionLabel: reviewed ? "Reviewed" : "Review restart state",
+      ageMinutes,
+      headline: reviewed ? "Restart state reviewed" : "Restart review required",
+      detail: review?.note ?? record.reviewNote ?? record.recoveryReason ?? "Confirm broker state before taking any action.",
+      checkpoint: buildExecutionRecoveryCheckpoint(record, "failed"),
+      recoveryWindow: {
+        label: reviewed ? "Operator reviewed" : "Automatic replay blocked",
+        detail: reviewed
+          ? "The interrupted lifecycle has been reviewed."
+          : "PropCopia did not resubmit this order after restart. Verify the broker state manually.",
+        tone: reviewed ? "ok" : "danger",
+      },
+      reviewStatus: reviewed ? "reviewed" : record.reviewStatus,
+      reviewNote: review?.note ?? record.reviewNote,
+      reviewedAt: review?.reviewedAt ?? record.reviewedAt,
+      operatorName: review?.operatorName,
+      operatorHistory: review?.operatorHistory,
+    };
+  }
+
   if (FAILED_TRADE_STATUSES.has(record.lifecycleStatus)) {
     const reviewed = review?.status === "reviewed" || record.reviewStatus === "reviewed";
     const reviewNote = review?.note ?? record.reviewNote;
@@ -829,6 +858,11 @@ export function summarizeExecutionRecovery(
       }
 
       if (FAILED_TRADE_STATUSES.has(record.lifecycleStatus)) {
+        summary.failed += 1;
+        return summary;
+      }
+
+      if (record.recoveryRequired) {
         summary.failed += 1;
         return summary;
       }

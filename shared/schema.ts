@@ -335,6 +335,21 @@ export const executionFollowUpReviews = pgTable("execution_follow_up_reviews", {
 export type ExecutionFollowUpReview = typeof executionFollowUpReviews.$inferSelect;
 export type InsertExecutionFollowUpReview = typeof executionFollowUpReviews.$inferInsert;
 
+export const tradeHistoryRecords = pgTable("trade_history_records", {
+  historyId: varchar("history_id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  masterAccountId: varchar("master_account_id"),
+  followerAccountId: varchar("follower_account_id").notNull(),
+  lifecycleStatus: text("lifecycle_status").notNull(),
+  recordJson: text("record_json").notNull(),
+  processInstanceId: varchar("process_instance_id").notNull(),
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
+
+export type TradeHistoryRecordRow = typeof tradeHistoryRecords.$inferSelect;
+export type InsertTradeHistoryRecordRow = typeof tradeHistoryRecords.$inferInsert;
+
 export const copyGroupAlertReviews = pgTable("copy_group_alert_reviews", {
   reviewKey: varchar("review_key").primaryKey(),
   userId: varchar("user_id").notNull(),

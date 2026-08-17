@@ -120,3 +120,23 @@ test("summarizeExecutionRecovery adds checkpoint and recovery-window context for
   );
   assert.equal(result.items[2]?.recoveryWindow.label, "Fresh partial window");
 });
+
+test("restart-interrupted executions require immediate review without broker replay", () => {
+  const result = summarizeExecutionRecovery([
+    createTradeRecord({
+      historyId: "restart-sent",
+      lifecycleStatus: "SENT",
+      recoveryRequired: true,
+      recoveryReason: "Server restarted before the broker lifecycle reached a terminal state",
+      updatedAt: "2026-08-12T12:09:59.000Z",
+    }),
+  ], {
+    now: "2026-08-12T12:10:00.000Z",
+  });
+
+  assert.equal(result.counts.failed, 1);
+  assert.equal(result.tone, "danger");
+  assert.equal(result.items[0]?.category, "failed");
+  assert.equal(result.items[0]?.headline, "Restart review required");
+  assert.equal(result.items[0]?.recoveryWindow.label, "Automatic replay blocked");
+});

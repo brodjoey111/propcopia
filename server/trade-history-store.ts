@@ -57,8 +57,12 @@ export interface TradeHistoryRecord {
   reviewStatus?: 'pending' | 'reviewed';
   reviewNote?: string;
   reviewedAt?: string;
+  recoveryRequired?: boolean;
+  recoveryReason?: string;
   events: TradeHistoryEvent[];
 }
+
+export type TradeHistoryRecordListener = (record: TradeHistoryRecord) => void;
 
 export interface TradeHistoryFilter {
   accountIds?: string[];
@@ -75,6 +79,23 @@ export class TradeHistoryStore {
   private records = new Map<string, TradeHistoryRecord>();
   private started = false;
   private subscriptions: Array<() => void> = [];
+  private recordListener?: TradeHistoryRecordListener;
+
+  setRecordListener(listener?: TradeHistoryRecordListener): void {
+    this.recordListener = listener;
+  }
+
+  importRecords(records: TradeHistoryRecord[]): void {
+    for (const record of records) {
+      const existing = this.records.get(record.historyId);
+      if (!existing || existing.updatedAt < record.updatedAt) {
+        this.records.set(record.historyId, {
+          ...record,
+          events: [...record.events].slice(0, 25),
+        });
+      }
+    }
+  }
 
   start(): void {
     if (this.started) {
@@ -365,11 +386,12 @@ export class TradeHistoryStore {
     const reviewedAt = options.reviewedAt ?? new Date().toISOString();
     const reviewNote = options.note?.trim();
 
-    this.records.set(historyId, {
+    const updatedRecord: TradeHistoryRecord = {
       ...existing,
       reviewStatus: 'reviewed',
       reviewNote: reviewNote && reviewNote.length > 0 ? reviewNote : existing.reviewNote,
       reviewedAt,
+      recoveryRequired: false,
       updatedAt: reviewedAt,
       events: [
         {
@@ -382,7 +404,9 @@ export class TradeHistoryStore {
         },
         ...existing.events,
       ].slice(0, 25),
-    });
+    };
+    this.records.set(historyId, updatedRecord);
+    this.notifyRecordChanged(updatedRecord);
 
     return this.get(historyId);
   }
@@ -415,12 +439,14 @@ export class TradeHistoryStore {
       return;
     }
 
-    this.records.set(intentId, {
+    const updatedRecord: TradeHistoryRecord = {
       ...existing,
       ...patch,
       updatedAt: event.timestamp,
       events: [event, ...existing.events].slice(0, 25),
-    });
+    };
+    this.records.set(intentId, updatedRecord);
+    this.notifyRecordChanged(updatedRecord);
   }
 
   private upsert(
@@ -430,21 +456,32 @@ export class TradeHistoryStore {
   ): void {
     const existing = this.records.get(historyId);
     if (!existing) {
-      this.records.set(historyId, {
+      const newRecord: TradeHistoryRecord = {
         ...seed,
         createdAt: event.timestamp,
         updatedAt: event.timestamp,
         events: [event],
-      });
+      };
+      this.records.set(historyId, newRecord);
+      this.notifyRecordChanged(newRecord);
       return;
     }
 
-    this.records.set(historyId, {
+    const updatedRecord: TradeHistoryRecord = {
       ...existing,
       ...seed,
       createdAt: existing.createdAt,
       updatedAt: event.timestamp,
       events: [event, ...existing.events].slice(0, 25),
+    };
+    this.records.set(historyId, updatedRecord);
+    this.notifyRecordChanged(updatedRecord);
+  }
+
+  private notifyRecordChanged(record: TradeHistoryRecord): void {
+    this.recordListener?.({
+      ...record,
+      events: [...record.events],
     });
   }
 
