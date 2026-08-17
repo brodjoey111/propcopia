@@ -27,6 +27,7 @@ Branch: `feature/broker-manager`
 - Overdue `SENT` executions now surface in execution follow-up notifications alongside stale acknowledged and partial orders
 - Client trade-history lifecycle summaries now distinguish broker-submission waits from acknowledged fill waits so `SENT` executions stay visible in dashboard/operator views
 - Server execution-recovery payloads now distinguish fresh and stale broker-submission waits from acknowledged and partial-fill states for dashboard and operator follow-up consumers
+- Activity execution follow-up boards now surface broker-wait and fill-wait labels directly in the operator queue instead of collapsing every live execution into a generic active state
 
 ## Current Verification Baseline
 
@@ -34,6 +35,7 @@ Branch: `feature/broker-manager`
 - Larger focused regression suite: `85/85` passing on 2026-08-17
 - Focused client execution-summary suite: `29/29` passing on 2026-08-17
 - Focused execution-recovery suite: `18/18` passing on 2026-08-17
+- Focused activity execution follow-up suite: `10/10` passing on 2026-08-17
 
 ## Remaining Phase 1 Work
 

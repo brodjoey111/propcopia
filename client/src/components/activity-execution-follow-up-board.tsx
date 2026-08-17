@@ -42,6 +42,44 @@ export function ActivityExecutionFollowUpBoard(
   props: ActivityExecutionFollowUpBoardProps,
 ) {
   const [boardView, setBoardView] = useState<"compact" | "detailed">("compact");
+  const brokerWaitCount = props.executionFollowUpItems.filter(
+    (item) => item.lifecycleStatus === "SENT",
+  ).length;
+  const fillWaitCount = props.executionFollowUpItems.filter(
+    (item) => item.lifecycleStatus === "ACKNOWLEDGED",
+  ).length;
+
+  const getCategoryLabel = (item: ExecutionRecoveryFollowUpItem) => {
+    if (item.category === "failed") {
+      return "Failure";
+    }
+
+    if (item.category === "stale") {
+      if (item.lifecycleStatus === "SENT") {
+        return "Broker stale";
+      }
+
+      if (item.lifecycleStatus === "ACKNOWLEDGED") {
+        return "Fill stale";
+      }
+
+      return "Stale";
+    }
+
+    if (item.category === "partial") {
+      return "Partial";
+    }
+
+    if (item.lifecycleStatus === "SENT") {
+      return "Broker wait";
+    }
+
+    if (item.lifecycleStatus === "ACKNOWLEDGED") {
+      return "Fill wait";
+    }
+
+    return "Active";
+  };
 
   return (
     <div className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(12,15,22,0.98),rgba(8,10,16,0.98))] p-5">
@@ -93,6 +131,12 @@ export function ActivityExecutionFollowUpBoard(
             </span>
             <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-zinc-300">
               Active {props.activeExecutionFollowUpCount}
+            </span>
+            <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-sky-100">
+              Broker wait {brokerWaitCount}
+            </span>
+            <span className="rounded-full border border-indigo-400/20 bg-indigo-400/10 px-3 py-1 text-indigo-100">
+              Fill wait {fillWaitCount}
             </span>
           </div>
         </div>
@@ -191,13 +235,7 @@ export function ActivityExecutionFollowUpBoard(
                         : "border-white/10 bg-white/[0.03] text-zinc-300"
                   }`}
                 >
-                  {item.category === "failed"
-                    ? "Failure"
-                    : item.category === "stale"
-                      ? "Stale"
-                      : item.category === "partial"
-                        ? "Partial"
-                        : "Active"}
+                  {getCategoryLabel(item)}
                 </span>
               </div>
 

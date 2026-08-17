@@ -12,6 +12,8 @@ test("activity execution follow-up board keeps shared execution queue controls",
   assert.match(source, /Stale \{props\.staleExecutionFollowUpCount\}/);
   assert.match(source, /Partial \{props\.partialExecutionFollowUpCount\}/);
   assert.match(source, /Active \{props\.activeExecutionFollowUpCount\}/);
+  assert.match(source, /Broker wait \{brokerWaitCount\}/);
+  assert.match(source, /Fill wait \{fillWaitCount\}/);
   assert.match(source, /Search by symbol, follower, issue, or review note/);
   assert.match(source, /Compact view/);
   assert.match(source, /Detailed view/);
@@ -32,5 +34,9 @@ test("activity execution follow-up board keeps shared execution queue controls",
   assert.match(source, /ExecutionFollowUpSignalSummary/);
   assert.match(source, /checkpoint=\{item\.checkpoint\}/);
   assert.match(source, /recoveryWindow=\{item\.recoveryWindow\}/);
+  assert.match(source, /Broker stale/);
+  assert.match(source, /Fill stale/);
+  assert.match(source, /Broker wait/);
+  assert.match(source, /Fill wait/);
   assert.match(source, /No execution follow-up items match the current search right now\./);
 });
