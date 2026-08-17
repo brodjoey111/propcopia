@@ -943,7 +943,7 @@ export function registerRoutes(app: Express): Server {
       console.error("Error loading copy-group alert reviews:", error);
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to export trade history",
       });
     }
   });
@@ -1126,6 +1126,10 @@ export function registerRoutes(app: Express): Server {
         })),
       });
     } catch (error) {
+      operationalLogger.error("trade_history.export_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : "Unknown error occurred",
@@ -3224,10 +3228,14 @@ export function registerRoutes(app: Express): Server {
         data: brokerAccounts,
       });
     } catch (error) {
-      console.error('Error fetching Tradovate accounts:', error);
+      operationalLogger.error("broker.tradovate_accounts_load_failed", {
+        error,
+        userId: req.session?.userId,
+        username: req.params?.username,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to load Tradovate accounts",
       });
     }
   });
@@ -3274,10 +3282,14 @@ export function registerRoutes(app: Express): Server {
         data: positions,
       });
     } catch (error) {
-      console.error('Error fetching Tradovate positions:', error);
+      operationalLogger.error("broker.tradovate_positions_load_failed", {
+        error,
+        userId: req.session?.userId,
+        username: req.params?.username,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to load Tradovate positions",
       });
     }
   });
@@ -4598,10 +4610,10 @@ export function registerRoutes(app: Express): Server {
         data: pricesArray,
       });
     } catch (error) {
-      console.error('Error fetching market prices:', error);
+      operationalLogger.error("market.prices_load_failed", { error });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to load market prices",
       });
     }
   });
@@ -4615,10 +4627,10 @@ export function registerRoutes(app: Express): Server {
         events: [],
       });
     } catch (error) {
-      console.error('Error fetching economic calendar:', error);
+      operationalLogger.error("market.economic_calendar_load_failed", { error });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to load economic calendar",
       });
     }
   });
@@ -4631,10 +4643,10 @@ export function registerRoutes(app: Express): Server {
         data: [],
       });
     } catch (error) {
-      console.error('Error fetching leaderboard:', error);
+      operationalLogger.error("market.leaderboard_load_failed", { error });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to load leaderboard",
       });
     }
   });
@@ -4708,10 +4720,13 @@ export function registerRoutes(app: Express): Server {
         simulated: false, // Always false - live data only
       });
     } catch (error) {
-      console.error('Error fetching market movers:', error);
+      operationalLogger.error("market.movers_load_failed", {
+        error,
+        type: req.query?.type,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Failed to fetch market movers',
+        message: "Failed to load market movers",
       });
     }
   });
@@ -4775,10 +4790,13 @@ export function registerRoutes(app: Express): Server {
         },
       });
     } catch (error) {
-      console.error('Error fetching company overview:', error);
+      operationalLogger.error("market.company_overview_load_failed", {
+        error,
+        symbol: req.params?.symbol,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Failed to fetch company overview',
+        message: "Failed to load company overview",
       });
     }
   });
@@ -4910,12 +4928,16 @@ export function registerRoutes(app: Express): Server {
         },
       });
     } catch (error) {
-      console.error('Error fetching chart data:', error);
+      operationalLogger.error("market.chart_load_failed", {
+        error,
+        symbol: req.params?.symbol,
+        timeframe: req.query?.timeframe,
+      });
       return res.status(500).json({
         success: false,
         source: "UNAVAILABLE",
         isLive: false,
-        message: error instanceof Error ? error.message : 'Failed to fetch live chart data',
+        message: "Failed to load live chart data",
         data: { timeframe: req.query.timeframe ?? '1M', candles: [] },
       });
     }
@@ -4959,10 +4981,13 @@ export function registerRoutes(app: Express): Server {
         },
       });
     } catch (error) {
-      console.error('Error fetching quote:', error);
+      operationalLogger.error("market.quote_load_failed", {
+        error,
+        symbol: req.params?.symbol,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Failed to fetch quote',
+        message: "Failed to load quote",
       });
     }
   });
@@ -5009,7 +5034,11 @@ export function registerRoutes(app: Express): Server {
             }
             return { ...item, quote: null };
           } catch (error) {
-            console.error(`Error fetching quote for ${item.ticker}:`, error);
+            operationalLogger.warn("watchlist.quote_load_failed", {
+              error,
+              userId: req.session?.userId,
+              ticker: item.ticker,
+            });
             return { ...item, quote: null };
           }
         })
@@ -5020,10 +5049,13 @@ export function registerRoutes(app: Express): Server {
         data: watchlistWithQuotes,
       });
     } catch (error) {
-      console.error('Error fetching watchlist:', error);
+      operationalLogger.error("watchlist.load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Failed to fetch watchlist',
+        message: "Failed to load watchlist",
       });
     }
   });
@@ -5062,10 +5094,14 @@ export function registerRoutes(app: Express): Server {
         data: item,
       });
     } catch (error) {
-      console.error('Error adding to watchlist:', error);
+      operationalLogger.error("watchlist.add_failed", {
+        error,
+        userId: req.session?.userId,
+        ticker: req.body?.ticker,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Failed to add to watchlist',
+        message: "Failed to add to watchlist",
       });
     }
   });
@@ -5084,10 +5120,14 @@ export function registerRoutes(app: Express): Server {
         message: "Ticker removed from watchlist",
       });
     } catch (error) {
-      console.error('Error removing from watchlist:', error);
+      operationalLogger.error("watchlist.remove_failed", {
+        error,
+        userId: req.session?.userId,
+        ticker: req.params?.ticker,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Failed to remove from watchlist',
+        message: "Failed to remove from watchlist",
       });
     }
   });

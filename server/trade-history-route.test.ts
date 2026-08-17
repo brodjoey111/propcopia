@@ -19,6 +19,8 @@ test('routes expose the authenticated trade history CSV export endpoint', () => 
   assert.match(routesSource, /serializeTradeHistoryCsv/);
   assert.match(routesSource, /Content-Disposition/);
   assert.match(routesSource, /tradeHistoryPersistence\.hydrateUser/);
+  assert.match(routesSource, /operationalLogger\.error\("trade_history\.export_failed"/);
+  assert.match(routesSource, /message: "Failed to export trade history"/);
 });
 
 test('routes parse trade history status and query filters', () => {

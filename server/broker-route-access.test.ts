@@ -33,4 +33,9 @@ test("Tradovate account and position reads verify saved-account ownership", () =
     assert.match(route, /eq\(accounts\.tradovateUsername, username\)/);
     assert.match(route, /if \(!ownedAccount\)/);
   }
+
+  assert.match(source, /operationalLogger\.error\("broker\.tradovate_accounts_load_failed"/);
+  assert.match(source, /message: "Failed to load Tradovate accounts"/);
+  assert.match(source, /operationalLogger\.error\("broker\.tradovate_positions_load_failed"/);
+  assert.match(source, /message: "Failed to load Tradovate positions"/);
 });
