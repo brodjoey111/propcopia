@@ -2143,6 +2143,7 @@ export function registerRoutes(app: Express): Server {
         followers,
         runtimeState,
       });
+      clearRuntimeSnapshotCache(req.session.userId);
 
       return res.json({
         success: true,
@@ -2239,6 +2240,7 @@ export function registerRoutes(app: Express): Server {
         manager: copyGroupManager,
         persistState: persistRegisteredGroupState,
       });
+      clearRuntimeSnapshotCache(req.session.userId);
       return res.json({
         success: true,
         runtime,
@@ -2284,6 +2286,7 @@ export function registerRoutes(app: Express): Server {
         manager: copyGroupManager,
         persistState: persistRegisteredGroupState,
       });
+      clearRuntimeSnapshotCache(req.session.userId);
       return res.json({
         success: true,
         runtime,
@@ -2329,6 +2332,7 @@ export function registerRoutes(app: Express): Server {
         manager: copyGroupManager,
         persistState: persistRegisteredGroupState,
       });
+      clearRuntimeSnapshotCache(req.session.userId);
       return res.json({
         success: true,
         runtime,
@@ -2383,6 +2387,7 @@ export function registerRoutes(app: Express): Server {
         manager: copyGroupManager,
         persistState: persistRegisteredGroupState,
       });
+      clearRuntimeSnapshotCache(req.session.userId);
       return res.json({
         success: true,
         runtime,
@@ -2429,6 +2434,7 @@ export function registerRoutes(app: Express): Server {
         manager: copyGroupManager,
         persistState: persistRegisteredGroupState,
       });
+      clearRuntimeSnapshotCache(req.session.userId);
       return res.json({
         success: true,
         runtime,
@@ -2462,6 +2468,7 @@ export function registerRoutes(app: Express): Server {
 
       await copyGroupManager.unregisterGroup(groupId);
       await copyGroupRegistrationStore.deleteRegistration(req.session.userId, groupId);
+      clearRuntimeSnapshotCache(req.session.userId);
       return res.json({
         success: true,
         message: `Copy group unregistered: ${groupId}`,
@@ -3326,6 +3333,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       const [newAccount] = await db.insert(accounts).values(accountValues).returning();
+      clearRuntimeSnapshotCache(req.session.userId);
 
       return res.json({
         success: true,
@@ -3429,6 +3437,7 @@ export function registerRoutes(app: Express): Server {
           message: "Account not found",
         });
       }
+      clearRuntimeSnapshotCache(req.session.userId);
 
       return res.json({
         success: true,
@@ -3529,6 +3538,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       accountConnectionRecoveryStore.disconnected(req.session.userId, id);
+      clearRuntimeSnapshotCache(req.session.userId);
 
       return res.json({
         success: true,
@@ -3592,6 +3602,7 @@ export function registerRoutes(app: Express): Server {
         })
         .where(and(eq(accounts.id, id), eq(accounts.userId, req.session.userId)))
         .returning();
+      clearRuntimeSnapshotCache(req.session.userId);
 
       return res.json({
         success: true,
@@ -3672,6 +3683,7 @@ export function registerRoutes(app: Express): Server {
         })
         .where(and(eq(accounts.id, id), eq(accounts.userId, req.session.userId)))
         .returning();
+      clearRuntimeSnapshotCache(req.session.userId);
 
       return res.json({
         success: true,
@@ -4024,6 +4036,7 @@ export function registerRoutes(app: Express): Server {
           ),
         }),
       );
+      clearRuntimeSnapshotCache(userId);
 
       return res.json({
         success: true,
@@ -4137,6 +4150,7 @@ export function registerRoutes(app: Express): Server {
         followerConnection.account,
         followerConnection.brokerConfig,
       );
+      clearRuntimeSnapshotCache(userId);
 
       return res.json({
         success: true,
@@ -4186,6 +4200,7 @@ export function registerRoutes(app: Express): Server {
 
       await engine.disconnect();
       tradeCopyEngines.delete(userId);
+      clearRuntimeSnapshotCache(userId);
 
       return res.json({
         success: true,
