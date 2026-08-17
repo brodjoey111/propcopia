@@ -90,6 +90,10 @@ import {
   buildAuthRateLimitKey,
   createAuthRateLimitMiddleware,
 } from "./auth-rate-limit";
+import {
+  disconnectBrokerSessionQuietly,
+  replaceBrokerSession,
+} from "./broker-session-lifecycle";
 
 tradeHistoryPersistence.attach(tradeHistoryStore);
 
@@ -2775,6 +2779,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.post("/api/rithmic/test-connection", authRateLimit, async (req, res) => {
+    let candidateSession: RithmicAPI | undefined;
     try {
       if (!req.session?.userId) {
         return res.status(401).json({ success: false, message: "Not authenticated" });
@@ -2795,11 +2800,13 @@ export function registerRoutes(app: Express): Server {
         systemName: systemName || 'Rithmic Test',
         environment: environment || 'test',
       });
+      candidateSession = rithmicAPI;
 
       const connectionTest = await rithmicAPI.testConnection();
 
       if (connectionTest.success) {
-        rithmicInstances.set(username, rithmicAPI);
+        await replaceBrokerSession(rithmicInstances, username, rithmicAPI);
+        candidateSession = undefined;
         authAttemptLimiter.reset(buildAuthRateLimitKey({
           path: req.path,
           ip: req.ip,
@@ -2822,11 +2829,16 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
+      await disconnectBrokerSessionQuietly(rithmicAPI);
+      candidateSession = undefined;
       return res.json({
         success: false,
         message: connectionTest.message || 'Connection test failed',
       });
     } catch (error) {
+      if (candidateSession) {
+        await disconnectBrokerSessionQuietly(candidateSession);
+      }
       console.error('Rithmic connection error:', error);
       return res.status(500).json({
         success: false,
