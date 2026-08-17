@@ -47,3 +47,36 @@ test("role-change audit events preserve the prior role", () => {
   assert.equal(entries[0]?.previousAccountType, "master");
   assert.equal(entries[0]?.accountType, "follower");
 });
+
+test("settings audit events retain only sorted field names", () => {
+  const entries: Array<Record<string, unknown>> = [];
+  logAccountAuditEvent(
+    "risk_settings_changed",
+    {
+      userId: "user-1",
+      accountId: "account-1",
+      platform: "Rithmic",
+      accountType: "follower",
+      changedFields: ["maxContracts", "riskMode", "maxContracts"],
+    },
+    { info: (_event, context) => entries.push(context) },
+  );
+
+  assert.deepEqual(entries[0]?.changedFields, ["maxContracts", "riskMode"]);
+  assert.doesNotMatch(JSON.stringify(entries), /100|global/);
+});
+
+test("audit writer failures never break the completed account action", () => {
+  const recorded = logAccountAuditEvent(
+    "renamed",
+    {
+      userId: "user-1",
+      accountId: "account-1",
+      platform: "Rithmic",
+      accountType: "master",
+    },
+    { info: () => { throw new Error("log transport unavailable"); } },
+  );
+
+  assert.equal(recorded, false);
+});

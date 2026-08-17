@@ -3740,6 +3740,13 @@ export function registerRoutes(app: Express): Server {
         .where(and(eq(accounts.id, id), eq(accounts.userId, req.session.userId)))
         .returning();
       clearRuntimeSnapshotCache(req.session.userId);
+      logAccountAuditEvent("broker_settings_changed", {
+        userId: req.session.userId,
+        accountId: updated.id,
+        platform: updated.platform,
+        accountType: updated.accountType,
+        changedFields: ["rithmicEnvironment", "rithmicExchange", "rithmicSystemName"],
+      });
 
       return res.json({
         success: true,
@@ -3928,6 +3935,15 @@ export function registerRoutes(app: Express): Server {
         ? tradeCopyEngines.get(req.session.userId)?.updateFollowerRiskSettings(updated) ?? false
         : false;
       clearRuntimeSnapshotCache(req.session.userId);
+      if (updated) {
+        logAccountAuditEvent("risk_settings_changed", {
+          userId: req.session.userId,
+          accountId: updated.id,
+          platform: updated.platform,
+          accountType: updated.accountType,
+          changedFields: Object.keys(accountSettingsUpdate),
+        });
+      }
       return res.json({ success: true, account: updated, activeSessionUpdated });
     } catch (error) {
       console.error('Error saving risk settings:', error);
