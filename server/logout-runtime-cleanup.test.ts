@@ -29,3 +29,9 @@ test("logout performs runtime cleanup before destroying the browser session", ()
     logout.indexOf("await cleanupUserRouteRuntime(userId)") < logout.indexOf("session.destroy"),
   );
 });
+
+test("logout still destroys the browser session when runtime cleanup fails", () => {
+  assert.match(logout, /try \{\s*await cleanupUserRouteRuntime\(userId\)/);
+  assert.match(logout, /operationalLogger\.error\("auth\.logout_cleanup_failed"/);
+  assert.match(logout, /session\.destroy\(\(err\) => \{/);
+});

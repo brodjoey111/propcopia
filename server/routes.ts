@@ -2581,7 +2581,14 @@ export function registerRoutes(app: Express): Server {
     const userId = req.session?.userId;
     if (userId) {
       usersLoggingOut.add(userId);
-      await cleanupUserRouteRuntime(userId);
+      try {
+        await cleanupUserRouteRuntime(userId);
+      } catch (error) {
+        operationalLogger.error("auth.logout_cleanup_failed", {
+          error,
+          userId,
+        });
+      }
     }
 
     const session = req.session;
