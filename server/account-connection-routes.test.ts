@@ -20,9 +20,10 @@ test('connect route refreshes saved Rithmic identity after successful authentica
 
 test('disconnect route tears down any cached Rithmic session before marking the account disconnected', () => {
   assert.match(routesSource, /app\.post\(\"\/api\/accounts\/:id\/disconnect\"/);
-  assert.match(routesSource, /const instance = rithmicInstances\.get\(existing\.rithmicUsername\);/);
+  assert.match(routesSource, /const userRithmicInstances = rithmicInstances\.forUser\(req\.session\.userId\);/);
+  assert.match(routesSource, /const instance = userRithmicInstances\.get\(existing\.rithmicUsername\);/);
   assert.match(routesSource, /await instance\.disconnect\(\);/);
-  assert.match(routesSource, /rithmicInstances\.delete\(existing\.rithmicUsername\);/);
+  assert.match(routesSource, /userRithmicInstances\.delete\(existing\.rithmicUsername\);/);
   assert.match(routesSource, /rithmicReconnectValidationStore\.clear\(existing\.id\);/);
   assert.match(routesSource, /accountConnectionRecoveryStore\.disconnected\(req\.session\.userId, id\);/);
   assert.match(

@@ -94,13 +94,14 @@ import {
   disconnectBrokerSessionQuietly,
   replaceBrokerSession,
 } from "./broker-session-lifecycle";
+import { UserBrokerSessionRegistry } from "./user-broker-session-registry";
 
 tradeHistoryPersistence.attach(tradeHistoryStore);
 
 const RUNTIME_SNAPSHOT_TTL_MS = 3_000;
-const tradovateInstances = new Map<string, TradovateAPI>();
-const tradeifyInstances = new Map<string, TradeifyAPI>();
-const rithmicInstances = new Map<string, RithmicAPI>();
+const tradovateInstances = new UserBrokerSessionRegistry<TradovateAPI>();
+const tradeifyInstances = new UserBrokerSessionRegistry<TradeifyAPI>();
+const rithmicInstances = new UserBrokerSessionRegistry<RithmicAPI>();
 const rithmicReconnectValidationStore = new RithmicReconnectValidationStore();
 const tradeCopyEngines = new Map<string, TradeCopyEngine>();
 const tradeCopyStartsInProgress = new Set<string>();
@@ -132,9 +133,10 @@ export async function shutdownRouteRuntime(): Promise<void> {
   await settlePhase(groupCleanups);
 
   const sessionCleanups: Array<() => Promise<unknown>> = [];
-  for (const [username, api] of Array.from(rithmicInstances.entries())) {
-    rithmicInstances.delete(username);
-    sessionCleanups.push(() => api.disconnect());
+  tradovateInstances.drain();
+  tradeifyInstances.drain();
+  for (const { session } of rithmicInstances.drain()) {
+    sessionCleanups.push(() => session.disconnect());
   }
   await settlePhase(sessionCleanups);
 
@@ -325,13 +327,13 @@ async function loadDashboardRuntimeOverviewForUser(userId: string) {
     getRecentActivity: (groupId) => activityByGroupId[groupId] ?? [],
     executionFollowUpReviews,
     positionSnapshotDependencies: {
-      tradovateInstances,
-      tradeifyInstances,
+      tradovateInstances: tradovateInstances.forUser(userId),
+      tradeifyInstances: tradeifyInstances.forUser(userId),
     },
     accountLiveMetricsDependencies: {
-      tradovateInstances,
-      tradeifyInstances,
-      rithmicInstances,
+      tradovateInstances: tradovateInstances.forUser(userId),
+      tradeifyInstances: tradeifyInstances.forUser(userId),
+      rithmicInstances: rithmicInstances.forUser(userId),
     },
   });
 }
@@ -351,13 +353,13 @@ async function loadPositionSyncOverviewForUser(userId: string) {
     userAccounts,
     registeredGroups,
     positionSnapshotDependencies: {
-      tradovateInstances,
-      tradeifyInstances,
+      tradovateInstances: tradovateInstances.forUser(userId),
+      tradeifyInstances: tradeifyInstances.forUser(userId),
     },
     accountLiveMetricsDependencies: {
-      tradovateInstances,
-      tradeifyInstances,
-      rithmicInstances,
+      tradovateInstances: tradovateInstances.forUser(userId),
+      tradeifyInstances: tradeifyInstances.forUser(userId),
+      rithmicInstances: rithmicInstances.forUser(userId),
     },
   });
 
@@ -467,7 +469,8 @@ async function refreshRithmicAccountIdentity(
     return account;
   }
 
-  const existingApi = rithmicInstances.get(account.rithmicUsername);
+  const userRithmicInstances = rithmicInstances.forUser(userId);
+  const existingApi = userRithmicInstances.get(account.rithmicUsername);
   const api =
     rithmicApi ??
     existingApi ??
@@ -495,7 +498,7 @@ async function refreshRithmicAccountIdentity(
   }
 
   if (ownsNewSession) {
-    await replaceBrokerSession(rithmicInstances, account.rithmicUsername, api);
+    await replaceBrokerSession(userRithmicInstances, account.rithmicUsername, api);
   }
 
   const discoveredAccounts = (connectionTest.data ?? []).map((discovered) => ({
@@ -532,7 +535,7 @@ async function reconnectSavedRithmicAccountForUser(
     reconnectSavedRithmicTestAccount({
       account,
       systemName: resolveRithmicSystemName(account),
-      sessions: rithmicInstances,
+      sessions: rithmicInstances.forUser(userId),
       validationStore: rithmicReconnectValidationStore,
       createSession: (credentials) => new RithmicAPI(credentials),
       refreshIdentity: (savedAccount, rithmicAPI) =>
@@ -1112,8 +1115,8 @@ export function registerRoutes(app: Express): Server {
             .where(eq(accounts.userId, req.session.userId!));
 
           return buildPositionSnapshots(userAccounts, {
-            tradovateInstances,
-            tradeifyInstances,
+            tradovateInstances: tradovateInstances.forUser(req.session.userId!),
+            tradeifyInstances: tradeifyInstances.forUser(req.session.userId!),
           });
         },
       });
@@ -1152,9 +1155,9 @@ export function registerRoutes(app: Express): Server {
             .where(eq(accounts.userId, req.session.userId!));
 
           return buildAccountLiveMetrics(userAccounts, {
-            tradovateInstances,
-            tradeifyInstances,
-            rithmicInstances,
+            tradovateInstances: tradovateInstances.forUser(req.session.userId!),
+            tradeifyInstances: tradeifyInstances.forUser(req.session.userId!),
+            rithmicInstances: rithmicInstances.forUser(req.session.userId!),
           });
         },
       });
@@ -1198,13 +1201,13 @@ export function registerRoutes(app: Express): Server {
             userAccounts,
             registeredGroups,
             positionSnapshotDependencies: {
-              tradovateInstances,
-              tradeifyInstances,
+              tradovateInstances: tradovateInstances.forUser(req.session.userId!),
+              tradeifyInstances: tradeifyInstances.forUser(req.session.userId!),
             },
             accountLiveMetricsDependencies: {
-              tradovateInstances,
-              tradeifyInstances,
-              rithmicInstances,
+              tradovateInstances: tradovateInstances.forUser(req.session.userId!),
+              tradeifyInstances: tradeifyInstances.forUser(req.session.userId!),
+              rithmicInstances: rithmicInstances.forUser(req.session.userId!),
             },
           });
         },
@@ -1926,8 +1929,8 @@ export function registerRoutes(app: Express): Server {
             getRuntime: (groupId) => copyGroupManager.getRuntime(groupId),
             getRecentActivity: (groupId) => activityByGroupId[groupId] ?? [],
             positionSnapshotDependencies: {
-              tradovateInstances,
-              tradeifyInstances,
+              tradovateInstances: tradovateInstances.forUser(req.session.userId!),
+              tradeifyInstances: tradeifyInstances.forUser(req.session.userId!),
             },
           });
         },
@@ -1995,10 +1998,10 @@ export function registerRoutes(app: Express): Server {
               groupIds: registeredGroups.map((registeredGroup) => registeredGroup.group.groupId),
             }),
             positionSnapshotDependencies: {
-              tradovateInstances,
-              tradeifyInstances,
+              tradovateInstances: tradovateInstances.forUser(req.session.userId!),
+              tradeifyInstances: tradeifyInstances.forUser(req.session.userId!),
             },
-            rithmicInstances,
+            rithmicInstances: rithmicInstances.forUser(req.session.userId!),
             rithmicReconnectValidationStore,
             rithmicReadinessReviews,
             positionSyncReviews,
@@ -2695,7 +2698,7 @@ export function registerRoutes(app: Express): Server {
       const connectionTest = await tradovateAPI.testConnection();
 
       if (connectionTest.success) {
-        tradovateInstances.set(username, tradovateAPI);
+        tradovateInstances.forUser(req.session.userId).set(username, tradovateAPI);
         authAttemptLimiter.reset(buildAuthRateLimitKey({
           path: req.path,
           ip: req.ip,
@@ -2746,7 +2749,7 @@ export function registerRoutes(app: Express): Server {
       const connectionTest = await tradeifyAPI.testConnection();
 
       if (connectionTest.success) {
-        tradeifyInstances.set(username, tradeifyAPI);
+        tradeifyInstances.forUser(req.session.userId).set(username, tradeifyAPI);
         authAttemptLimiter.reset(buildAuthRateLimitKey({
           path: req.path,
           ip: req.ip,
@@ -2812,7 +2815,7 @@ export function registerRoutes(app: Express): Server {
       const connectionTest = await rithmicAPI.testConnection();
 
       if (connectionTest.success) {
-        await replaceBrokerSession(rithmicInstances, username, rithmicAPI);
+        await replaceBrokerSession(rithmicInstances.forUser(req.session.userId), username, rithmicAPI);
         candidateSession = undefined;
         authAttemptLimiter.reset(buildAuthRateLimitKey({
           path: req.path,
@@ -2883,7 +2886,9 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      const instance = existing.rithmicUsername ? rithmicInstances.get(existing.rithmicUsername) : undefined;
+      const instance = existing.rithmicUsername
+        ? rithmicInstances.forUser(req.session.userId).get(existing.rithmicUsername)
+        : undefined;
       const reconnectValidation = rithmicReconnectValidationStore.get(existing.id);
       const readiness = buildRithmicReadiness(existing, instance, reconnectValidation);
 
@@ -2946,7 +2951,9 @@ export function registerRoutes(app: Express): Server {
       const reconnectValidation = rithmicReconnectValidationStore.get(existing.id);
       const readiness = buildRithmicReadiness(
         existing,
-        existing.rithmicUsername ? rithmicInstances.get(existing.rithmicUsername) : undefined,
+        existing.rithmicUsername
+          ? rithmicInstances.forUser(req.session.userId).get(existing.rithmicUsername)
+          : undefined,
         reconnectValidation,
       );
 
@@ -2984,7 +2991,7 @@ export function registerRoutes(app: Express): Server {
         return res.status(404).json({ success: false, message: "Tradovate account not found" });
       }
 
-      const tradovateAPI = tradovateInstances.get(username);
+      const tradovateAPI = tradovateInstances.forUser(req.session.userId).get(username);
 
       if (!tradovateAPI) {
         return res.status(404).json({
@@ -3034,7 +3041,7 @@ export function registerRoutes(app: Express): Server {
         return res.status(404).json({ success: false, message: "Tradovate account not found" });
       }
 
-      const tradovateAPI = tradovateInstances.get(username);
+      const tradovateAPI = tradovateInstances.forUser(req.session.userId).get(username);
 
       if (!tradovateAPI) {
         return res.status(404).json({
@@ -3367,10 +3374,11 @@ export function registerRoutes(app: Express): Server {
 
       if (existing.platform === "Rithmic" && existing.rithmicUsername) {
         await rithmicReconnectCoordinator.waitFor(existing.id);
-        const instance = rithmicInstances.get(existing.rithmicUsername);
+        const userRithmicInstances = rithmicInstances.forUser(req.session.userId);
+        const instance = userRithmicInstances.get(existing.rithmicUsername);
         if (instance) {
           await instance.disconnect();
-          rithmicInstances.delete(existing.rithmicUsername);
+          userRithmicInstances.delete(existing.rithmicUsername);
         }
       }
       rithmicReconnectValidationStore.clear(existing.id);
@@ -3718,7 +3726,7 @@ export function registerRoutes(app: Express): Server {
           },
           overridesByAccountId: req.body.followerConfigs,
           providedFollowerUsernames: req.body.followerUsernames,
-          tradovateInstances,
+          tradovateInstances: tradovateInstances.forUser(userId),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -3740,7 +3748,7 @@ export function registerRoutes(app: Express): Server {
         masterConnection = resolveTradeCopyMasterConnection({
           account: refreshedMasterAccount,
           providedUsername: req.body.masterUsername,
-          tradovateInstances,
+          tradovateInstances: tradovateInstances.forUser(userId),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -3783,7 +3791,8 @@ export function registerRoutes(app: Express): Server {
         await engine.connectMasterAccount(masterAccountId, masterConnection.accessToken!);
       } else {
         const credentials = masterConnection.rithmicCredentials!;
-        const existingInstance = rithmicInstances.get(credentials.username);
+        const userRithmicInstances = rithmicInstances.forUser(userId);
+        const existingInstance = userRithmicInstances.get(credentials.username);
         const rithmicApi =
           existingInstance ??
           new RithmicAPI({
@@ -3803,7 +3812,7 @@ export function registerRoutes(app: Express): Server {
             });
           }
 
-          rithmicInstances.set(credentials.username, rithmicApi);
+          userRithmicInstances.set(credentials.username, rithmicApi);
         }
 
         engine.setRithmicMasterBrokerAccountId(refreshedMasterAccount.rithmicAccountId!);
@@ -3930,7 +3939,7 @@ export function registerRoutes(app: Express): Server {
             exchange,
           },
           providedFollowerUsername: req.body.followerUsername,
-          tradovateInstances,
+          tradovateInstances: tradovateInstances.forUser(userId),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -4763,7 +4772,7 @@ Be concise, friendly, and helpful. Focus on explaining features, answering quest
         await Promise.allSettled(connected.map(async (account) => {
           try {
             if (account.platform === 'Tradovate' && account.tradovateUsername) {
-              const api = tradovateInstances.get(account.tradovateUsername);
+              const api = tradovateInstances.forUser(userId).get(account.tradovateUsername);
               if (api && api.isTokenValid()) {
                 const filterId = account.tradovateAccountId ? parseInt(account.tradovateAccountId) : undefined;
                 const result = await api.closeAllPositions(filterId);
@@ -4773,7 +4782,7 @@ Be concise, friendly, and helpful. Focus on explaining features, answering quest
               }
             } else if (account.platform === 'Rithmic' && account.rithmicUsername && account.rithmicAccountId) {
               // Use existing live instance or create a fresh one from DB credentials
-              let api = rithmicInstances.get(account.rithmicUsername);
+              let api = rithmicInstances.forUser(userId).get(account.rithmicUsername);
               if (!api && account.rithmicPassword) {
                 api = new RithmicAPI({
                   username: account.rithmicUsername,

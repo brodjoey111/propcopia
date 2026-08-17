@@ -23,7 +23,7 @@ test("saved Rithmic reconnect tolerates account identity refresh failures after 
 });
 
 test("saved Rithmic reconnect delegates session cleanup and validation to the shared service", () => {
-  assert.match(routesSource, /sessions: rithmicInstances,/);
+  assert.match(routesSource, /sessions: rithmicInstances\.forUser\(userId\),/);
   assert.match(routesSource, /validationStore: rithmicReconnectValidationStore,/);
   assert.match(routesSource, /createSession: \(credentials\) => new RithmicAPI\(credentials\),/);
   assert.match(routesSource, /if \(!reconnect\.success\) \{/);

@@ -14,6 +14,9 @@ test("failed Rithmic connection tests disconnect candidate sessions", () => {
 });
 
 test("successful Rithmic connection tests safely replace prior sessions", () => {
-  assert.match(route, /await replaceBrokerSession\(rithmicInstances, username, rithmicAPI\)/);
+  assert.match(
+    route,
+    /await replaceBrokerSession\(rithmicInstances\.forUser\(req\.session\.userId\), username, rithmicAPI\)/,
+  );
   assert.match(route, /candidateSession = undefined/);
 });

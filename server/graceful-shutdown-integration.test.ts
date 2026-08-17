@@ -18,7 +18,10 @@ test("server signals use one graceful shutdown coordinator", () => {
 test("route runtime cleanup disconnects engines and Rithmic sessions without trading", () => {
   assert.match(routesSource, /export async function shutdownRouteRuntime/);
   assert.match(routesSource, /engine\.disconnect\(\)/);
-  assert.match(routesSource, /api\.disconnect\(\)/);
+  assert.match(routesSource, /tradovateInstances\.drain\(\)/);
+  assert.match(routesSource, /tradeifyInstances\.drain\(\)/);
+  assert.match(routesSource, /rithmicInstances\.drain\(\)/);
+  assert.match(routesSource, /session\.disconnect\(\)/);
   assert.match(routesSource, /marketDataService\.close\(\)/);
   assert.match(routesSource, /client\.terminate\(\)/);
   assert.doesNotMatch(routesSource.slice(

@@ -12,7 +12,7 @@ test("Rithmic identity refresh does not register coordinator-owned sessions", ()
   assert.match(refreshIdentity, /const ownsNewSession = !rithmicApi && !existingApi/);
   assert.match(
     refreshIdentity,
-    /if \(ownsNewSession\) \{\s*await replaceBrokerSession\(rithmicInstances, account\.rithmicUsername, api\)/,
+    /if \(ownsNewSession\) \{\s*await replaceBrokerSession\(userRithmicInstances, account\.rithmicUsername, api\)/,
   );
   assert.doesNotMatch(refreshIdentity, /rithmicInstances\.set\(/);
 });

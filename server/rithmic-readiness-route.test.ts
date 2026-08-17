@@ -19,8 +19,8 @@ test("Rithmic readiness route loads the saved account and rejects non-Rithmic ac
   assert.match(routesSource, /message: "Rithmic readiness is only available for Rithmic accounts\."/);
 });
 
-test("Rithmic readiness route builds the readiness payload from the cached Rithmic session", () => {
-  assert.match(routesSource, /const instance = existing\.rithmicUsername \? rithmicInstances\.get\(existing\.rithmicUsername\) : undefined;/);
+test("Rithmic readiness route builds the readiness payload from the user's cached Rithmic session", () => {
+  assert.match(routesSource, /rithmicInstances\.forUser\(req\.session\.userId\)\.get\(existing\.rithmicUsername\)/);
   assert.match(routesSource, /const reconnectValidation = rithmicReconnectValidationStore\.get\(existing\.id\);/);
   assert.match(routesSource, /const readiness = buildRithmicReadiness\(existing, instance, reconnectValidation\);/);
   assert.match(routesSource, /return res\.json\(\{\s*success: true,\s*readiness,\s*\}\);/);
@@ -36,6 +36,6 @@ test("Rithmic readiness revalidate route uses the shared saved reconnect workflo
   assert.match(routesSource, /existing = reconnect\.account;/);
   assert.match(
     routesSource,
-    /existing\.rithmicUsername \? rithmicInstances\.get\(existing\.rithmicUsername\) : undefined,/,
+    /rithmicInstances\.forUser\(req\.session\.userId\)\.get\(existing\.rithmicUsername\)/,
   );
 });
