@@ -737,6 +737,22 @@ export function registerRoutes(app: Express): Server {
   const server = createServer(app);
   copyGroupManager.setActivityRecorder((input) => copyGroupActivityStore.recordActivity(input));
   copyGroupManager.setStateRecorder((input) => persistRegisteredGroupState(input.groupId));
+  type KillSwitchState = {
+    active: boolean;
+    activatedAt: string | null;
+    reason: string | null;
+  };
+  const killSwitchStates = new Map<string, KillSwitchState>();
+  const getKillSwitchState = (userId: string): KillSwitchState => {
+    const existing = killSwitchStates.get(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const initial = { active: false, activatedAt: null, reason: null };
+    killSwitchStates.set(userId, initial);
+    return initial;
+  };
 
   app.get("/api/dashboard", DashboardController.getDashboard);
 
@@ -3524,12 +3540,32 @@ export function registerRoutes(app: Express): Server {
   // Trade copying routes
   app.post("/api/trade-copy/start", async (req, res) => {
     try {
-      const { userId, masterAccountId, followerAccountIds, environment = 'demo' } = req.body;
+      if (!req.session?.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
 
-      if (!userId || !masterAccountId || !followerAccountIds || !Array.isArray(followerAccountIds)) {
+      const userId = req.session.userId;
+      const killSwitchState = getKillSwitchState(userId);
+      if (killSwitchState.active) {
+        return res.status(423).json({
+          success: false,
+          message: "Kill switch is active. Deactivate it before starting trade copying.",
+        });
+      }
+
+      const { masterAccountId, followerAccountIds, environment = 'demo' } = req.body;
+
+      if (req.body.userId && req.body.userId !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: "The requested user does not match the authenticated session.",
+        });
+      }
+
+      if (!masterAccountId || !followerAccountIds || !Array.isArray(followerAccountIds)) {
         return res.status(400).json({
           success: false,
-          message: "Missing required parameters: userId, masterAccountId, followerAccountIds",
+          message: "Missing required parameters: masterAccountId, followerAccountIds",
         });
       }
 
@@ -4688,30 +4724,37 @@ Be concise, friendly, and helpful. Focus on explaining features, answering quest
 
   // ── Kill Switch ─────────────────────────────────────────────────────────────
   // In-memory state (resets on server restart — intentional for safety)
-  const killSwitchState = {
-    active: false,
-    activatedAt: null as string | null,
-    reason: null as string | null,
-  };
+  app.get("/api/kill-switch/status", (req, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({ success: false, message: "Not authenticated" });
+    }
 
-  app.get("/api/kill-switch/status", (_req, res) => {
-    return res.json({ success: true, ...killSwitchState });
+    return res.json({ success: true, ...getKillSwitchState(req.session.userId) });
   });
 
   app.post("/api/kill-switch/activate", async (req, res) => {
     try {
+      if (!req.session?.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
+
       const reason = req.body?.reason || null;
-      const userId = req.session?.userId;
+      const userId = req.session.userId;
+      const killSwitchState = getKillSwitchState(userId);
+      killSwitchState.active = true;
+      killSwitchState.activatedAt = new Date().toISOString();
+      killSwitchState.reason = reason;
 
       // ── 1. Stop every active trade-copy engine ───────────────────────────
       const stopped: string[] = [];
-        for (const [uid, engine] of Array.from(tradeCopyEngines.entries())) {
+      const activeEngine = tradeCopyEngines.get(userId);
+      if (activeEngine) {
         try {
-          await engine.disconnect();
-          tradeCopyEngines.delete(uid);
-          stopped.push(uid);
+          await activeEngine.disconnect();
+          tradeCopyEngines.delete(userId);
+          stopped.push(userId);
         } catch (e) {
-          console.error(`[KillSwitch] Failed to stop engine for user ${uid}:`, e);
+          console.error(`[KillSwitch] Failed to stop engine for user ${userId}:`, e);
         }
       }
 
@@ -4761,10 +4804,6 @@ Be concise, friendly, and helpful. Focus on explaining features, answering quest
         }));
       }
 
-      killSwitchState.active = true;
-      killSwitchState.activatedAt = new Date().toISOString();
-      killSwitchState.reason = reason;
-
       const totalClosed = closedPositions.reduce((s, r) => s + r.closed, 0);
       console.warn(`[KillSwitch] ACTIVATED at ${killSwitchState.activatedAt}. Engines stopped: ${stopped.length}. Positions closed: ${totalClosed}. Skipped: ${skipped.length}. Reason: ${reason || 'none'}`);
 
@@ -4785,7 +4824,12 @@ Be concise, friendly, and helpful. Focus on explaining features, answering quest
     }
   });
 
-  app.post("/api/kill-switch/deactivate", (_req, res) => {
+  app.post("/api/kill-switch/deactivate", (req, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({ success: false, message: "Not authenticated" });
+    }
+
+    const killSwitchState = getKillSwitchState(req.session.userId);
     killSwitchState.active = false;
     killSwitchState.activatedAt = null;
     killSwitchState.reason = null;
@@ -4793,19 +4837,6 @@ Be concise, friendly, and helpful. Focus on explaining features, answering quest
     console.info(`[KillSwitch] Deactivated at ${new Date().toISOString()}`);
 
     return res.json({ success: true, message: "Kill switch deactivated. Trade copying can be resumed." });
-  });
-
-  // Block trade-copy start while kill switch is active
-  // (injected check — the original /api/trade-copy/start route runs before this,
-  //  so we patch it with a middleware applied to that path only)
-  app.use("/api/trade-copy/start", (req, res, next) => {
-    if (killSwitchState.active) {
-      return res.status(423).json({
-        success: false,
-        message: "Kill switch is active. Deactivate it before starting trade copying.",
-      });
-    }
-    next();
   });
 
   return server;
