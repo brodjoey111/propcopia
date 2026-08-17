@@ -54,6 +54,8 @@ import {
 import { buildRithmicReadiness } from "./rithmic-readiness-service";
 import { RithmicReconnectValidationStore } from "./rithmic-reconnect-validation";
 import { reconnectSavedRithmicTestAccount } from "./rithmic-saved-reconnect-service";
+import { rithmicReconnectCoordinator } from "./reconnect-coordinator";
+import { accountConnectionRecoveryStore } from "./account-connection-recovery-store";
 import {
   buildAccountsRuntimeOverview,
   buildDashboardRuntimeOverview,
@@ -448,6 +450,50 @@ async function refreshRithmicAccountIdentity(
     .returning();
 
   return updatedAccount ?? account;
+}
+
+async function reconnectSavedRithmicAccountForUser(
+  account: typeof accounts.$inferSelect,
+  userId: string,
+) {
+  const coordinated = rithmicReconnectCoordinator.run(account.id, () =>
+    reconnectSavedRithmicTestAccount({
+      account,
+      systemName: resolveRithmicSystemName(account),
+      sessions: rithmicInstances,
+      validationStore: rithmicReconnectValidationStore,
+      createSession: (credentials) => new RithmicAPI(credentials),
+      refreshIdentity: (savedAccount, rithmicAPI) =>
+        refreshRithmicAccountIdentity(savedAccount, userId, rithmicAPI, {
+          allowDiscoveryFailure: true,
+        }),
+    }),
+  );
+
+  if (coordinated.started) {
+    accountConnectionRecoveryStore.begin(userId, account.id);
+  }
+
+  try {
+    const result = await coordinated.promise;
+    if (coordinated.started) {
+      if (result.success) {
+        accountConnectionRecoveryStore.recovered(userId, account.id);
+      } else {
+        accountConnectionRecoveryStore.failed(userId, account.id, result.message);
+      }
+    }
+    return result;
+  } catch (error) {
+    if (coordinated.started) {
+      accountConnectionRecoveryStore.failed(
+        userId,
+        account.id,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    throw error;
+  }
 }
 
 function getTradeCopyRiskPreflightError(account: (typeof accounts.$inferSelect)): string | null {
@@ -2672,17 +2718,10 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      const reconnect = await reconnectSavedRithmicTestAccount({
-        account: existing,
-        systemName: resolveRithmicSystemName(existing),
-        sessions: rithmicInstances,
-        validationStore: rithmicReconnectValidationStore,
-        createSession: (credentials) => new RithmicAPI(credentials),
-        refreshIdentity: (account, rithmicAPI) =>
-          refreshRithmicAccountIdentity(account, req.session.userId!, rithmicAPI, {
-            allowDiscoveryFailure: true,
-          }),
-      });
+      const reconnect = await reconnectSavedRithmicAccountForUser(
+        existing,
+        req.session.userId,
+      );
 
       if (!reconnect.success) {
         return res.status(400).json({
@@ -2945,6 +2984,17 @@ export function registerRoutes(app: Express): Server {
   });
 
   // ── Risk settings per-account ────────────────────────────────────────────
+  app.get("/api/accounts/recovery-status", (req, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({ success: false, message: "Not authenticated" });
+    }
+
+    return res.json({
+      success: true,
+      records: accountConnectionRecoveryStore.listForUser(req.session.userId),
+    });
+  });
+
   app.post("/api/accounts/:id/connect", async (req, res) => {
     try {
       if (!req.session.userId) {
@@ -2968,17 +3018,10 @@ export function registerRoutes(app: Express): Server {
       }
 
       if (existing.platform === "Rithmic") {
-        const reconnect = await reconnectSavedRithmicTestAccount({
-          account: existing,
-          systemName: resolveRithmicSystemName(existing),
-          sessions: rithmicInstances,
-          validationStore: rithmicReconnectValidationStore,
-          createSession: (credentials) => new RithmicAPI(credentials),
-          refreshIdentity: (account, rithmicAPI) =>
-            refreshRithmicAccountIdentity(account, req.session.userId!, rithmicAPI, {
-              allowDiscoveryFailure: true,
-            }),
-        });
+        const reconnect = await reconnectSavedRithmicAccountForUser(
+          existing,
+          req.session.userId,
+        );
 
         if (!reconnect.success) {
           return res.status(400).json({
@@ -3078,6 +3121,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       if (existing.platform === "Rithmic" && existing.rithmicUsername) {
+        await rithmicReconnectCoordinator.waitFor(existing.id);
         const instance = rithmicInstances.get(existing.rithmicUsername);
         if (instance) {
           await instance.disconnect();
@@ -3098,6 +3142,8 @@ export function registerRoutes(app: Express): Server {
           message: "Account not found",
         });
       }
+
+      accountConnectionRecoveryStore.disconnected(req.session.userId, id);
 
       return res.json({
         success: true,

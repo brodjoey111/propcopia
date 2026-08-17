@@ -28,10 +28,10 @@ test("Rithmic readiness route builds the readiness payload from the cached Rithm
 
 test("Rithmic readiness revalidate route uses the shared saved reconnect workflow", () => {
   assert.match(routesSource, /app\.post\(\"\/api\/accounts\/:id\/rithmic-readiness\/revalidate\"/);
-  assert.match(routesSource, /const reconnect = await reconnectSavedRithmicTestAccount\(\{/);
+  assert.match(routesSource, /const reconnect = await reconnectSavedRithmicAccountForUser\(/);
   assert.match(
     routesSource,
-    /refreshIdentity: \(account, rithmicAPI\) =>\s*refreshRithmicAccountIdentity\(account, req\.session\.userId!, rithmicAPI, \{\s*allowDiscoveryFailure: true,\s*\}\),/,
+    /refreshIdentity: \(savedAccount, rithmicAPI\) =>\s*refreshRithmicAccountIdentity\(savedAccount, userId, rithmicAPI, \{\s*allowDiscoveryFailure: true,\s*\}\),/,
   );
   assert.match(routesSource, /existing = reconnect\.account;/);
   assert.match(

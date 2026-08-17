@@ -7,7 +7,7 @@ const routesSource = fs.readFileSync(new URL("./routes.ts", import.meta.url), "u
 test("saved Rithmic reconnect authenticates without rerunning account discovery", () => {
   assert.match(
     routesSource,
-    /existing\.platform === "Rithmic"[\s\S]*?reconnectSavedRithmicTestAccount\(\{/,
+    /existing\.platform === "Rithmic"[\s\S]*?reconnectSavedRithmicAccountForUser\(/,
   );
   assert.doesNotMatch(
     routesSource,
@@ -18,7 +18,7 @@ test("saved Rithmic reconnect authenticates without rerunning account discovery"
 test("saved Rithmic reconnect tolerates account identity refresh failures after login", () => {
   assert.match(
     routesSource,
-    /refreshRithmicAccountIdentity\(account, req\.session\.userId!, rithmicAPI, \{\s*allowDiscoveryFailure: true,\s*\}\)/,
+    /refreshRithmicAccountIdentity\(savedAccount, userId, rithmicAPI, \{\s*allowDiscoveryFailure: true,\s*\}\)/,
   );
 });
 

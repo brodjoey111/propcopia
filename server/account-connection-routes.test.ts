@@ -6,10 +6,10 @@ const routesSource = readFileSync(new URL('./routes.ts', import.meta.url), 'utf8
 
 test('connect route refreshes saved Rithmic identity after successful authentication before marking the account connected', () => {
   assert.match(routesSource, /app\.post\(\"\/api\/accounts\/:id\/connect\"/);
-  assert.match(routesSource, /const reconnect = await reconnectSavedRithmicTestAccount\(\{/);
+  assert.match(routesSource, /const reconnect = await reconnectSavedRithmicAccountForUser\(/);
   assert.match(
     routesSource,
-    /refreshRithmicAccountIdentity\(account, req\.session\.userId!, rithmicAPI, \{\s*allowDiscoveryFailure: true,\s*\}\)/,
+    /refreshRithmicAccountIdentity\(savedAccount, userId, rithmicAPI, \{\s*allowDiscoveryFailure: true,\s*\}\)/,
   );
   assert.match(routesSource, /existing = reconnect\.account;/);
   assert.match(
@@ -24,6 +24,7 @@ test('disconnect route tears down any cached Rithmic session before marking the 
   assert.match(routesSource, /await instance\.disconnect\(\);/);
   assert.match(routesSource, /rithmicInstances\.delete\(existing\.rithmicUsername\);/);
   assert.match(routesSource, /rithmicReconnectValidationStore\.clear\(existing\.id\);/);
+  assert.match(routesSource, /accountConnectionRecoveryStore\.disconnected\(req\.session\.userId, id\);/);
   assert.match(
     routesSource,
     /const updated = await updateAccountConnectionState\(\{\s*accountId: id,\s*userId: req\.session\.userId,\s*isConnected: false,/,
