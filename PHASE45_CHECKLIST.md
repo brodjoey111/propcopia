@@ -6,5 +6,5 @@
 - [x] Route user profile and settings failures through the operational logger
 - [x] Add offline route coverage for hardened user-route failure handling
 - [x] Run TypeScript checks and focused user-management tests
-- [ ] Expand offline authorization coverage for user-owned resources
+- [x] Expand offline authorization coverage for user-owned resources
 - [ ] Commit and push the Phase 45 checkpoint
