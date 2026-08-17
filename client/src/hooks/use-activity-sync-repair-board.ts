@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { filterPositionSyncRepairCandidateQueue, type PositionSyncRepairCandidateEntry, type PositionSyncRepairCandidateFilter } from "@/lib/position-sync-queue";
+import type { PositionSyncSimulationTarget } from "@/hooks/use-position-sync-workflow-actions";
 import { buildPositionSyncWorkflowUpdate, type PositionSyncWorkflowState } from "@/lib/position-sync-workflow";
 
 interface ActivitySyncRepairUser {
@@ -14,6 +15,7 @@ interface UseActivitySyncRepairBoardOptions {
   savePositionSyncWorkflow: (
     reviews: ReturnType<typeof buildPositionSyncWorkflowUpdate>[],
   ) => void;
+  simulatePositionSync: (targets: PositionSyncSimulationTarget[]) => void;
 }
 
 export function useActivitySyncRepairBoard(
@@ -89,21 +91,15 @@ export function useActivitySyncRepairBoard(
       return;
     }
 
-    const simulatedAt = new Date().toISOString();
     const selectedEntries = filteredRepairCandidates.filter((entry) =>
       selectedRepairCandidateKeys.includes(entry.key),
     );
 
-    options.savePositionSyncWorkflow(
-      selectedEntries.map((entry) =>
-        buildPositionSyncWorkflowUpdate({
-          groupId: entry.groupId,
-          followerAccountId: entry.followerAccountId,
-          currentEntry: options.positionSyncWorkflowState[entry.key],
-          nextStatus: "simulated",
-          timestamp: simulatedAt,
-        }),
-      ),
+    options.simulatePositionSync(
+      selectedEntries.map((entry) => ({
+        groupId: entry.groupId,
+        followerAccountId: entry.followerAccountId,
+      })),
     );
     setSelectedRepairCandidateKeys([]);
   };
@@ -114,8 +110,10 @@ export function useActivitySyncRepairBoard(
     }
 
     const assignedAt = new Date().toISOString();
-    const selectedEntries = filteredRepairCandidates.filter((entry) =>
-      selectedRepairCandidateKeys.includes(entry.key),
+    const selectedEntries = filteredRepairCandidates.filter(
+      (entry) =>
+        selectedRepairCandidateKeys.includes(entry.key) &&
+        entry.workflowStatus === "simulated",
     );
 
     options.savePositionSyncWorkflow(

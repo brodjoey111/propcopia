@@ -3,6 +3,7 @@ import { useState } from "react";
 import type {
   DashboardPositionSyncReviewGroup,
 } from "@/hooks/use-dashboard-position-sync-data";
+import type { PositionSyncSimulationTarget } from "@/hooks/use-position-sync-workflow-actions";
 import type { PositionSyncRepairCandidateEntry } from "@/lib/position-sync-queue";
 import {
   buildPositionSyncWorkflowKey,
@@ -16,13 +17,18 @@ interface SavePositionSyncWorkflowMutationLike {
   isPending: boolean;
 }
 
+interface SimulatePositionSyncMutationLike {
+  mutate: (targets: PositionSyncSimulationTarget[]) => void;
+  isPending: boolean;
+}
+
 interface UseDashboardPositionSyncWorkflowOptions {
   username?: string | null;
   positionSyncWorkflowState: PositionSyncWorkflowState;
   positionSyncReviewGroups: DashboardPositionSyncReviewGroup[];
   savePositionSyncWorkflowMutation: SavePositionSyncWorkflowMutationLike;
+  simulatePositionSyncMutation: SimulatePositionSyncMutationLike;
   onReviewedSave?: (count: number) => void;
-  onSimulatedSave?: (count: number) => void;
 }
 
 export function useDashboardPositionSyncWorkflow(
@@ -57,23 +63,16 @@ export function useDashboardPositionSyncWorkflow(
       return;
     }
 
-    const simulatedAt = new Date().toISOString();
-    const reviews = reviewGroup.followers.map((follower) => {
-      const workflowKey = buildPositionSyncWorkflowKey(groupId, follower.followerAccountId);
-      return buildPositionSyncWorkflowUpdate({
+    const targets = reviewGroup.followers
+      .filter((follower) => follower.status === "OUT_OF_SYNC")
+      .map((follower) => ({
         groupId,
         followerAccountId: follower.followerAccountId,
-        currentEntry: options.positionSyncWorkflowState[workflowKey],
-        nextStatus: "simulated",
-        timestamp: simulatedAt,
-        note:
-          positionSyncReviewNotes[workflowKey]?.trim() ||
-          options.positionSyncWorkflowState[workflowKey]?.note,
-      });
-    });
+      }));
 
-    options.savePositionSyncWorkflowMutation.mutate(reviews);
-    options.onSimulatedSave?.(reviews.length);
+    if (targets.length > 0) {
+      options.simulatePositionSyncMutation.mutate(targets);
+    }
   };
 
   const handleRepairCandidateTakeOwnership = (
@@ -120,15 +119,11 @@ export function useDashboardPositionSyncWorkflow(
     }
 
     if (entry.workflowStatus === "reviewed") {
-      options.savePositionSyncWorkflowMutation.mutate([
-        buildPositionSyncWorkflowUpdate({
+      options.simulatePositionSyncMutation.mutate([
+        {
           groupId: entry.groupId,
           followerAccountId: entry.followerAccountId,
-          currentEntry,
-          nextStatus: "simulated",
-          timestamp: now,
-          note: currentEntry?.note,
-        }),
+        },
       ]);
       return;
     }

@@ -27,6 +27,7 @@ test("notifications page surfaces the risk follow-up queue above the inbox list"
   assert.match(source, /usePositionSyncReviewData/);
   assert.match(source, /summarizePositionSyncRepairCandidateQueue/);
   assert.match(source, /savePositionSyncWorkflowMutation/);
+  assert.match(source, /simulatePositionSyncMutation/);
   assert.match(source, /usePositionSyncWorkflowActions/);
   assert.match(source, /buildPositionSyncWorkflowUpdate/);
   assert.match(source, /riskFollowUpItems/);

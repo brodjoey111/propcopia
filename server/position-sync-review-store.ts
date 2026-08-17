@@ -7,6 +7,7 @@ import {
 } from "@shared/schema";
 
 import { db } from "./db";
+import type { PositionSyncSimulationEvidence } from "./position-sync-simulation-service";
 
 interface PositionSyncOperatorAssignment {
   operatorName: string;
@@ -23,6 +24,10 @@ export interface PersistedPositionSyncReview {
   operatorHistory?: PositionSyncOperatorAssignment[];
   reviewedAt?: string;
   simulatedAt?: string;
+  simulationId?: string;
+  simulationFingerprint?: string;
+  simulationSourceGeneratedAt?: string;
+  simulationPlan?: PositionSyncSimulationEvidence;
   approvedAt?: string;
   handedOffAt?: string;
   completedManuallyAt?: string;
@@ -50,6 +55,10 @@ class DbPositionSyncReviewStoreRepository implements PositionSyncReviewStoreRepo
           operatorHistoryJson: entry.operatorHistoryJson ?? null,
           reviewedAt: entry.reviewedAt ?? null,
           simulatedAt: entry.simulatedAt ?? null,
+          simulationId: entry.simulationId ?? null,
+          simulationFingerprint: entry.simulationFingerprint ?? null,
+          simulationSourceGeneratedAt: entry.simulationSourceGeneratedAt ?? null,
+          simulationPlanJson: entry.simulationPlanJson ?? null,
           approvedAt: entry.approvedAt ?? null,
           handedOffAt: entry.handedOffAt ?? null,
           completedManuallyAt: entry.completedManuallyAt ?? null,
@@ -72,6 +81,10 @@ function deserializeReview(row: PositionSyncReview): PersistedPositionSyncReview
     ? safeParseOperatorHistory(row.operatorHistoryJson)
     : undefined;
 
+  const simulationPlan = row.simulationPlanJson
+    ? safeParseSimulationPlan(row.simulationPlanJson)
+    : undefined;
+
   return {
     groupId: row.groupId,
     followerAccountId: row.followerAccountId,
@@ -81,10 +94,27 @@ function deserializeReview(row: PositionSyncReview): PersistedPositionSyncReview
     operatorHistory,
     reviewedAt: row.reviewedAt?.toISOString(),
     simulatedAt: row.simulatedAt?.toISOString(),
+    ...(row.simulationId
+      ? {
+          simulationId: row.simulationId,
+          simulationFingerprint: row.simulationFingerprint ?? undefined,
+          simulationSourceGeneratedAt: row.simulationSourceGeneratedAt?.toISOString(),
+          simulationPlan,
+        }
+      : {}),
     approvedAt: row.approvedAt?.toISOString(),
     handedOffAt: row.handedOffAt?.toISOString(),
     completedManuallyAt: row.completedManuallyAt?.toISOString(),
   };
+}
+
+function safeParseSimulationPlan(value: string): PositionSyncSimulationEvidence | undefined {
+  try {
+    const parsed = JSON.parse(value) as PositionSyncSimulationEvidence;
+    return parsed && typeof parsed === "object" ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function safeParseOperatorHistory(value: string): PositionSyncOperatorAssignment[] | undefined {
@@ -116,6 +146,14 @@ export class PositionSyncReviewStore {
           : null,
         reviewedAt: review.reviewedAt ? new Date(review.reviewedAt) : null,
         simulatedAt: review.simulatedAt ? new Date(review.simulatedAt) : null,
+        simulationId: review.simulationId ?? null,
+        simulationFingerprint: review.simulationFingerprint ?? null,
+        simulationSourceGeneratedAt: review.simulationSourceGeneratedAt
+          ? new Date(review.simulationSourceGeneratedAt)
+          : null,
+        simulationPlanJson: review.simulationPlan
+          ? JSON.stringify(review.simulationPlan)
+          : null,
         approvedAt: review.approvedAt ? new Date(review.approvedAt) : null,
         handedOffAt: review.handedOffAt ? new Date(review.handedOffAt) : null,
         completedManuallyAt: review.completedManuallyAt

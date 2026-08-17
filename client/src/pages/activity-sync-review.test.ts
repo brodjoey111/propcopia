@@ -33,6 +33,7 @@ test("activity page summarizes shared position sync review counts", () => {
   assert.match(source, /handleOpenRepairCandidateInQueue/);
   assert.match(source, /positionSyncRepairBoardSummary/);
   assert.match(source, /savePositionSyncWorkflow:\s*\(reviews\) => savePositionSyncWorkflowMutation\.mutate\(reviews\)/);
+  assert.match(source, /simulatePositionSync:\s*\(targets\) => simulatePositionSyncMutation\.mutate\(targets\)/);
   assert.match(source, /positionSyncRepairCandidates/);
   assert.match(source, /filteredRepairCandidates/);
   assert.match(source, /selectedRepairCandidateKeys/);

@@ -27,6 +27,8 @@ test("dashboard position sync panel keeps staged repair and review controls", ()
   assert.match(source, /Approved/);
   assert.match(source, /Handed Off/);
   assert.match(source, /Completed Manually/);
+  assert.match(source, /simulationFingerprint/);
+  assert.match(source, /No broker orders submitted/);
   assert.match(source, /Operator owner:/);
   assert.match(source, /Ownership changes:/);
   assert.match(source, /Latest ownership reason:/);

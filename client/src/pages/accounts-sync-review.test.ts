@@ -41,4 +41,8 @@ test("accounts page surfaces shared position sync review state", () => {
   assert.match(source, /Approved on/);
   assert.match(source, /Handed off on/);
   assert.match(source, /Completed manually on/);
+  assert.match(source, /workflowEntry\?\.status !== 'simulated'/);
+  assert.match(source, /workflowEntry\?\.status !== 'approved'/);
+  assert.match(source, /workflowEntry\?\.status !== 'handed_off'/);
+  assert.match(source, /No broker orders submitted/);
 });

@@ -14,7 +14,8 @@ test("dashboard position sync workflow hook centralizes review notes and staged 
   assert.match(source, /handleRepairCandidateTakeOwnership/);
   assert.match(source, /handleRepairCandidateAdvance/);
   assert.match(source, /nextStatus: "reviewed"/);
-  assert.match(source, /nextStatus: "simulated"/);
+  assert.match(source, /simulatePositionSyncMutation\.mutate/);
+  assert.match(source, /follower\.status === "OUT_OF_SYNC"/);
   assert.match(source, /nextStatus: "approved"/);
   assert.match(source, /"Reassigned staged sync ownership"/);
   assert.match(source, /"Claimed staged sync ownership"/);

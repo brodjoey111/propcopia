@@ -801,7 +801,10 @@ export default function Dashboard() {
   } = useFollowUpReviewActions({
     userId: authData?.user?.id,
   });
-  const { savePositionSyncWorkflowMutation } = usePositionSyncWorkflowActions({
+  const {
+    savePositionSyncWorkflowMutation,
+    simulatePositionSyncMutation,
+  } = usePositionSyncWorkflowActions({
     userId: authData?.user?.id,
     onSuccess: (_result, reviews) => {
       const savedFollowerCount = reviews.length;
@@ -822,6 +825,12 @@ export default function Dashboard() {
           : `${savedFollowerCount} follower plan${savedFollowerCount === 1 ? "" : "s"} marked for manual sync review only.`,
       });
     },
+    onSimulationSuccess: (result) => {
+      toast({
+        title: "Sync Simulation Recorded",
+        description: `${result.simulations.length} follower repair plan${result.simulations.length === 1 ? " was" : "s were"} validated and saved. No broker orders were submitted.`,
+      });
+    },
   });
   const {
     positionSyncReviewNotes,
@@ -835,6 +844,7 @@ export default function Dashboard() {
     positionSyncWorkflowState,
     positionSyncReviewGroups,
     savePositionSyncWorkflowMutation,
+    simulatePositionSyncMutation,
   });
   const {
     reviewNotes,

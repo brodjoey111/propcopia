@@ -51,6 +51,8 @@ import {
   buildDashboardRuntimeOverview,
 } from "./runtime-overview-service";
 import { filterPositionSyncOverviewByGroupId } from "./position-sync-overview-service";
+import { buildPositionSyncSimulation } from "./position-sync-simulation-service";
+import { validatePositionSyncWorkflowTransition } from "./position-sync-workflow-service";
 import {
   copyGroupActivityStore,
   mergeCopyGroupActivity,
@@ -305,6 +307,11 @@ const upsertPositionSyncReviewsSchema = z.object({
       completedManuallyAt: z.string().datetime().optional(),
     }),
   ).min(1),
+});
+
+const createPositionSyncSimulationSchema = z.object({
+  groupId: z.string().trim().min(1),
+  followerAccountId: z.string().trim().min(1),
 });
 
 const upsertRiskFollowUpReviewsSchema = z.object({
@@ -1107,6 +1114,82 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  app.post("/api/position-sync/simulations", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const parsed = createPositionSyncSimulationSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid position sync simulation payload",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const overview = await getOrCreateRuntimeSnapshot({
+        scope: "position-sync-simulation",
+        userId: req.session.userId,
+        ttlMs: RUNTIME_SNAPSHOT_TTL_MS,
+        loader: async () => loadPositionSyncOverviewForUser(req.session.userId!),
+      });
+      const simulationResult = buildPositionSyncSimulation({
+        overview,
+        groupId: parsed.data.groupId,
+        followerAccountId: parsed.data.followerAccountId,
+      });
+
+      if (!simulationResult.success) {
+        const status =
+          simulationResult.reason === "GROUP_NOT_FOUND" ||
+          simulationResult.reason === "FOLLOWER_NOT_FOUND"
+            ? 404
+            : 409;
+        return res.status(status).json(simulationResult);
+      }
+
+      const existingReviews = await positionSyncReviewStore.listReviews(req.session.userId);
+      const existingReview = existingReviews.find(
+        (review) =>
+          review.groupId === parsed.data.groupId &&
+          review.followerAccountId === parsed.data.followerAccountId,
+      );
+      const simulation = simulationResult.simulation;
+
+      await positionSyncReviewStore.saveReviews(req.session.userId, [
+        {
+          ...existingReview,
+          groupId: simulation.groupId,
+          followerAccountId: simulation.followerAccountId,
+          status: "simulated",
+          simulatedAt: simulation.simulatedAt,
+          simulationId: simulation.simulationId,
+          simulationFingerprint: simulation.planFingerprint,
+          simulationSourceGeneratedAt: simulation.sourceGeneratedAt,
+          simulationPlan: simulation,
+        },
+      ]);
+
+      const reviews = await positionSyncReviewStore.listReviews(req.session.userId);
+      return res.json({
+        success: true,
+        simulation,
+        reviews,
+      });
+    } catch (error) {
+      console.error("Error simulating position sync:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
   app.post("/api/position-sync/reviews", async (req, res) => {
     try {
       if (!req.session?.userId) {
@@ -1129,6 +1212,7 @@ export function registerRoutes(app: Express): Server {
       const registeredGroups = copyGroupManager
         .getAllGroups()
         .filter((registeredGroup) => registeredGroup.group.userId === req.session.userId);
+      const existingReviews = await positionSyncReviewStore.listReviews(req.session.userId);
 
       for (const review of parsed.data.reviews) {
         const matchingGroup = registeredGroups.find(
@@ -1152,11 +1236,32 @@ export function registerRoutes(app: Express): Server {
             message: `Follower plan not found: ${review.followerAccountId}`,
           });
         }
+
+        const currentReview = existingReviews.find(
+          (entry) =>
+            entry.groupId === review.groupId &&
+            entry.followerAccountId === review.followerAccountId,
+        );
+        const transition = validatePositionSyncWorkflowTransition({
+          current: currentReview,
+          nextStatus: review.status,
+        });
+        if (!transition.valid) {
+          return res.status(409).json({
+            success: false,
+            message: transition.message,
+          });
+        }
       }
 
       await positionSyncReviewStore.saveReviews(
         req.session.userId,
         parsed.data.reviews.map((review) => ({
+          ...existingReviews.find(
+            (entry) =>
+              entry.groupId === review.groupId &&
+              entry.followerAccountId === review.followerAccountId,
+          ),
           groupId: review.groupId,
           followerAccountId: review.followerAccountId,
           status: review.status,

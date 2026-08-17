@@ -15,4 +15,6 @@ test("routes expose authenticated position sync review read and write endpoints"
   assert.match(routesSource, /positionSyncReviewStore\.listReviews/);
   assert.match(routesSource, /positionSyncReviewStore\.saveReviews/);
   assert.match(routesSource, /ensurePersistedCopyGroupsLoaded/);
+  assert.match(routesSource, /validatePositionSyncWorkflowTransition/);
+  assert.match(routesSource, /return res\.status\(409\)\.json/);
 });

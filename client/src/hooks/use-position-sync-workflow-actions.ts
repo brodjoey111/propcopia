@@ -2,7 +2,15 @@ import { useMutation } from "@tanstack/react-query";
 
 import { notificationsQueryKey } from "@/hooks/use-notifications";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { PositionSyncWorkflowSaveInput } from "@/lib/position-sync-workflow";
+import type {
+  PositionSyncSimulationEvidence,
+  PositionSyncWorkflowSaveInput,
+} from "@/lib/position-sync-workflow";
+
+export interface PositionSyncSimulationTarget {
+  groupId: string;
+  followerAccountId: string;
+}
 
 interface UsePositionSyncWorkflowActionsOptions {
   userId?: string | null;
@@ -12,6 +20,14 @@ interface UsePositionSyncWorkflowActionsOptions {
       reviews: PositionSyncWorkflowSaveInput[];
     },
     reviews: PositionSyncWorkflowSaveInput[],
+  ) => void;
+  onSimulationSuccess?: (
+    result: {
+      success: true;
+      simulations: PositionSyncSimulationEvidence[];
+      reviews: PositionSyncWorkflowSaveInput[];
+    },
+    targets: PositionSyncSimulationTarget[],
   ) => void;
 }
 
@@ -43,7 +59,39 @@ export function usePositionSyncWorkflowActions(
     },
   });
 
+  const simulatePositionSyncMutation = useMutation({
+    mutationFn: async (targets: PositionSyncSimulationTarget[]) => {
+      const results: Array<{
+        success: true;
+        simulation: PositionSyncSimulationEvidence;
+        reviews: PositionSyncWorkflowSaveInput[];
+      }> = [];
+
+      for (const target of targets) {
+        const response = await apiRequest("POST", "/api/position-sync/simulations", target);
+        results.push(await response.json());
+      }
+
+      return {
+        success: true as const,
+        simulations: results.map((result) => result.simulation),
+        reviews: results.at(-1)?.reviews ?? [],
+      };
+    },
+    onSuccess: (result, targets) => {
+      queryClient.setQueryData(getPositionSyncWorkflowQueryKey(options.userId), {
+        success: true,
+        reviews: result.reviews,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/runtime/dashboard-overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/runtime/accounts-overview"] });
+      queryClient.invalidateQueries({ queryKey: notificationsQueryKey });
+      options.onSimulationSuccess?.(result, targets);
+    },
+  });
+
   return {
     savePositionSyncWorkflowMutation,
+    simulatePositionSyncMutation,
   };
 }

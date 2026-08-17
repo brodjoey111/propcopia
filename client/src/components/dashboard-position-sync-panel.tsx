@@ -392,7 +392,7 @@ export function DashboardPositionSyncPanel({
                                 )}
                                 {workflowEntry?.status === "simulated" && (
                                   <Badge variant="outline" className="border-cyan-400/30 bg-cyan-400/10 text-cyan-200">
-                                    Simulated
+                                    Simulated safely
                                   </Badge>
                                 )}
                                 <Badge
@@ -435,6 +435,11 @@ export function DashboardPositionSyncPanel({
                                 )}
                               </div>
                             </div>
+                            {workflowEntry?.simulationFingerprint && (
+                              <p className="mt-2 text-xs text-cyan-200/70">
+                                Evidence {workflowEntry.simulationFingerprint.slice(0, 12)} saved. No broker orders submitted.
+                              </p>
+                            )}
 
                             {follower.adjustments.length > 0 && (
                               <div className="mt-3 space-y-2">

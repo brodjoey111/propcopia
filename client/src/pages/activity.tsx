@@ -763,7 +763,10 @@ export default function Activity() {
       });
     },
   });
-  const { savePositionSyncWorkflowMutation } = usePositionSyncWorkflowActions({
+  const {
+    savePositionSyncWorkflowMutation,
+    simulatePositionSyncMutation,
+  } = usePositionSyncWorkflowActions({
     userId: user?.id,
     onSuccess: (_result, reviews) => {
       const latestStatus = reviews[0]?.status;
@@ -772,6 +775,12 @@ export default function Activity() {
         description: latestStatus
           ? `${getPositionSyncStatusLabel(latestStatus)} status saved for ${reviews.length} sync item${reviews.length === 1 ? "" : "s"}.`
           : "Sync workflow status saved.",
+      });
+    },
+    onSimulationSuccess: (result) => {
+      toast({
+        title: "Sync Simulation Recorded",
+        description: `${result.simulations.length} repair plan${result.simulations.length === 1 ? " was" : "s were"} validated. No broker orders were submitted.`,
       });
     },
   });
@@ -798,6 +807,7 @@ export default function Activity() {
     positionSyncRepairCandidates,
     positionSyncWorkflowState,
     savePositionSyncWorkflow: (reviews) => savePositionSyncWorkflowMutation.mutate(reviews),
+    simulatePositionSync: (targets) => simulatePositionSyncMutation.mutate(targets),
   });
   const {
     queueFilter,

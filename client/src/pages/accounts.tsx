@@ -1672,6 +1672,11 @@ export default function Accounts() {
                           Simulated on {new Date(workflowEntry.simulatedAt).toLocaleString()}.
                         </p>
                       )}
+                      {workflowEntry?.simulationFingerprint && (
+                        <p className="mt-2 text-xs text-cyan-200/80">
+                          Evidence {workflowEntry.simulationFingerprint.slice(0, 12)} saved. No broker orders submitted.
+                        </p>
+                      )}
                       <div className="mt-4 flex flex-wrap gap-2">
                         <Button
                           type="button"
@@ -1686,9 +1691,16 @@ export default function Accounts() {
                               workflowEntry,
                             })
                           }
-                          disabled={savePositionSyncWorkflowMutation.isPending}
+                          disabled={
+                            savePositionSyncWorkflowMutation.isPending ||
+                            workflowEntry?.status !== 'simulated'
+                          }
                         >
-                          {savePositionSyncWorkflowMutation.isPending ? 'Saving...' : 'Approve'}
+                          {savePositionSyncWorkflowMutation.isPending
+                            ? 'Saving...'
+                            : workflowEntry?.status === 'simulated'
+                              ? 'Approve'
+                              : 'Simulate first'}
                         </Button>
                         <Button
                           type="button"
@@ -1720,9 +1732,16 @@ export default function Accounts() {
                               workflowEntry,
                             })
                           }
-                          disabled={savePositionSyncWorkflowMutation.isPending}
+                          disabled={
+                            savePositionSyncWorkflowMutation.isPending ||
+                            workflowEntry?.status !== 'approved'
+                          }
                         >
-                          {savePositionSyncWorkflowMutation.isPending ? 'Saving...' : 'Hand off'}
+                          {savePositionSyncWorkflowMutation.isPending
+                            ? 'Saving...'
+                            : workflowEntry?.status === 'approved'
+                              ? 'Hand off'
+                              : 'Approve first'}
                         </Button>
                         <Button
                           type="button"
@@ -1737,9 +1756,16 @@ export default function Accounts() {
                               workflowEntry,
                             })
                           }
-                          disabled={savePositionSyncWorkflowMutation.isPending}
+                          disabled={
+                            savePositionSyncWorkflowMutation.isPending ||
+                            workflowEntry?.status !== 'handed_off'
+                          }
                         >
-                          {savePositionSyncWorkflowMutation.isPending ? 'Saving...' : 'Mark completed manually'}
+                          {savePositionSyncWorkflowMutation.isPending
+                            ? 'Saving...'
+                            : workflowEntry?.status === 'handed_off'
+                              ? 'Mark completed manually'
+                              : 'Hand off first'}
                         </Button>
                       </div>
                     </div>

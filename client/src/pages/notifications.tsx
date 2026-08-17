@@ -216,7 +216,10 @@ export default function Notifications() {
   } = useFollowUpReviewActions({
     userId: user?.id,
   });
-  const { savePositionSyncWorkflowMutation } = usePositionSyncWorkflowActions({
+  const {
+    savePositionSyncWorkflowMutation,
+    simulatePositionSyncMutation,
+  } = usePositionSyncWorkflowActions({
     userId: user?.id,
   });
 
@@ -539,15 +542,11 @@ export default function Notifications() {
     }
 
     if (currentItem.workflowStatus === "reviewed") {
-      savePositionSyncWorkflowMutation.mutate([
-        buildPositionSyncWorkflowUpdate({
+      simulatePositionSyncMutation.mutate([
+        {
           groupId,
           followerAccountId,
-          currentEntry: currentReview,
-          nextStatus: "simulated",
-          timestamp: now,
-          note: currentReview?.note,
-        }),
+        },
       ]);
       return;
     }

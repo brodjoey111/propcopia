@@ -4,6 +4,29 @@ export interface PositionSyncOperatorAssignment {
   reason?: string;
 }
 
+export interface PositionSyncSimulationEvidence {
+  simulationId: string;
+  planFingerprint: string;
+  groupId: string;
+  groupName: string;
+  masterAccountId: string;
+  followerAccountId: string;
+  followerName: string;
+  sourceGeneratedAt: string;
+  simulatedAt: string;
+  executionMode: "SIMULATION_ONLY";
+  noOrdersSubmitted: true;
+  adjustmentCount: number;
+  adjustments: Array<{
+    symbol: string;
+    currentQuantity: number;
+    targetQuantity: number;
+    deltaQuantity: number;
+    action: "BUY" | "SELL" | "FLATTEN";
+    reason: "OPEN" | "INCREASE" | "REDUCE" | "REVERSE" | "FLATTEN_EXTRA";
+  }>;
+}
+
 export interface PositionSyncWorkflowEntry {
   status: "reviewed" | "simulated" | "approved" | "handed_off" | "completed_manually";
   note?: string;
@@ -11,6 +34,10 @@ export interface PositionSyncWorkflowEntry {
   operatorHistory?: PositionSyncOperatorAssignment[];
   reviewedAt?: string;
   simulatedAt?: string;
+  simulationId?: string;
+  simulationFingerprint?: string;
+  simulationSourceGeneratedAt?: string;
+  simulationPlan?: PositionSyncSimulationEvidence;
   approvedAt?: string;
   handedOffAt?: string;
   completedManuallyAt?: string;
@@ -27,6 +54,10 @@ export interface PositionSyncWorkflowSaveInput {
   operatorHistory?: PositionSyncOperatorAssignment[];
   reviewedAt?: string;
   simulatedAt?: string;
+  simulationId?: string;
+  simulationFingerprint?: string;
+  simulationSourceGeneratedAt?: string;
+  simulationPlan?: PositionSyncSimulationEvidence;
   approvedAt?: string;
   handedOffAt?: string;
   completedManuallyAt?: string;
@@ -78,6 +109,14 @@ export function toPositionSyncWorkflowState(
         operatorHistory: entry.operatorHistory,
         reviewedAt: entry.reviewedAt,
         simulatedAt: entry.simulatedAt,
+        ...(entry.simulationId
+          ? {
+              simulationId: entry.simulationId,
+              simulationFingerprint: entry.simulationFingerprint,
+              simulationSourceGeneratedAt: entry.simulationSourceGeneratedAt,
+              simulationPlan: entry.simulationPlan,
+            }
+          : {}),
         approvedAt: entry.approvedAt,
         handedOffAt: entry.handedOffAt,
         completedManuallyAt: entry.completedManuallyAt,
@@ -125,6 +164,10 @@ export function buildPositionSyncWorkflowUpdate(
       input.nextStatus === "simulated" && timestamp
         ? timestamp
         : input.currentEntry?.simulatedAt,
+    simulationId: input.currentEntry?.simulationId,
+    simulationFingerprint: input.currentEntry?.simulationFingerprint,
+    simulationSourceGeneratedAt: input.currentEntry?.simulationSourceGeneratedAt,
+    simulationPlan: input.currentEntry?.simulationPlan,
     approvedAt:
       input.nextStatus === "approved" && timestamp
         ? timestamp
