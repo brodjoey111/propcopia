@@ -13,3 +13,11 @@ test("settings provides an authenticated password-change flow", () => {
   assert.match(source, /PASSWORD_MIN_LENGTH/);
   assert.match(source, /setCurrentPassword\(""\)/);
 });
+
+test("settings reports license state without pretending paid checkout is active", () => {
+  assert.match(source, /Billing &amp; License/);
+  assert.match(source, /\/api\/billing\/status/);
+  assert.match(source, /Development access remains fully enabled/);
+  assert.match(source, /No payment information is being collected/);
+  assert.match(source, /checkoutAvailable/);
+});

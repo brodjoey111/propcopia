@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Logo } from "@/components/logo";
+import { BILLING_PLANS } from "@shared/billing";
 import { RithmicAttribution } from "@/components/rithmic-attribution";
 import {
   Copy,
@@ -78,7 +79,7 @@ export default function Landing() {
   const pricingTiers = [
     {
       name: "Starter",
-      price: "$49",
+      price: `$${BILLING_PLANS.starter.monthlyPriceUsd}`,
       period: "/month",
       description: "Perfect for individual traders getting started",
       features: [
@@ -89,12 +90,12 @@ export default function Landing() {
         "Basic performance tracking",
         "Email support",
       ],
-      cta: "Start Free Trial",
+      cta: "Create Development Account",
       popular: false,
     },
     {
       name: "Professional",
-      price: "$149",
+      price: `$${BILLING_PLANS.professional.monthlyPriceUsd}`,
       period: "/month",
       description: "For active traders managing multiple accounts",
       features: [
@@ -107,12 +108,12 @@ export default function Landing() {
         "Priority email support",
         "Trade history & reports",
       ],
-      cta: "Start Free Trial",
+      cta: "Create Development Account",
       popular: true,
     },
     {
       name: "Enterprise",
-      price: "$399",
+      price: `$${BILLING_PLANS.enterprise.monthlyPriceUsd}`,
       period: "/month",
       description: "For professional trading firms",
       features: [
@@ -301,7 +302,7 @@ export default function Landing() {
               Simple, Transparent Pricing
             </h2>
             <p className="text-lg text-muted-foreground" data-testid="text-pricing-description">
-              Choose the plan that fits your trading needs. All plans include a 14-day free trial.
+              Preview the planned paid tiers. Checkout is not active and no payment details are collected.
             </p>
           </div>
           <div className="grid gap-8 lg:grid-cols-3">

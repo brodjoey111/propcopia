@@ -82,6 +82,7 @@ import {
   signupCredentialsSchema,
 } from "@shared/auth";
 import { establishAuthenticatedSession } from "./auth-session";
+import { buildLicenseSnapshot } from "./license-service";
 
 tradeHistoryPersistence.attach(tradeHistoryStore);
 
@@ -2484,6 +2485,30 @@ export function registerRoutes(app: Express): Server {
     return res.status(401).json({
       success: false,
       message: "Not authenticated",
+    });
+  });
+
+  app.get("/api/billing/status", async (req, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Not authenticated",
+      });
+    }
+
+    const user = await storage.getUser(req.session.userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      license: buildLicenseSnapshot(user),
+      checkoutAvailable: false,
+      customerPortalAvailable: false,
     });
   });
 

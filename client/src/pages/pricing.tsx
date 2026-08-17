@@ -5,11 +5,12 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Logo } from "@/components/logo";
+import { BILLING_PLANS } from "@shared/billing";
 
 const pricingTiers = [
   {
     name: "Starter",
-    price: "$49",
+    price: `$${BILLING_PLANS.starter.monthlyPriceUsd}`,
     period: "/month",
     description: "Perfect for individual traders getting started with copy trading",
     features: [
@@ -21,12 +22,12 @@ const pricingTiers = [
       "Email support",
       "NinjaTrader & Tradovate support",
     ],
-    cta: "Start Free Trial",
+    cta: "Create Development Account",
     popular: false,
   },
   {
     name: "Professional",
-    price: "$149",
+    price: `$${BILLING_PLANS.professional.monthlyPriceUsd}`,
     period: "/month",
     description: "For active traders managing multiple accounts",
     features: [
@@ -40,12 +41,12 @@ const pricingTiers = [
       "NinjaTrader & Tradovate support",
       "Trade history & reports",
     ],
-    cta: "Start Free Trial",
+    cta: "Create Development Account",
     popular: true,
   },
   {
     name: "Enterprise",
-    price: "$399",
+    price: `$${BILLING_PLANS.enterprise.monthlyPriceUsd}`,
     period: "/month",
     description: "For professional trading firms and prop traders",
     features: [
@@ -95,7 +96,7 @@ export default function Pricing() {
             Simple, Transparent Pricing
           </h1>
           <p className="mx-auto max-w-2xl text-lg text-muted-foreground" data-testid="text-pricing-subtitle">
-            Choose the plan that fits your trading needs. All plans include a 14-day free trial.
+            Preview the planned paid tiers. Checkout is not active and no payment details are collected.
           </p>
           <div className="mt-6">
             <Link href="/auth">
@@ -187,26 +188,26 @@ export default function Pricing() {
             </div>
             <div className="space-y-2">
               <h3 className="font-semibold" data-testid="text-faq-question-2">
-                What payment methods do you accept?
+                Is paid checkout available?
               </h3>
               <p className="text-sm text-muted-foreground">
-                We accept all major credit cards, debit cards, and ACH transfers for Enterprise plans.
+                Not yet. Stripe checkout and the customer billing portal will be enabled in a later phase.
               </p>
             </div>
             <div className="space-y-2">
               <h3 className="font-semibold" data-testid="text-faq-question-3">
-                Is there a free trial?
+                Can I create an account now?
               </h3>
               <p className="text-sm text-muted-foreground">
-                Yes! All plans include a 14-day free trial. No credit card required to start.
+                Yes. New accounts currently receive development access without entering payment information.
               </p>
             </div>
             <div className="space-y-2">
               <h3 className="font-semibold" data-testid="text-faq-question-4">
-                What happens after my trial ends?
+                Are paid limits enforced now?
               </h3>
               <p className="text-sm text-muted-foreground">
-                You can choose to subscribe to a paid plan or your account will be downgraded to view-only mode.
+                No. Plan limits remain visible but unenforced until billing is configured and validated.
               </p>
             </div>
           </div>
@@ -222,7 +223,7 @@ export default function Pricing() {
           </p>
           <Button size="lg" data-testid="button-cta-signup" asChild>
             <Link href="/auth">
-              Start Your Free Trial
+              Create Development Account
             </Link>
           </Button>
         </div>

@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { EmptyState } from "@/components/empty-state";
 import type { Account } from "@shared/schema";
 import { PASSWORD_MIN_LENGTH } from "@shared/auth";
+import type { LicenseSnapshot } from "@shared/billing";
 
 type QueueSortPreference = "recent" | "age" | "owner" | "reassignments";
 type QueueAuditFocusPreference = "all" | "overdue" | "unassigned" | "reassigned";
@@ -60,6 +61,14 @@ export default function Settings() {
     useState<CopyGroupHealthReviewFilterPreference>("all");
   const { data: accountsData } = useQuery<{ success: boolean; accounts: Account[] }>({
     queryKey: ["/api/accounts"],
+  });
+  const { data: billingData } = useQuery<{
+    success: boolean;
+    license: LicenseSnapshot;
+    checkoutAvailable: boolean;
+    customerPortalAvailable: boolean;
+  }>({
+    queryKey: ["/api/billing/status"],
   });
   const followerAccounts = (accountsData?.accounts ?? []).filter(
     (account) => account.accountType === "follower",
@@ -406,6 +415,45 @@ export default function Settings() {
                 {changePasswordMutation.isPending ? "Updating..." : "Update Password"}
               </Button>
             </div>
+          </Card>
+        </div>
+        <div>
+          <h2 className="mb-4 text-xl font-semibold">Billing &amp; License</h2>
+          <Card className="card-3d p-6">
+            <div className="grid gap-5 lg:grid-cols-[1.1fr_1fr]">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+                  Current access
+                </p>
+                <p className="mt-2 text-2xl font-semibold text-white">
+                  {billingData?.license.plan.name ?? "Loading access..."}
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {billingData?.license.source === "development"
+                    ? "Development access remains fully enabled while Stripe billing is prepared."
+                    : `Subscription status: ${billingData?.license.status ?? "unknown"}.`}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4">
+                  <p className="text-xs text-muted-foreground">Master accounts</p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {billingData?.license.plan.entitlements.maxMasterAccounts ?? "Unlimited"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4">
+                  <p className="text-xs text-muted-foreground">Follower accounts</p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {billingData?.license.plan.entitlements.maxFollowerAccounts ?? "Unlimited"}
+                  </p>
+                </div>
+              </div>
+            </div>
+            {!billingData?.checkoutAvailable && (
+              <div className="mt-5 rounded-xl border border-amber-400/15 bg-amber-400/[0.06] px-4 py-3 text-sm text-amber-100/80">
+                Paid checkout is not active yet. No payment information is being collected.
+              </div>
+            )}
           </Card>
         </div>
         <div>
