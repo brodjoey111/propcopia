@@ -56,6 +56,7 @@ export class MemStorage implements IStorage {
       globalPositionScaling: 100,
       globalMaxContracts: null,
       globalBlockedTickers: null,
+      globalRiskSettingsJson: null,
       onboardingStep: 0,
       onboardingCompleted: false,
       dailyTradingStreak: 0,

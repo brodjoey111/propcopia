@@ -25,6 +25,10 @@ export interface TradeHistoryApiRecord {
   quantity?: number;
   lifecycleStatus: TradeHistoryLifecycleStatus;
   ruleReasonCode?: string;
+  riskDecisionFingerprint?: string;
+  riskDecisionEvidence?: string;
+  riskEvaluatedAt?: string;
+  riskRuleVersion?: string;
   brokerOrderId?: string;
   fillId?: string;
   partialFillCount?: number;
@@ -103,6 +107,9 @@ export interface TradeHistoryRow {
     remainingQuantityLabel: string;
     progressLabel: string;
     fillCountLabel: string;
+    riskDecisionFingerprint?: string;
+    riskEvaluatedAt?: string;
+    riskRuleVersion?: string;
     reviewStatus?: "pending" | "reviewed";
     reviewNote?: string;
     reviewedAt?: string;
@@ -488,6 +495,9 @@ export function toTradeHistoryRows(records: TradeHistoryApiRecord[]): TradeHisto
         remainingQuantityLabel,
         progressLabel,
         fillCountLabel,
+        riskDecisionFingerprint: record.riskDecisionFingerprint,
+        riskEvaluatedAt: record.riskEvaluatedAt,
+        riskRuleVersion: record.riskRuleVersion,
         reviewStatus: record.reviewStatus,
         reviewNote: record.reviewNote,
         reviewedAt: record.reviewedAt,

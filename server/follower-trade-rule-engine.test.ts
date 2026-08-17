@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   evaluateFollowerTradeRule,
+  evaluateFollowerTradeRuleWithEvidence,
   type FollowerTradeRuleInput,
 } from './follower-trade-rule-engine';
 
@@ -82,6 +83,19 @@ test('Blocked symbol is SKIPPED with SYMBOL_BLOCKED', () => {
   });
 });
 
+test('Allowed-symbol whitelist takes precedence over the blocked list', () => {
+  const result = evaluateFollowerTradeRule(
+    makeInput({
+      follower: {
+        allowedSymbols: ['ES'],
+        blockedSymbols: ['ES'],
+      },
+    })
+  );
+
+  assert.equal(result.decision, 'ALLOWED');
+});
+
 test('Long-only follower skips SELL', () => {
   const result = evaluateFollowerTradeRule(
     makeInput({
@@ -103,6 +117,32 @@ test('Short-only follower skips BUY', () => {
     })
   );
   assert.deepEqual(result, {
+    decision: 'SKIPPED',
+    reasonCode: 'DIRECTION_NOT_ALLOWED',
+  });
+});
+
+test('Direction limits apply after reverse-copy direction is calculated', () => {
+  const allowed = evaluateFollowerTradeRule(
+    makeInput({
+      trade: { side: 'BUY' },
+      follower: { allowedDirections: 'short_only', reverseCopy: true },
+    })
+  );
+  const skipped = evaluateFollowerTradeRule(
+    makeInput({
+      trade: { side: 'BUY' },
+      follower: { allowedDirections: 'long_only', reverseCopy: true },
+    })
+  );
+
+  assert.deepEqual(allowed, {
+    decision: 'ALLOWED',
+    reasonCode: null,
+    side: 'SELL',
+    quantity: 4,
+  });
+  assert.deepEqual(skipped, {
     decision: 'SKIPPED',
     reasonCode: 'DIRECTION_NOT_ALLOWED',
   });
@@ -141,6 +181,27 @@ test('After trading end is SKIPPED', () => {
   assert.deepEqual(result, {
     decision: 'SKIPPED',
     reasonCode: 'AFTER_TRADING_END',
+  });
+});
+
+test('Overnight trading windows allow both sides of midnight and reject midday', () => {
+  const follower = { tradingStartTime: '22:00', tradingEndTime: '02:00' };
+
+  const beforeMidnight = evaluateFollowerTradeRule(
+    makeInput({ follower, runtime: { now: '2026-08-03T23:30:00.000Z' } })
+  );
+  const afterMidnight = evaluateFollowerTradeRule(
+    makeInput({ follower, runtime: { now: '2026-08-04T01:30:00.000Z' } })
+  );
+  const midday = evaluateFollowerTradeRule(
+    makeInput({ follower, runtime: { now: '2026-08-04T12:00:00.000Z' } })
+  );
+
+  assert.equal(beforeMidnight.decision, 'ALLOWED');
+  assert.equal(afterMidnight.decision, 'ALLOWED');
+  assert.deepEqual(midday, {
+    decision: 'SKIPPED',
+    reasonCode: 'BEFORE_TRADING_START',
   });
 });
 
@@ -183,6 +244,20 @@ test('Minimum balance breach is REJECTED', () => {
   assert.deepEqual(result, {
     decision: 'REJECTED',
     reasonCode: 'MIN_ACCOUNT_BALANCE_NOT_MET',
+  });
+});
+
+test('Missing balance fails closed when a minimum balance is configured', () => {
+  const result = evaluateFollowerTradeRule(
+    makeInput({
+      follower: { minAccountBalance: 20000 },
+      runtime: { currentBalance: null },
+    })
+  );
+
+  assert.deepEqual(result, {
+    decision: 'REJECTED',
+    reasonCode: 'RISK_DATA_UNAVAILABLE',
   });
 });
 
@@ -296,4 +371,38 @@ test('Zero quantity is SKIPPED with ZERO_QUANTITY', () => {
     side: 'BUY',
     quantity: 0,
   });
+});
+
+test('Invalid trade inputs are rejected before risk rules run', () => {
+  assert.deepEqual(
+    evaluateFollowerTradeRule(makeInput({ trade: { symbol: '   ' } })),
+    { decision: 'REJECTED', reasonCode: 'INVALID_SYMBOL' },
+  );
+  assert.deepEqual(
+    evaluateFollowerTradeRule(makeInput({ trade: { quantity: Number.NaN } })),
+    { decision: 'REJECTED', reasonCode: 'INVALID_TRADE_QUANTITY' },
+  );
+  assert.deepEqual(
+    evaluateFollowerTradeRule(makeInput({ runtime: { now: 'not-a-timestamp' } })),
+    { decision: 'REJECTED', reasonCode: 'INVALID_TIMESTAMP' },
+  );
+});
+
+test('Risk decision evidence is deterministic and changes with the evaluated input', () => {
+  const first = evaluateFollowerTradeRuleWithEvidence(
+    makeInput({ follower: { blockedSymbols: ['nq', ' es '] } })
+  );
+  const repeated = evaluateFollowerTradeRuleWithEvidence(
+    makeInput({ follower: { blockedSymbols: [' ES ', 'NQ'] } })
+  );
+  const changed = evaluateFollowerTradeRuleWithEvidence(
+    makeInput({ trade: { symbol: 'NQ' }, follower: { blockedSymbols: ['ES', 'NQ'] } })
+  );
+
+  assert.equal(first.evidence.version, 'risk-rules-v1');
+  assert.match(first.evidence.fingerprint, /^[a-f0-9]{64}$/);
+  assert.equal(first.evidence.fingerprint, repeated.evidence.fingerprint);
+  assert.notEqual(first.evidence.fingerprint, changed.evidence.fingerprint);
+  assert.equal(first.evidence.input.trade.symbol, 'ES');
+  assert.deepEqual(first.evidence.input.follower.blockedSymbols, ['ES', 'NQ']);
 });

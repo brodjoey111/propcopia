@@ -18,7 +18,14 @@ export interface MasterFillReceivedEvent {
   timestamp: string;
 }
 
-export interface RuleAllowedEvent {
+export interface RiskDecisionEvidenceFields {
+  riskDecisionFingerprint?: string;
+  riskDecisionEvidence?: string;
+  riskEvaluatedAt?: string;
+  riskRuleVersion?: string;
+}
+
+export interface RuleAllowedEvent extends RiskDecisionEvidenceFields {
   groupId?: string;
   followerAccountId: string;
   masterFillId: string;
@@ -27,7 +34,7 @@ export interface RuleAllowedEvent {
   quantity: number;
 }
 
-export interface RuleSkippedEvent {
+export interface RuleSkippedEvent extends RiskDecisionEvidenceFields {
   groupId?: string;
   followerAccountId: string;
   masterFillId: string;
@@ -35,7 +42,7 @@ export interface RuleSkippedEvent {
   reasonCode: string;
 }
 
-export interface RuleRejectedEvent {
+export interface RuleRejectedEvent extends RiskDecisionEvidenceFields {
   groupId?: string;
   followerAccountId: string;
   masterFillId: string;

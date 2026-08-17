@@ -155,12 +155,20 @@ test('tracks rule-level skips without requiring an intent', () => {
     masterFillId: 'fill-2',
     symbol: 'NQ',
     reasonCode: 'SYMBOL_BLOCKED',
+    riskDecisionFingerprint: 'a'.repeat(64),
+    riskDecisionEvidence: '{"version":"risk-rules-v1"}',
+    riskEvaluatedAt: '2026-08-17T12:00:00.000Z',
+    riskRuleVersion: 'risk-rules-v1',
   });
 
   const record = store.get('rule:fill-2:follower-2');
   assert.ok(record);
   assert.equal(record?.lifecycleStatus, 'RULE_SKIPPED');
   assert.equal(record?.ruleReasonCode, 'SYMBOL_BLOCKED');
+  assert.equal(record?.riskDecisionFingerprint, 'a'.repeat(64));
+  assert.equal(record?.riskRuleVersion, 'risk-rules-v1');
+  assert.equal(record?.riskEvaluatedAt, '2026-08-17T12:00:00.000Z');
+  assert.equal(record?.riskDecisionEvidence, '{"version":"risk-rules-v1"}');
   assert.equal(record?.events[0]?.message, 'Rule skipped: Symbol blocked');
 
   store.stop();

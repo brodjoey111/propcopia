@@ -878,6 +878,111 @@ test('skipped rule decisions do not enqueue or increment failedSends', async () 
   assert.equal(getFailedSends(engine), 0);
 });
 
+test('active copy sessions enforce saved follower whitelist and schedule rules', async () => {
+  const tradeIntentManager = new TradeIntentManager();
+  const engine = new TradeCopyEngine('demo', tradeIntentManager);
+  const socket = new FakeFollowerWebSocket();
+  const skippedReasons: string[] = [];
+
+  engine.on('ruleSkipped', (payload) => {
+    skippedReasons.push(payload.reasonCode ?? 'UNKNOWN');
+  });
+
+  await addFollowerWithWebSocket(
+    engine,
+    createFollowerAccount('follower-saved-rules', {
+      allowedTickers: ['NQ'],
+      tradingDays: ['mon'],
+      tradingStartTime: '08:00',
+      tradingEndTime: '17:00',
+    }),
+    socket,
+  );
+
+  await copyTrade(engine, 'fill-whitelist-skip');
+
+  assert.deepEqual(skippedReasons, ['SYMBOL_NOT_ALLOWED']);
+  assert.equal(tradeIntentManager.getAllIntents().length, 0);
+  assert.equal(socket.sentMessages.length, 0);
+});
+
+test('saved risk changes refresh an active follower without reconnecting its broker', async () => {
+  const tradeIntentManager = new TradeIntentManager();
+  const engine = new TradeCopyEngine('demo', tradeIntentManager);
+  const socket = new FakeFollowerWebSocket();
+  const account = createFollowerAccount('follower-live-risk-refresh');
+
+  await addFollowerWithWebSocket(engine, account, socket);
+  const updated = engine.updateFollowerRiskSettings({
+    ...account,
+    blockedTickers: ['ES'],
+  });
+
+  await copyTrade(engine, 'fill-after-risk-refresh');
+
+  assert.equal(updated, true);
+  assert.equal(socket.sentMessages.length, 0);
+  assert.equal(tradeIntentManager.getAllIntents().length, 0);
+  assert.equal(getFollowerConnection(engine, account.id).ws, socket);
+  assert.equal(
+    engine.updateFollowerRiskSettings(createFollowerAccount('not-in-session')),
+    false,
+  );
+});
+
+test('active copy sessions enforce the saved per-session daily trade limit', async () => {
+  const tradeIntentManager = new TradeIntentManager();
+  const engine = new TradeCopyEngine('demo', tradeIntentManager);
+  const socket = new FakeFollowerWebSocket();
+  const rejectedReasons: string[] = [];
+
+  engine.on('ruleRejected', (payload) => {
+    rejectedReasons.push(payload.reasonCode ?? 'UNKNOWN');
+  });
+
+  await addFollowerWithWebSocket(
+    engine,
+    createFollowerAccount('follower-daily-cap', { maxTradesPerDay: 1 }),
+    socket,
+  );
+
+  await copyTrade(engine, 'fill-daily-cap-1');
+  await copyTrade(engine, 'fill-daily-cap-2');
+
+  assert.equal(socket.sentMessages.length, 1);
+  assert.equal(tradeIntentManager.getAllIntents().length, 1);
+  assert.deepEqual(rejectedReasons, ['MAX_TRADES_PER_DAY_REACHED']);
+});
+
+test('allowed copy intents retain credential-free risk decision evidence', async () => {
+  const tradeIntentManager = new TradeIntentManager();
+  const engine = new TradeCopyEngine('demo', tradeIntentManager);
+  const socket = new FakeFollowerWebSocket();
+
+  await addFollowerWithWebSocket(
+    engine,
+    createFollowerAccount('follower-risk-evidence', {
+      apiKey: 'never-log-api-key',
+      apiSecret: 'never-log-api-secret',
+      blockedTickers: ['NQ'],
+    }),
+    socket,
+  );
+
+  await copyTrade(engine, 'fill-risk-evidence');
+
+  const intent = tradeIntentManager.getAllIntents()[0];
+  assert.ok(intent);
+  assert.match(intent.riskDecisionFingerprint ?? '', /^[a-f0-9]{64}$/);
+  assert.equal(intent.riskRuleVersion, 'risk-rules-v1');
+  assert.equal(intent.riskEvaluatedAt, '2026-08-03T12:00:00.000Z');
+  assert.doesNotMatch(intent.riskDecisionEvidence ?? '', /never-log-api-key|never-log-api-secret/);
+
+  const evidence = JSON.parse(intent.riskDecisionEvidence ?? '{}');
+  assert.equal(evidence.fingerprint, intent.riskDecisionFingerprint);
+  assert.equal(evidence.result.decision, 'ALLOWED');
+});
+
 test('rejected rule decisions do not enqueue or increment failedSends', async () => {
   const tradeIntentManager = new TradeIntentManager();
   const engine = new TradeCopyEngine('demo', tradeIntentManager);
@@ -923,6 +1028,33 @@ test('breached follower risk rejects live copy attempts before enqueue', async (
   assert.equal(tradeIntentManager.getAllIntents().length, 0);
   assert.equal(getFailedSends(engine), 0);
   assert.deepEqual(rejectedReasons, ['RISK_LIMIT_BREACHED']);
+});
+
+test('unavailable configured risk metrics reject copy attempts without stopping the engine', async () => {
+  const tradeIntentManager = new TradeIntentManager();
+  const engine = new TradeCopyEngine('demo', tradeIntentManager);
+  const socket = new FakeFollowerWebSocket();
+  const rejectedReasons: string[] = [];
+
+  engine.on('ruleRejected', (payload) => {
+    rejectedReasons.push(payload.reasonCode ?? 'UNKNOWN');
+  });
+
+  await addFollowerWithWebSocket(
+    engine,
+    createFollowerAccount('follower-risk-unavailable', {
+      maxWeeklyLoss: '2500',
+    }),
+    socket,
+  );
+
+  await copyTrade(engine, 'fill-risk-unavailable');
+
+  assert.equal(getExecutionManager(engine).getAllExecutions().length, 0);
+  assert.equal(tradeIntentManager.getAllIntents().length, 0);
+  assert.equal(getFailedSends(engine), 0);
+  assert.deepEqual(rejectedReasons, ['RISK_DATA_UNAVAILABLE']);
+  assert.equal(engine.getStatus().followerCount, 1);
 });
 
 test('TradeCopyEngine does not perform duplicate post-enqueue intent transitions', async () => {

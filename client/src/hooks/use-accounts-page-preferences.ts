@@ -33,6 +33,7 @@ export function useAccountsPagePreferences(
       return { ...DEFAULT_RISK_SETTINGS };
     }
   });
+  const [globalSettingsServerSynced, setGlobalSettingsServerSynced] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -41,6 +42,43 @@ export function useAccountsPagePreferences(
         setViewMode(saved as AccountsViewMode);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    let cancelled = false;
+    void fetch("/api/risk-settings/global", { credentials: "include" })
+      .then(async (response) => {
+        if (!response.ok) {
+          return null;
+        }
+        return response.json();
+      })
+      .then((payload) => {
+        if (cancelled || !payload?.settings) {
+          return;
+        }
+
+        const cachedSettings = localStorage.getItem("global-risk-settings-v1");
+        setGlobalSettingsServerSynced(Boolean(payload.stored));
+        if (!payload.stored && cachedSettings) {
+          return;
+        }
+
+        const settings = { ...DEFAULT_RISK_SETTINGS, ...payload.settings };
+        setGlobalSettings(settings);
+        localStorage.setItem("global-risk-settings-v1", JSON.stringify(settings));
+      })
+      .catch(() => {
+        // The local cache remains available while the server is offline.
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -84,6 +122,7 @@ export function useAccountsPagePreferences(
 
   const saveGlobalSettings = (settings: RiskSettings) => {
     setGlobalSettings(settings);
+    setGlobalSettingsServerSynced(true);
     try {
       localStorage.setItem("global-risk-settings-v1", JSON.stringify(settings));
     } catch {}
@@ -96,6 +135,7 @@ export function useAccountsPagePreferences(
     setSessionMasterAccountId,
     activeSessionMasterAccountId: options.serverMasterAccountId ?? sessionMasterAccountId,
     globalSettings,
+    globalSettingsServerSynced,
     saveGlobalSettings,
   };
 }

@@ -35,6 +35,10 @@ export interface TradeHistoryRecord {
   lifecycleStatus: TradeHistoryLifecycleStatus;
   ruleDecision?: 'ALLOWED' | 'SKIPPED' | 'REJECTED';
   ruleReasonCode?: string;
+  riskDecisionFingerprint?: string;
+  riskDecisionEvidence?: string;
+  riskEvaluatedAt?: string;
+  riskRuleVersion?: string;
   brokerKey?: string;
   brokerOrderId?: string;
   fillId?: string;
@@ -88,6 +92,10 @@ export class TradeHistoryStore {
         lifecycleStatus: 'RULE_SKIPPED',
         ruleDecision: 'SKIPPED',
         ruleReasonCode: event.reasonCode,
+        riskDecisionFingerprint: event.riskDecisionFingerprint,
+        riskDecisionEvidence: event.riskDecisionEvidence,
+        riskEvaluatedAt: event.riskEvaluatedAt,
+        riskRuleVersion: event.riskRuleVersion,
       }, {
         type: 'rule.skipped',
         timestamp: new Date().toISOString(),
@@ -106,6 +114,10 @@ export class TradeHistoryStore {
         lifecycleStatus: 'RULE_REJECTED',
         ruleDecision: 'REJECTED',
         ruleReasonCode: event.reasonCode,
+        riskDecisionFingerprint: event.riskDecisionFingerprint,
+        riskDecisionEvidence: event.riskDecisionEvidence,
+        riskEvaluatedAt: event.riskEvaluatedAt,
+        riskRuleVersion: event.riskRuleVersion,
         lastErrorMessage: reasonLabel,
       }, {
         type: 'rule.rejected',
@@ -125,6 +137,10 @@ export class TradeHistoryStore {
         symbol: intent.symbol,
         side: intent.side,
         quantity: intent.quantity,
+        riskDecisionFingerprint: intent.riskDecisionFingerprint,
+        riskDecisionEvidence: intent.riskDecisionEvidence,
+        riskEvaluatedAt: intent.riskEvaluatedAt,
+        riskRuleVersion: intent.riskRuleVersion,
         intentStatus: intent.status,
         lifecycleStatus: 'INTENT_CREATED',
       }, {
@@ -145,6 +161,10 @@ export class TradeHistoryStore {
         symbol: intent.symbol,
         side: intent.side,
         quantity: intent.quantity,
+        riskDecisionFingerprint: intent.riskDecisionFingerprint,
+        riskDecisionEvidence: intent.riskDecisionEvidence,
+        riskEvaluatedAt: intent.riskEvaluatedAt,
+        riskRuleVersion: intent.riskRuleVersion,
         intentStatus: intent.status,
         lifecycleStatus: this.mapIntentStatus(intent.status),
       }, {
@@ -292,6 +312,8 @@ export class TradeHistoryStore {
             record.side,
             record.lifecycleStatus,
             record.ruleReasonCode,
+            record.riskDecisionFingerprint,
+            record.riskRuleVersion,
             record.brokerKey,
             record.brokerOrderId,
             record.fillId,

@@ -162,6 +162,34 @@ test("describeGroupRiskSummary produces plain-language launch guidance", () => {
   );
 });
 
+test("summarizeGroupRisk blocks launch when configured risk data is unavailable", () => {
+  const summary = summarizeGroupRisk({
+    accountIds: ["acct-pending"],
+    accountRiskById: {
+      "acct-pending": {
+        accountId: "acct-pending",
+        userId: "user-1",
+        name: "Pending",
+        platform: "Rithmic",
+        accountType: "follower",
+        status: "UNAVAILABLE",
+        action: "pause",
+        breachCount: 0,
+        warningCount: 0,
+        rules: [],
+      },
+    },
+  });
+
+  assert.equal(summary.blocked, true);
+  assert.equal(summary.statusLabel, "Blocked: risk data pending");
+  assert.deepEqual(describeGroupRiskSummary(summary, 1), {
+    headline: "Blocked until risk data is ready",
+    detail: "Pending is missing data required by configured limits.",
+    tone: "muted",
+  });
+});
+
 test("buildAccountRiskFollowUpQueue prioritizes breached accounts and produces operator guidance", () => {
   const result = buildAccountRiskFollowUpQueue([
     {

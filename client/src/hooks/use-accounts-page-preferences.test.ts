@@ -19,4 +19,8 @@ test("accounts page preferences hook centralizes local persistence and session m
   assert.match(source, /options\.connectedAccountIds\.includes\(sessionMasterAccountId\)/);
   assert.match(source, /saveGlobalSettings/);
   assert.match(source, /JSON\.stringify\(settings\)/);
+  assert.match(source, /\/api\/risk-settings\/global/);
+  assert.match(source, /credentials: "include"/);
+  assert.match(source, /globalSettingsServerSynced/);
+  assert.match(source, /!payload\.stored && cachedSettings/);
 });

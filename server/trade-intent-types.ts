@@ -19,6 +19,10 @@ export interface TradeIntent {
   symbol: string;
   side: TradeSide;
   quantity: number;
+  riskDecisionFingerprint?: string;
+  riskDecisionEvidence?: string;
+  riskEvaluatedAt?: string;
+  riskRuleVersion?: string;
   createdAt: string;
   status: TradeIntentStatus;
 }

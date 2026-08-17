@@ -435,6 +435,13 @@ export default function Trades() {
                                     <p><span className="text-muted-foreground">Master Fill:</span> {row.detail.masterFillId}</p>
                                     <p><span className="text-muted-foreground">Broker Order:</span> {row.detail.brokerOrderId ?? "Pending"}</p>
                                     <p><span className="text-muted-foreground">Follower Fill:</span> {row.detail.fillId ?? "Pending"}</p>
+                                    {row.detail.riskDecisionFingerprint ? (
+                                      <>
+                                        <p><span className="text-muted-foreground">Risk Check:</span> Verified</p>
+                                        <p className="break-all"><span className="text-muted-foreground">Risk Evidence:</span> {row.detail.riskDecisionFingerprint}</p>
+                                        <p><span className="text-muted-foreground">Rule Set:</span> {row.detail.riskRuleVersion ?? "Recorded"}</p>
+                                      </>
+                                    ) : null}
                                   </div>
                                 </div>
                                 <div>

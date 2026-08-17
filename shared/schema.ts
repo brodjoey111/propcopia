@@ -13,6 +13,7 @@ export const users = pgTable("users", {
   globalPositionScaling: integer("global_position_scaling").default(100),
   globalMaxContracts: integer("global_max_contracts"),
   globalBlockedTickers: text("global_blocked_tickers").array(),
+  globalRiskSettingsJson: text("global_risk_settings_json"),
   onboardingStep: integer("onboarding_step").default(0),
   onboardingCompleted: boolean("onboarding_completed").default(false),
   dailyTradingStreak: integer("daily_trading_streak").default(0),

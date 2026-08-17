@@ -130,6 +130,84 @@ test("evaluateAccountRisk marks accounts warn when nearing configured limits", (
   assert.equal(result.rules[0]?.status, "WARN");
 });
 
+test("evaluateAccountRisk evaluates weekly loss, drawdown, and loss streak metrics", () => {
+  const result = evaluateAccountRisk({
+    account: createAccount({
+      id: "acct-expanded-risk",
+      balance: "45000",
+      maxWeeklyLoss: "2000",
+      maxWeeklyLossPct: "4",
+      maxDrawdownPct: "8",
+      maxConsecutiveLosses: 3,
+    }),
+    riskMetrics: {
+      weeklyPnl: -2100,
+      peakBalance: 50000,
+      consecutiveLosses: 3,
+    },
+  });
+
+  assert.equal(result.status, "BREACHED");
+  assert.deepEqual(
+    result.rules.map((rule) => [rule.code, rule.status]),
+    [
+      ["MAX_WEEKLY_LOSS", "BREACHED"],
+      ["MAX_WEEKLY_LOSS_PCT", "BREACHED"],
+      ["MAX_DRAWDOWN_PCT", "BREACHED"],
+      ["MAX_CONSECUTIVE_LOSSES", "BREACHED"],
+    ],
+  );
+});
+
+test("evaluateAccountRisk reports configured rules unavailable when metrics are missing", () => {
+  const result = evaluateAccountRisk({
+    account: createAccount({
+      id: "acct-missing-risk-data",
+      maxDailyLoss: "1000",
+      maxWeeklyLoss: "3000",
+      maxDrawdownPct: "10",
+    }),
+  });
+
+  assert.equal(result.status, "UNAVAILABLE");
+  assert.deepEqual(
+    result.rules.map((rule) => [rule.code, rule.status]),
+    [
+      ["MAX_DAILY_LOSS", "OK"],
+      ["MAX_WEEKLY_LOSS", "UNAVAILABLE"],
+      ["MAX_DRAWDOWN_PCT", "UNAVAILABLE"],
+    ],
+  );
+});
+
+test("unavailable configured data takes precedence over a warning so preflight fails closed", () => {
+  const result = evaluateAccountRisk({
+    account: createAccount({
+      id: "acct-warning-and-missing",
+      pnl: "-850",
+      maxDailyLoss: "1000",
+      maxWeeklyLoss: "3000",
+    }),
+  });
+
+  assert.equal(result.warningCount, 1);
+  assert.equal(result.status, "UNAVAILABLE");
+});
+
+test("daily loss percentage is unavailable when a loss has no usable balance", () => {
+  const result = evaluateAccountRisk({
+    account: createAccount({
+      id: "acct-no-balance",
+      balance: "",
+      pnl: "-250",
+      maxDailyLossPct: "2",
+    }),
+  });
+
+  assert.equal(result.status, "UNAVAILABLE");
+  assert.equal(result.rules[0]?.status, "UNAVAILABLE");
+});
+
 test("buildAccountRiskOverview summarizes mixed account states", () => {
   const result = buildAccountRiskOverview({
     accounts: [

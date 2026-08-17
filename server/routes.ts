@@ -15,6 +15,7 @@ import {
   insertWatchlistItemSchema,
   insertAccountSchema,
   accounts,
+  users,
 } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { marketDataService, type MarketPrice } from "./market-data";
@@ -43,6 +44,12 @@ import { buildNotifications } from "./notifications-service";
 import { buildPositionSnapshots } from "./position-snapshot-service";
 import { clearRuntimeSnapshotCache, getOrCreateRuntimeSnapshot } from "./runtime-snapshot-cache";
 import { evaluateAccountRisk } from "./account-risk-service";
+import { parseAccountRiskSettingsPatch } from "./account-risk-settings";
+import {
+  buildGlobalRiskAccountUpdate,
+  parseGlobalRiskSettings,
+  readStoredGlobalRiskSettings,
+} from "./global-risk-settings-service";
 import { buildRithmicReadiness } from "./rithmic-readiness-service";
 import { RithmicReconnectValidationStore } from "./rithmic-reconnect-validation";
 import { reconnectSavedRithmicTestAccount } from "./rithmic-saved-reconnect-service";
@@ -441,8 +448,19 @@ async function refreshRithmicAccountIdentity(
 function getTradeCopyRiskPreflightError(account: (typeof accounts.$inferSelect)): string | null {
   const risk = evaluateAccountRisk({ account });
 
-  if (risk.status !== "BREACHED") {
+  if (risk.status === "OK" || risk.status === "WARN") {
     return null;
+  }
+
+  if (risk.status === "UNAVAILABLE") {
+    const unavailableRules = risk.rules
+      .filter((rule) => rule.status === "UNAVAILABLE")
+      .map((rule) => rule.label.toLowerCase());
+    const reason = unavailableRules.length > 0
+      ? unavailableRules.join(", ")
+      : "configured risk limits";
+
+    return `Follower ${account.name} cannot join trade copying because current data is unavailable for ${reason}. Disable those limits or restore the required account data first.`;
   }
 
   const breachedRules = risk.rules
@@ -529,7 +547,11 @@ function evaluateFollowerRiskAlerts(
   for (const account of followerAccounts) {
     const risk = evaluateAccountRisk({ account });
     const relevantRules = risk.rules.filter((rule) =>
-      risk.status === "BREACHED" ? rule.status === "BREACHED" : rule.status === "WARN",
+      risk.status === "BREACHED"
+        ? rule.status === "BREACHED"
+        : risk.status === "UNAVAILABLE"
+          ? rule.status === "UNAVAILABLE"
+          : rule.status === "WARN",
     );
 
     if (risk.status === "BREACHED") {
@@ -538,6 +560,16 @@ function evaluateFollowerRiskAlerts(
         message:
           getTradeCopyRiskPreflightError(account) ??
           `Follower ${account.name} breached configured risk limits.`,
+      });
+      continue;
+    }
+
+    if (risk.status === "UNAVAILABLE") {
+      warnings.push({
+        accountId: account.id,
+        message:
+          relevantRules.map((rule) => rule.message).join(" ") ||
+          `Follower ${account.name} is waiting for enough data to evaluate configured risk limits.`,
       });
       continue;
     }
@@ -2735,6 +2767,94 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Accounts routes
+  app.get("/api/risk-settings/global", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      return res.json({
+        success: true,
+        stored: Boolean(user.globalRiskSettingsJson),
+        settings: readStoredGlobalRiskSettings(user.globalRiskSettingsJson, {
+          positionScaling: user.globalPositionScaling,
+          maxContracts: user.globalMaxContracts,
+          blockedTickers: user.globalBlockedTickers,
+        }),
+      });
+    } catch (error) {
+      console.error("Error loading global risk settings:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.patch("/api/risk-settings/global", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
+
+      const parsedSettings = parseGlobalRiskSettings(req.body);
+      if (!parsedSettings.success) {
+        return res.status(400).json({
+          success: false,
+          message: parsedSettings.message,
+          errors: parsedSettings.errors,
+        });
+      }
+
+      const settings = parsedSettings.data;
+      const updatedAccounts = await db.transaction(async (transaction) => {
+        await transaction
+          .update(users)
+          .set({
+            globalRiskSettingsJson: JSON.stringify(settings),
+            globalPositionScaling: settings.positionScaling,
+            globalMaxContracts: settings.maxContracts,
+            globalBlockedTickers: settings.blockedTickers,
+          })
+          .where(eq(users.id, req.session.userId!));
+
+        return transaction
+          .update(accounts)
+          .set(buildGlobalRiskAccountUpdate(settings))
+          .where(
+            and(
+              eq(accounts.userId, req.session.userId!),
+              eq(accounts.riskMode, "global"),
+            ),
+          )
+          .returning();
+      });
+
+      const activeEngine = tradeCopyEngines.get(req.session.userId);
+      const activeSessionUpdateCount = activeEngine
+        ? updatedAccounts.filter((account) => activeEngine.updateFollowerRiskSettings(account)).length
+        : 0;
+      clearRuntimeSnapshotCache(req.session.userId);
+      return res.json({
+        success: true,
+        settings,
+        updatedAccountCount: updatedAccounts.length,
+        activeSessionUpdateCount,
+      });
+    } catch (error) {
+      console.error("Error saving global risk settings:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
   app.post("/api/accounts", async (req, res) => {
     try {
       if (!req.session.userId) {
@@ -2749,7 +2869,26 @@ export function registerRoutes(app: Express): Server {
         userId: req.session.userId,
       });
 
-      const [newAccount] = await db.insert(accounts).values(accountData).returning();
+      let accountValues = accountData;
+      if (
+        accountData.accountType === "follower" &&
+        (accountData.riskMode ?? "global") === "global"
+      ) {
+        const user = await storage.getUser(req.session.userId);
+        accountValues = {
+          ...accountData,
+          riskMode: "global",
+          ...buildGlobalRiskAccountUpdate(
+            readStoredGlobalRiskSettings(user?.globalRiskSettingsJson, {
+              positionScaling: user?.globalPositionScaling,
+              maxContracts: user?.globalMaxContracts,
+              blockedTickers: user?.globalBlockedTickers,
+            }),
+          ),
+        };
+      }
+
+      const [newAccount] = await db.insert(accounts).values(accountValues).returning();
 
       return res.json({
         success: true,
@@ -3094,34 +3233,78 @@ export function registerRoutes(app: Express): Server {
       if (!existing) {
         return res.status(404).json({ success: false, message: "Account not found" });
       }
-      const b = req.body;
+      const parsedSettings = parseAccountRiskSettingsPatch(req.body);
+      if (!parsedSettings.success) {
+        return res.status(400).json({
+          success: false,
+          message: parsedSettings.message,
+          errors: parsedSettings.errors,
+        });
+      }
+
+      const b = parsedSettings.data;
+      const effectiveRiskMode = b.riskMode ?? existing.riskMode ?? "global";
+      let accountSettingsUpdate = {
+          ...(b.riskMode !== undefined ? { riskMode: b.riskMode } : {}),
+          ...(b.positionScaling !== undefined ? { positionScaling: b.positionScaling } : {}),
+          ...(b.maxContracts !== undefined ? { maxContracts: b.maxContracts } : {}),
+          ...(b.maxOpenPositions !== undefined ? { maxOpenPositions: b.maxOpenPositions } : {}),
+          ...(b.allowedDirections !== undefined ? { allowedDirections: b.allowedDirections } : {}),
+          ...(b.maxDailyLoss !== undefined
+            ? { maxDailyLoss: b.maxDailyLoss === null ? null : String(b.maxDailyLoss) }
+            : {}),
+          ...(b.maxDailyLossPct !== undefined
+            ? { maxDailyLossPct: b.maxDailyLossPct === null ? null : String(b.maxDailyLossPct) }
+            : {}),
+          ...(b.maxWeeklyLoss !== undefined
+            ? { maxWeeklyLoss: b.maxWeeklyLoss === null ? null : String(b.maxWeeklyLoss) }
+            : {}),
+          ...(b.maxWeeklyLossPct !== undefined
+            ? { maxWeeklyLossPct: b.maxWeeklyLossPct === null ? null : String(b.maxWeeklyLossPct) }
+            : {}),
+          ...(b.maxDrawdownPct !== undefined
+            ? { maxDrawdownPct: b.maxDrawdownPct === null ? null : String(b.maxDrawdownPct) }
+            : {}),
+          ...(b.maxConsecutiveLosses !== undefined
+            ? { maxConsecutiveLosses: b.maxConsecutiveLosses }
+            : {}),
+          ...(b.blockedTickers !== undefined ? { blockedTickers: b.blockedTickers } : {}),
+          ...(b.allowedTickers !== undefined ? { allowedTickers: b.allowedTickers } : {}),
+          ...(b.maxTradesPerDay !== undefined ? { maxTradesPerDay: b.maxTradesPerDay } : {}),
+          ...(b.minAccountBalance !== undefined
+            ? { minAccountBalance: b.minAccountBalance === null ? null : String(b.minAccountBalance) }
+            : {}),
+          ...(b.tradingStartTime !== undefined ? { tradingStartTime: b.tradingStartTime } : {}),
+          ...(b.tradingEndTime !== undefined ? { tradingEndTime: b.tradingEndTime } : {}),
+          ...(b.tradingDays !== undefined ? { tradingDays: b.tradingDays } : {}),
+          ...(b.cooldownAfterLoss !== undefined ? { cooldownAfterLoss: b.cooldownAfterLoss } : {}),
+          ...(b.onBreachAction !== undefined ? { onBreachAction: b.onBreachAction } : {}),
+        };
+
+      if (effectiveRiskMode === "global") {
+        const user = await storage.getUser(req.session.userId);
+        accountSettingsUpdate = {
+          riskMode: "global",
+          ...buildGlobalRiskAccountUpdate(
+            readStoredGlobalRiskSettings(user?.globalRiskSettingsJson, {
+              positionScaling: user?.globalPositionScaling,
+              maxContracts: user?.globalMaxContracts,
+              blockedTickers: user?.globalBlockedTickers,
+            }),
+          ),
+        };
+      }
+
       const [updated] = await db
         .update(accounts)
-        .set({
-          riskMode:             b.riskMode            ?? existing.riskMode,
-          positionScaling:      b.positionScaling      ?? existing.positionScaling,
-          maxContracts:         b.maxContracts         ?? null,
-          maxOpenPositions:     b.maxOpenPositions      ?? null,
-          allowedDirections:    b.allowedDirections     ?? existing.allowedDirections,
-          maxDailyLoss:         b.maxDailyLoss     != null ? String(b.maxDailyLoss)     : null,
-          maxDailyLossPct:      b.maxDailyLossPct  != null ? String(b.maxDailyLossPct)  : null,
-          maxWeeklyLoss:        b.maxWeeklyLoss    != null ? String(b.maxWeeklyLoss)    : null,
-          maxWeeklyLossPct:     b.maxWeeklyLossPct != null ? String(b.maxWeeklyLossPct) : null,
-          maxDrawdownPct:       b.maxDrawdownPct   != null ? String(b.maxDrawdownPct)   : null,
-          maxConsecutiveLosses: b.maxConsecutiveLosses ?? null,
-          blockedTickers:       b.blockedTickers  ?? [],
-          allowedTickers:       b.allowedTickers  ?? [],
-          maxTradesPerDay:      b.maxTradesPerDay  ?? null,
-          minAccountBalance:    b.minAccountBalance != null ? String(b.minAccountBalance) : null,
-          tradingStartTime:     b.tradingStartTime  ?? null,
-          tradingEndTime:       b.tradingEndTime    ?? null,
-          tradingDays:          b.tradingDays       ?? [],
-          cooldownAfterLoss:    b.cooldownAfterLoss ?? null,
-          onBreachAction:       b.onBreachAction    ?? existing.onBreachAction,
-        })
-        .where(eq(accounts.id, id))
+        .set(accountSettingsUpdate)
+        .where(and(eq(accounts.id, id), eq(accounts.userId, req.session.userId)))
         .returning();
-      return res.json({ success: true, account: updated });
+      const activeSessionUpdated = updated
+        ? tradeCopyEngines.get(req.session.userId)?.updateFollowerRiskSettings(updated) ?? false
+        : false;
+      clearRuntimeSnapshotCache(req.session.userId);
+      return res.json({ success: true, account: updated, activeSessionUpdated });
     } catch (error) {
       console.error('Error saving risk settings:', error);
       return res.status(500).json({

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type { CopySizingMode } from './copy-group-types';
 import { calculateFollowerOrder } from './trade-copy-engine';
 import type { TradeSide } from './trading-domain';
@@ -7,6 +9,7 @@ export type RuleDecision = 'ALLOWED' | 'SKIPPED' | 'REJECTED';
 export type RuleReasonCode =
   | 'FOLLOWER_DISABLED'
   | 'RISK_LIMIT_BREACHED'
+  | 'RISK_DATA_UNAVAILABLE'
   | 'SYMBOL_NOT_ALLOWED'
   | 'SYMBOL_BLOCKED'
   | 'DIRECTION_NOT_ALLOWED'
@@ -17,6 +20,9 @@ export type RuleReasonCode =
   | 'MIN_ACCOUNT_BALANCE_NOT_MET'
   | 'MAX_OPEN_POSITIONS_REACHED'
   | 'COOLDOWN_AFTER_LOSS_ACTIVE'
+  | 'INVALID_SYMBOL'
+  | 'INVALID_TRADE_QUANTITY'
+  | 'INVALID_TIMESTAMP'
   | 'ZERO_QUANTITY'
   | 'INVALID_FIXED_QUANTITY'
   | 'INVALID_MULTIPLIER';
@@ -31,6 +37,7 @@ export interface MasterTradeForRuleEvaluation {
 export interface FollowerRuleConfig {
   enabled: boolean;
   isRiskBreached?: boolean | null;
+  riskStatus?: 'OK' | 'WARN' | 'BREACHED' | 'UNAVAILABLE' | null;
   allowedSymbols?: string[] | null;
   blockedSymbols?: string[] | null;
   allowedDirections?: 'both' | 'long_only' | 'short_only' | null;
@@ -88,6 +95,14 @@ export type FollowerTradeRuleResult =
   | SkippedTradeResult
   | RejectedTradeResult;
 
+export interface FollowerTradeRuleEvidence {
+  version: 'risk-rules-v1';
+  evaluatedAt: string;
+  fingerprint: string;
+  input: FollowerTradeRuleInput;
+  result: FollowerTradeRuleResult;
+}
+
 function normalizeSymbol(value: string): string {
   return value.trim().toUpperCase();
 }
@@ -122,11 +137,44 @@ function minutesSince(lastTimestamp: string, nowTimestamp: string): number {
   return (new Date(nowTimestamp).getTime() - new Date(lastTimestamp).getTime()) / 60000;
 }
 
+function isValidTimestamp(value: string): boolean {
+  return Number.isFinite(new Date(value).getTime());
+}
+
+function getEffectiveSide(side: TradeSide, reverseCopy: boolean): TradeSide {
+  if (!reverseCopy) {
+    return side;
+  }
+
+  return side === 'BUY' ? 'SELL' : 'BUY';
+}
+
 export function evaluateFollowerTradeRule(
   input: FollowerTradeRuleInput
 ): FollowerTradeRuleResult {
   const { trade, follower, runtime } = input;
   const normalizedSymbol = normalizeSymbol(trade.symbol);
+
+  if (!normalizedSymbol) {
+    return {
+      decision: 'REJECTED',
+      reasonCode: 'INVALID_SYMBOL',
+    };
+  }
+
+  if (!Number.isInteger(trade.quantity) || trade.quantity <= 0) {
+    return {
+      decision: 'REJECTED',
+      reasonCode: 'INVALID_TRADE_QUANTITY',
+    };
+  }
+
+  if (!isValidTimestamp(trade.timestamp) || !isValidTimestamp(runtime.now)) {
+    return {
+      decision: 'REJECTED',
+      reasonCode: 'INVALID_TIMESTAMP',
+    };
+  }
 
   if (!follower.enabled) {
     return {
@@ -135,10 +183,17 @@ export function evaluateFollowerTradeRule(
     };
   }
 
-  if (follower.isRiskBreached) {
+  if (follower.isRiskBreached || follower.riskStatus === 'BREACHED') {
     return {
       decision: 'REJECTED',
       reasonCode: 'RISK_LIMIT_BREACHED',
+    };
+  }
+
+  if (follower.riskStatus === 'UNAVAILABLE') {
+    return {
+      decision: 'REJECTED',
+      reasonCode: 'RISK_DATA_UNAVAILABLE',
     };
   }
 
@@ -151,16 +206,17 @@ export function evaluateFollowerTradeRule(
   }
 
   const blockedSymbols = follower.blockedSymbols?.map(normalizeSymbol) ?? [];
-  if (blockedSymbols.includes(normalizedSymbol)) {
+  if (allowedSymbols.length === 0 && blockedSymbols.includes(normalizedSymbol)) {
     return {
       decision: 'SKIPPED',
       reasonCode: 'SYMBOL_BLOCKED',
     };
   }
 
+  const effectiveSide = getEffectiveSide(trade.side, follower.reverseCopy ?? false);
   if (
-    (follower.allowedDirections === 'long_only' && trade.side !== 'BUY') ||
-    (follower.allowedDirections === 'short_only' && trade.side !== 'SELL')
+    (follower.allowedDirections === 'long_only' && effectiveSide !== 'BUY') ||
+    (follower.allowedDirections === 'short_only' && effectiveSide !== 'SELL')
   ) {
     return {
       decision: 'SKIPPED',
@@ -182,18 +238,47 @@ export function evaluateFollowerTradeRule(
 
   const nowMinutes = getUtcMinutes(runtime.now);
 
-  if (follower.tradingStartTime) {
-    const startMinutes = parseTimeToMinutes(follower.tradingStartTime);
+  const startMinutes = follower.tradingStartTime
+    ? parseTimeToMinutes(follower.tradingStartTime)
+    : null;
+  const endMinutes = follower.tradingEndTime
+    ? parseTimeToMinutes(follower.tradingEndTime)
+    : null;
+
+  if (follower.tradingStartTime && startMinutes === null) {
+    return {
+      decision: 'REJECTED',
+      reasonCode: 'RISK_DATA_UNAVAILABLE',
+    };
+  }
+
+  if (follower.tradingEndTime && endMinutes === null) {
+    return {
+      decision: 'REJECTED',
+      reasonCode: 'RISK_DATA_UNAVAILABLE',
+    };
+  }
+
+  if (startMinutes !== null && endMinutes !== null && startMinutes > endMinutes) {
+    if (nowMinutes > endMinutes && nowMinutes < startMinutes) {
+      return {
+        decision: 'SKIPPED',
+        reasonCode: 'BEFORE_TRADING_START',
+      };
+    }
+  } else if (startMinutes !== null && endMinutes !== null && startMinutes === endMinutes) {
+    return {
+      decision: 'REJECTED',
+      reasonCode: 'RISK_DATA_UNAVAILABLE',
+    };
+  } else {
     if (startMinutes !== null && nowMinutes < startMinutes) {
       return {
         decision: 'SKIPPED',
         reasonCode: 'BEFORE_TRADING_START',
       };
     }
-  }
 
-  if (follower.tradingEndTime) {
-    const endMinutes = parseTimeToMinutes(follower.tradingEndTime);
     if (endMinutes !== null && nowMinutes > endMinutes) {
       return {
         decision: 'SKIPPED',
@@ -207,13 +292,36 @@ export function evaluateFollowerTradeRule(
     follower.cooldownAfterLoss > 0 &&
     runtime.lastLossAt
   ) {
+    if (!isValidTimestamp(runtime.lastLossAt)) {
+      return {
+        decision: 'REJECTED',
+        reasonCode: 'RISK_DATA_UNAVAILABLE',
+      };
+    }
+
     const elapsedMinutes = minutesSince(runtime.lastLossAt, runtime.now);
+    if (elapsedMinutes < 0) {
+      return {
+        decision: 'REJECTED',
+        reasonCode: 'RISK_DATA_UNAVAILABLE',
+      };
+    }
     if (elapsedMinutes < follower.cooldownAfterLoss) {
       return {
         decision: 'SKIPPED',
         reasonCode: 'COOLDOWN_AFTER_LOSS_ACTIVE',
       };
     }
+  }
+
+  if (
+    follower.maxTradesPerDay != null &&
+    (!Number.isInteger(runtime.tradesToday) || runtime.tradesToday < 0)
+  ) {
+    return {
+      decision: 'REJECTED',
+      reasonCode: 'RISK_DATA_UNAVAILABLE',
+    };
   }
 
   if (
@@ -228,12 +336,32 @@ export function evaluateFollowerTradeRule(
 
   if (
     follower.minAccountBalance != null &&
+    (runtime.currentBalance == null || !Number.isFinite(runtime.currentBalance))
+  ) {
+    return {
+      decision: 'REJECTED',
+      reasonCode: 'RISK_DATA_UNAVAILABLE',
+    };
+  }
+
+  if (
+    follower.minAccountBalance != null &&
     runtime.currentBalance != null &&
     runtime.currentBalance < follower.minAccountBalance
   ) {
     return {
       decision: 'REJECTED',
       reasonCode: 'MIN_ACCOUNT_BALANCE_NOT_MET',
+    };
+  }
+
+  if (
+    follower.maxOpenPositions != null &&
+    (!Number.isInteger(runtime.currentOpenPositions) || runtime.currentOpenPositions < 0)
+  ) {
+    return {
+      decision: 'REJECTED',
+      reasonCode: 'RISK_DATA_UNAVAILABLE',
     };
   }
 
@@ -293,5 +421,48 @@ export function evaluateFollowerTradeRule(
     reasonCode: null,
     side: sizingResult.action,
     quantity: sizingResult.quantity,
+  };
+}
+
+function normalizeEvidenceInput(input: FollowerTradeRuleInput): FollowerTradeRuleInput {
+  return {
+    trade: {
+      ...input.trade,
+      symbol: normalizeSymbol(input.trade.symbol),
+    },
+    follower: {
+      ...input.follower,
+      allowedSymbols: input.follower.allowedSymbols?.map(normalizeSymbol).sort() ?? null,
+      blockedSymbols: input.follower.blockedSymbols?.map(normalizeSymbol).sort() ?? null,
+      tradingDays:
+        input.follower.tradingDays?.map((day) => day.trim().toLowerCase()).sort() ?? null,
+    },
+    runtime: {
+      ...input.runtime,
+    },
+  };
+}
+
+export function evaluateFollowerTradeRuleWithEvidence(
+  input: FollowerTradeRuleInput,
+): { result: FollowerTradeRuleResult; evidence: FollowerTradeRuleEvidence } {
+  const normalizedInput = normalizeEvidenceInput(input);
+  const result = evaluateFollowerTradeRule(normalizedInput);
+  const evidencePayload = {
+    version: 'risk-rules-v1' as const,
+    evaluatedAt: normalizedInput.runtime.now,
+    input: normalizedInput,
+    result,
+  };
+  const fingerprint = createHash('sha256')
+    .update(JSON.stringify(evidencePayload))
+    .digest('hex');
+
+  return {
+    result,
+    evidence: {
+      ...evidencePayload,
+      fingerprint,
+    },
   };
 }

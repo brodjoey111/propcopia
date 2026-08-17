@@ -64,6 +64,8 @@ type TradeRuleObservedPayload = {
   reasonCode: string | null;
   side?: string;
   quantity?: number;
+  riskDecisionFingerprint?: string;
+  riskRuleVersion?: string;
 };
 
 function nowIso(): string {
@@ -828,6 +830,8 @@ export class CopyGroupManager {
         followerAccountId: payload.followerAccountId,
         details: {
           masterFillId: payload.masterFillId,
+          riskDecisionFingerprint: payload.riskDecisionFingerprint ?? null,
+          riskRuleVersion: payload.riskRuleVersion ?? null,
         },
       });
     };
@@ -844,6 +848,8 @@ export class CopyGroupManager {
         followerAccountId: payload.followerAccountId,
         details: {
           masterFillId: payload.masterFillId,
+          riskDecisionFingerprint: payload.riskDecisionFingerprint ?? null,
+          riskRuleVersion: payload.riskRuleVersion ?? null,
         },
       });
       this.refreshHealth(runtime);

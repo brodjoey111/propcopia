@@ -227,6 +227,7 @@ export default function Accounts() {
     setSessionMasterAccountId,
     activeSessionMasterAccountId,
     globalSettings,
+    globalSettingsServerSynced,
     saveGlobalSettings,
   } = useAccountsPagePreferences({
     connectedAccountIds: connectedAccounts.map((account) => account.id),
@@ -397,10 +398,62 @@ export default function Accounts() {
         body: JSON.stringify(settings),
         credentials: 'include',
       });
-      if (!res.ok) throw new Error('Failed to save risk settings');
-      return res.json();
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(payload?.message ?? 'Failed to save risk settings');
+      }
+      return payload;
     },
-    onSuccess: refreshAccountsQuery,
+    onSuccess: (_data, variables) => {
+      refreshAccountsQuery();
+      const account = accounts.find((item) => item.id === variables.accountId);
+      toast({
+        title: "Risk Settings Saved",
+        description: `Updated for ${account?.name ?? "account"}`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Risk Settings Not Saved",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const saveGlobalRiskSettingsMutation = useMutation({
+    mutationFn: async (settings: RiskSettings) => {
+      const res = await fetch('/api/risk-settings/global', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+        credentials: 'include',
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(payload?.message ?? 'Failed to save global risk settings');
+      }
+      return payload as {
+        settings: RiskSettings;
+        updatedAccountCount: number;
+      };
+    },
+    onSuccess: (payload) => {
+      saveGlobalSettings(payload.settings);
+      refreshAccountsQuery();
+      refreshAccountsRuntimeOverviewQuery();
+      toast({
+        title: "Global Risk Defaults Saved",
+        description: `Updated ${payload.updatedAccountCount} account${payload.updatedAccountCount === 1 ? "" : "s"} using Global mode.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Global Risk Defaults Not Saved",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
   });
 
   const saveBrokerSettingsMutation = useMutation({
@@ -578,8 +631,6 @@ export default function Accounts() {
 
   const handleRiskSettingsSave = (accountId: string, settings: RiskSettings) => {
     saveRiskSettingsMutation.mutate({ accountId, settings });
-    const account = accounts.find(a => a.id === accountId);
-    toast({ title: "Risk Settings Saved", description: `Updated for ${account?.name}` });
   };
 
   const handleBrokerSettingsSave = async (
@@ -621,8 +672,7 @@ export default function Accounts() {
   };
 
   const handleGlobalSettingsUpdate = (settings: RiskSettings) => {
-    saveGlobalSettings(settings);
-    toast({ title: "Global Defaults Saved", description: "All accounts on 'Global' mode now use these limits." });
+    saveGlobalRiskSettingsMutation.mutate(settings);
   };
 
   const getEffectiveSettings = (account: any) => {
@@ -1128,6 +1178,11 @@ export default function Accounts() {
           <p className="text-xs text-muted-foreground mt-0.5">
             Set limits once here — every account using <span className="font-medium text-foreground">Global</span> mode inherits them automatically.
           </p>
+          {globalSettingsServerSynced === false ? (
+            <p className="mt-2 text-xs font-medium text-amber-300">
+              Review and save these defaults once to synchronize them with the server.
+            </p>
+          ) : null}
           <div className="flex flex-wrap gap-1.5 mt-2">
             {globalSettings.maxDailyLoss && (
               <Badge variant="secondary" className="text-xs">Daily loss: ${globalSettings.maxDailyLoss.toLocaleString()}</Badge>

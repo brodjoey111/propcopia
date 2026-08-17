@@ -1,7 +1,15 @@
 export type AccountRiskStatus = "OK" | "WARN" | "BREACHED" | "UNAVAILABLE";
 
 export interface AccountRiskRuleEvaluation {
-  code: "MAX_DAILY_LOSS" | "MAX_DAILY_LOSS_PCT" | "MIN_ACCOUNT_BALANCE" | "MAX_OPEN_POSITIONS";
+  code:
+    | "MAX_DAILY_LOSS"
+    | "MAX_DAILY_LOSS_PCT"
+    | "MAX_WEEKLY_LOSS"
+    | "MAX_WEEKLY_LOSS_PCT"
+    | "MAX_DRAWDOWN_PCT"
+    | "MAX_CONSECUTIVE_LOSSES"
+    | "MIN_ACCOUNT_BALANCE"
+    | "MAX_OPEN_POSITIONS";
   label: string;
   status: AccountRiskStatus;
   value: number | null;
@@ -138,6 +146,19 @@ export function summarizeGroupRisk(input: {
     };
   }
 
+  if (pending.length > 0) {
+    return {
+      safeCount: safe.length,
+      warningCount: warnings.length,
+      breachedCount: 0,
+      pendingCount: pending.length,
+      blocked: true,
+      statusLabel: "Blocked: risk data pending",
+      tone: "muted",
+      topBlockingAccountNames: pending.slice(0, 3).map((risk) => risk.name),
+    };
+  }
+
   if (warnings.length > 0) {
     return {
       safeCount: safe.length,
@@ -181,6 +202,16 @@ export function describeGroupRiskSummary(
   totalActiveFollowers: number,
 ): GroupRiskDetailView {
   if (summary.blocked) {
+    if (summary.breachedCount === 0 && summary.pendingCount > 0) {
+      return {
+        headline: "Blocked until risk data is ready",
+        detail: summary.topBlockingAccountNames.length > 0
+          ? `${summary.topBlockingAccountNames.join(", ")} ${summary.topBlockingAccountNames.length === 1 ? "is" : "are"} missing data required by configured limits.`
+          : "One or more followers are missing data required by configured limits.",
+        tone: "muted",
+      };
+    }
+
     return {
       headline: "Blocked from start",
       detail: summary.topBlockingAccountNames.length > 0

@@ -29,4 +29,6 @@ test('trade-copy routes preflight breached follower accounts before wiring broke
   assert.match(routesSource, /const breachedFollowerErrors = refreshedFollowerAccounts/);
   assert.match(routesSource, /return res\.status\(409\)\.json\(\{\s*success: false,\s*message: breachedFollowerErrors\[0\]/);
   assert.match(routesSource, /const riskPreflightError = getTradeCopyRiskPreflightError\(savedAccount\);/);
+  assert.match(routesSource, /risk\.status === "UNAVAILABLE"/);
+  assert.match(routesSource, /current data is unavailable for/);
 });

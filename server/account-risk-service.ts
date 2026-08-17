@@ -8,8 +8,18 @@ export type AccountRiskSeverity = "OK" | "WARN" | "BREACHED" | "UNAVAILABLE";
 export type AccountRiskRuleCode =
   | "MAX_DAILY_LOSS"
   | "MAX_DAILY_LOSS_PCT"
+  | "MAX_WEEKLY_LOSS"
+  | "MAX_WEEKLY_LOSS_PCT"
+  | "MAX_DRAWDOWN_PCT"
+  | "MAX_CONSECUTIVE_LOSSES"
   | "MIN_ACCOUNT_BALANCE"
   | "MAX_OPEN_POSITIONS";
+
+export interface AccountRiskMetricsSnapshot {
+  weeklyPnl?: number | null;
+  peakBalance?: number | null;
+  consecutiveLosses?: number | null;
+}
 
 export interface AccountRiskRuleEvaluation {
   code: AccountRiskRuleCode;
@@ -123,6 +133,7 @@ export function evaluateAccountRisk(input: {
   account: Account;
   liveAccount?: AccountLiveSnapshot;
   positionSnapshot?: AccountPositionSnapshot;
+  riskMetrics?: AccountRiskMetricsSnapshot;
 }): AccountRiskEvaluation {
   const balance =
     toNumber(input.liveAccount?.balance) ??
@@ -135,9 +146,26 @@ export function evaluateAccountRisk(input: {
 
   const dailyLossValue = pnl != null && pnl < 0 ? Math.abs(pnl) : 0;
   const dailyLossPctValue =
-    dailyLossValue > 0 && balance != null && balance > 0
-      ? (dailyLossValue / balance) * 100
-      : 0;
+    dailyLossValue === 0
+      ? 0
+      : balance != null && balance > 0
+        ? (dailyLossValue / balance) * 100
+        : null;
+  const weeklyPnl = toNumber(input.riskMetrics?.weeklyPnl);
+  const weeklyLossValue = weeklyPnl == null ? null : weeklyPnl < 0 ? Math.abs(weeklyPnl) : 0;
+  const weeklyLossPctValue =
+    weeklyLossValue == null
+      ? null
+      : weeklyLossValue === 0
+        ? 0
+        : balance != null && balance > 0
+          ? (weeklyLossValue / balance) * 100
+          : null;
+  const peakBalance = toNumber(input.riskMetrics?.peakBalance);
+  const drawdownPctValue =
+    peakBalance != null && peakBalance > 0 && balance != null
+      ? (Math.max(0, peakBalance - balance) / peakBalance) * 100
+      : null;
 
   const rules = [
     evaluateThresholdRule({
@@ -153,6 +181,34 @@ export function evaluateAccountRisk(input: {
       value: dailyLossPctValue,
       limit: toNumber(input.account.maxDailyLossPct),
       valueLabel: "Daily loss %",
+    }),
+    evaluateThresholdRule({
+      code: "MAX_WEEKLY_LOSS",
+      label: "Weekly loss",
+      value: weeklyLossValue,
+      limit: toNumber(input.account.maxWeeklyLoss),
+      valueLabel: "Weekly loss",
+    }),
+    evaluateThresholdRule({
+      code: "MAX_WEEKLY_LOSS_PCT",
+      label: "Weekly loss %",
+      value: weeklyLossPctValue,
+      limit: toNumber(input.account.maxWeeklyLossPct),
+      valueLabel: "Weekly loss %",
+    }),
+    evaluateThresholdRule({
+      code: "MAX_DRAWDOWN_PCT",
+      label: "Drawdown %",
+      value: drawdownPctValue,
+      limit: toNumber(input.account.maxDrawdownPct),
+      valueLabel: "Drawdown %",
+    }),
+    evaluateThresholdRule({
+      code: "MAX_CONSECUTIVE_LOSSES",
+      label: "Consecutive losses",
+      value: toNumber(input.riskMetrics?.consecutiveLosses),
+      limit: toNumber(input.account.maxConsecutiveLosses),
+      valueLabel: "Consecutive losses",
     }),
     evaluateThresholdRule({
       code: "MIN_ACCOUNT_BALANCE",
@@ -178,10 +234,10 @@ export function evaluateAccountRisk(input: {
   const status: AccountRiskSeverity =
     breachCount > 0
       ? "BREACHED"
-      : warningCount > 0
-        ? "WARN"
-        : rules.length > 0 && unavailableCount === rules.length
-          ? "UNAVAILABLE"
+      : unavailableCount > 0
+        ? "UNAVAILABLE"
+        : warningCount > 0
+          ? "WARN"
           : "OK";
 
   return {

@@ -2,7 +2,10 @@ import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 import type { Account } from '@shared/schema';
 import type { RithmicAPI, RithmicOrderFillEvent } from './rithmic-api';
-import { evaluateAccountRisk } from './account-risk-service';
+import {
+  evaluateAccountRisk,
+  type AccountRiskSeverity,
+} from './account-risk-service';
 import { propCopiaEventBus } from './event-bus';
 import type {
   BrokerAdapter,
@@ -12,7 +15,7 @@ import type {
 } from './brokers/BrokerAdapter';
 import { TradovateAdapter } from './brokers/TradovateAdapter';
 import { RithmicAdapter } from './brokers/RithmicAdapter';
-import { evaluateFollowerTradeRule } from './follower-trade-rule-engine';
+import { evaluateFollowerTradeRuleWithEvidence } from './follower-trade-rule-engine';
 import { ExecutionManager } from './execution-manager';
 import { TradeIntentManager } from './trade-intent-manager';
 import type {
@@ -73,6 +76,21 @@ export type FollowerBrokerConfig =
 
 const MAX_LEGACY_FOLLOWER_RECONNECT_ATTEMPTS = 5;
 const VERBOSE_TRADE_COPY_LOGS = process.env.TRADE_COPY_VERBOSE_LOGS === '1';
+
+function toFiniteNumber(value: string | number | null | undefined): number | undefined {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
+  }
+
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeAllowedDirections(
+  value: string | null | undefined,
+): 'both' | 'long_only' | 'short_only' {
+  return value === 'long_only' || value === 'short_only' ? value : 'both';
+}
 
 type SharedRithmicApiAdapter = Pick<
   RithmicAPI,
@@ -140,6 +158,10 @@ export interface TradeRuleObservedPayload {
   reasonCode: string | null;
   side?: TradeSide;
   quantity?: number;
+  riskDecisionFingerprint: string;
+  riskDecisionEvidence: string;
+  riskEvaluatedAt: string;
+  riskRuleVersion: string;
 }
 
 // Follower account connection state
@@ -160,13 +182,26 @@ interface FollowerConnection {
 interface FollowerRuntimeRecord {
   accountId: string;
   brokerAccountId: string;
-  accountRiskBreached: boolean;
+  accountRiskStatus: AccountRiskSeverity;
   positionScaling?: number;
   maxContracts?: number;
   copySizingMode: FollowerSizingMode;
   fixedQuantity?: number;
   reverseCopying: boolean;
   blockedTickers: string[];
+  allowedTickers: string[];
+  allowedDirections: 'both' | 'long_only' | 'short_only';
+  tradingDays: string[];
+  tradingStartTime?: string;
+  tradingEndTime?: string;
+  maxTradesPerDay?: number;
+  minAccountBalance?: number;
+  maxOpenPositions?: number;
+  cooldownAfterLoss?: number;
+  tradesToday: number;
+  currentBalance?: number;
+  currentOpenPositions: number;
+  lastLossAt?: string;
   brokerKind: FollowerBrokerConfig['kind'];
   brokerKey: string;
   adapter: BrokerAdapter;
@@ -399,7 +434,7 @@ export class TradeCopyEngine extends EventEmitter {
     }
 
     const brokerAccountId = this.resolveBrokerAccountId(account, brokerConfig);
-    const accountRiskBreached = evaluateAccountRisk({ account }).status === 'BREACHED';
+    const accountRiskStatus = evaluateAccountRisk({ account }).status;
     
     const accountScaling = account.positionScaling ?? 100;
     const globalScalingPercent = globalScaling ?? 100;
@@ -409,13 +444,26 @@ export class TradeCopyEngine extends EventEmitter {
     const baseRuntime = {
       accountId: account.id,
       brokerAccountId,
-      accountRiskBreached,
+      accountRiskStatus,
       positionScaling: normalizedPositionScaling,
       maxContracts: account.maxContracts ?? undefined,
       copySizingMode: (account.copySizingMode as FollowerSizingMode | null | undefined) ?? 'MULTIPLIER',
       fixedQuantity: account.fixedQuantity ?? undefined,
       reverseCopying: account.reverseCopying ?? false,
       blockedTickers: account.blockedTickers || [],
+      allowedTickers: account.allowedTickers || [],
+      allowedDirections: normalizeAllowedDirections(account.allowedDirections),
+      tradingDays: account.tradingDays || [],
+      tradingStartTime: account.tradingStartTime ?? undefined,
+      tradingEndTime: account.tradingEndTime ?? undefined,
+      maxTradesPerDay: account.maxTradesPerDay ?? undefined,
+      minAccountBalance: toFiniteNumber(account.minAccountBalance),
+      maxOpenPositions: account.maxOpenPositions ?? undefined,
+      cooldownAfterLoss: account.cooldownAfterLoss ?? undefined,
+      tradesToday: 0,
+      currentBalance: toFiniteNumber(account.balance),
+      currentOpenPositions: account.openPositions ?? 0,
+      lastLossAt: undefined,
       brokerKind: brokerConfig.kind,
       brokerKey,
       connectionState: undefined,
@@ -458,6 +506,35 @@ export class TradeCopyEngine extends EventEmitter {
     
     const setupTime = performance.now() - startTime;
     this.logVerbose(`[TradeCopy] Follower ${account.name} added in ${setupTime.toFixed(2)}ms`);
+  }
+
+  updateFollowerRiskSettings(account: Account): boolean {
+    const follower = this.followerConnections.get(account.id);
+    if (!follower) {
+      return false;
+    }
+
+    follower.accountRiskStatus = evaluateAccountRisk({ account }).status;
+    follower.positionScaling = account.positionScaling ?? 100;
+    follower.maxContracts = account.maxContracts ?? undefined;
+    follower.copySizingMode =
+      (account.copySizingMode as FollowerSizingMode | null | undefined) ?? 'MULTIPLIER';
+    follower.fixedQuantity = account.fixedQuantity ?? undefined;
+    follower.reverseCopying = account.reverseCopying ?? false;
+    follower.blockedTickers = account.blockedTickers || [];
+    follower.allowedTickers = account.allowedTickers || [];
+    follower.allowedDirections = normalizeAllowedDirections(account.allowedDirections);
+    follower.tradingDays = account.tradingDays || [];
+    follower.tradingStartTime = account.tradingStartTime ?? undefined;
+    follower.tradingEndTime = account.tradingEndTime ?? undefined;
+    follower.maxTradesPerDay = account.maxTradesPerDay ?? undefined;
+    follower.minAccountBalance = toFiniteNumber(account.minAccountBalance);
+    follower.maxOpenPositions = account.maxOpenPositions ?? undefined;
+    follower.cooldownAfterLoss = account.cooldownAfterLoss ?? undefined;
+    follower.currentBalance = toFiniteNumber(account.balance);
+    follower.currentOpenPositions = account.openPositions ?? 0;
+
+    return true;
   }
 
   async connectRithmicMasterAccount(accountId: string, rithmicApi: RithmicAPI): Promise<void> {
@@ -845,10 +922,20 @@ export class TradeCopyEngine extends EventEmitter {
     // Execute all follower trades in parallel
     const copyPromises = followers.map(async (follower) => {
       const followerStartTime = performance.now();
+      let tradeSlotReserved = false;
+
+      const releaseTradeSlot = () => {
+        if (!tradeSlotReserved) {
+          return;
+        }
+
+        follower.tradesToday = Math.max(0, follower.tradesToday - 1);
+        tradeSlotReserved = false;
+      };
       
       try {
         const tradeTimestamp = new Date(trade.timestamp).toISOString();
-        const ruleResult = evaluateFollowerTradeRule({
+        const riskEvaluation = evaluateFollowerTradeRuleWithEvidence({
           trade: {
             symbol: trade.symbol,
             side: trade.action,
@@ -857,31 +944,38 @@ export class TradeCopyEngine extends EventEmitter {
           },
           follower: {
             enabled: true,
-            isRiskBreached: follower.accountRiskBreached,
-            allowedSymbols: null,
+            riskStatus: follower.accountRiskStatus,
+            allowedSymbols: follower.allowedTickers,
             blockedSymbols: follower.blockedTickers,
-            allowedDirections: null,
-            tradingDays: null,
-            tradingStartTime: null,
-            tradingEndTime: null,
-            maxTradesPerDay: null,
+            allowedDirections: follower.allowedDirections,
+            tradingDays: follower.tradingDays,
+            tradingStartTime: follower.tradingStartTime ?? null,
+            tradingEndTime: follower.tradingEndTime ?? null,
+            maxTradesPerDay: follower.maxTradesPerDay ?? null,
             maxContracts: follower.maxContracts ?? null,
-            minAccountBalance: null,
-            maxOpenPositions: null,
-            cooldownAfterLoss: null,
+            minAccountBalance: follower.minAccountBalance ?? null,
+            maxOpenPositions: follower.maxOpenPositions ?? null,
+            cooldownAfterLoss: follower.cooldownAfterLoss ?? null,
             sizingMode: follower.copySizingMode,
             fixedQuantity: follower.fixedQuantity ?? null,
             multiplier: follower.positionScaling != null ? follower.positionScaling / 100 : null,
             reverseCopy: follower.reverseCopying,
           },
           runtime: {
-            tradesToday: 0,
-            currentBalance: null,
-            currentOpenPositions: 0,
-            lastLossAt: null,
+            tradesToday: follower.tradesToday,
+            currentBalance: follower.currentBalance ?? null,
+            currentOpenPositions: follower.currentOpenPositions,
+            lastLossAt: follower.lastLossAt ?? null,
             now: tradeTimestamp,
           },
         });
+        const ruleResult = riskEvaluation.result;
+        const riskEvidenceFields = {
+          riskDecisionFingerprint: riskEvaluation.evidence.fingerprint,
+          riskDecisionEvidence: JSON.stringify(riskEvaluation.evidence),
+          riskEvaluatedAt: riskEvaluation.evidence.evaluatedAt,
+          riskRuleVersion: riskEvaluation.evidence.version,
+        };
 
         if (ruleResult.decision === 'SKIPPED') {
           const skippedPayload: TradeRuleObservedPayload = {
@@ -891,6 +985,7 @@ export class TradeCopyEngine extends EventEmitter {
             reasonCode: ruleResult.reasonCode,
             side: ruleResult.side,
             quantity: ruleResult.quantity,
+            ...riskEvidenceFields,
           };
           this.emit('ruleSkipped', skippedPayload);
           propCopiaEventBus.publish('rule.skipped', {
@@ -898,6 +993,7 @@ export class TradeCopyEngine extends EventEmitter {
             masterFillId: trade.fillId,
             symbol: trade.symbol,
             reasonCode: ruleResult.reasonCode,
+            ...riskEvidenceFields,
           });
           this.logVerbose(
             `[TradeCopy] Skipping ${follower.accountId} for ${trade.symbol}: ${ruleResult.reasonCode}`
@@ -913,6 +1009,7 @@ export class TradeCopyEngine extends EventEmitter {
             reasonCode: ruleResult.reasonCode,
             side: ruleResult.side,
             quantity: ruleResult.quantity,
+            ...riskEvidenceFields,
           };
           this.emit('ruleRejected', rejectedPayload);
           propCopiaEventBus.publish('rule.rejected', {
@@ -920,6 +1017,7 @@ export class TradeCopyEngine extends EventEmitter {
             masterFillId: trade.fillId,
             symbol: trade.symbol,
             reasonCode: ruleResult.reasonCode,
+            ...riskEvidenceFields,
           });
           console.warn(
             `[TradeCopy] Rejecting ${follower.accountId} for ${trade.symbol}: ${ruleResult.reasonCode}`
@@ -934,6 +1032,7 @@ export class TradeCopyEngine extends EventEmitter {
           reasonCode: null,
           side: ruleResult.side,
           quantity: ruleResult.quantity,
+          ...riskEvidenceFields,
         };
         this.emit('ruleAllowed', allowedPayload);
         propCopiaEventBus.publish('rule.allowed', {
@@ -942,7 +1041,13 @@ export class TradeCopyEngine extends EventEmitter {
           symbol: trade.symbol,
           side: ruleResult.side,
           quantity: ruleResult.quantity,
+          ...riskEvidenceFields,
         });
+
+        if (follower.maxTradesPerDay != null) {
+          follower.tradesToday += 1;
+          tradeSlotReserved = true;
+        }
 
         const intent = this.tradeIntentManager.createIntent({
           masterAccountId: trade.accountId,
@@ -951,6 +1056,7 @@ export class TradeCopyEngine extends EventEmitter {
           symbol: trade.symbol,
           side: ruleResult.side,
           quantity: ruleResult.quantity,
+          ...riskEvidenceFields,
         });
         this.tradeIntentManager.markValidated(intent.intentId);
         this.tradeIntentManager.markReadyToSend(intent.intentId);
@@ -975,6 +1081,7 @@ export class TradeCopyEngine extends EventEmitter {
             },
           });
         } catch (enqueueError) {
+          releaseTradeSlot();
           console.error(`[TradeCopy] Failed to enqueue for ${follower.accountId}:`, enqueueError);
           this.failedSends++;
           return { success: false, reason: 'enqueue_error', error: enqueueError };
@@ -989,6 +1096,7 @@ export class TradeCopyEngine extends EventEmitter {
         }
 
         if (executionResult.status === 'FAILED') {
+          releaseTradeSlot();
           console.error(
             `[TradeCopy] Execution failed for ${follower.accountId}: ${executionResult.errorMessage ?? 'unknown error'}`
           );
@@ -997,11 +1105,16 @@ export class TradeCopyEngine extends EventEmitter {
         }
 
         if (executionResult.status === 'CANCELLED') {
+          releaseTradeSlot();
           console.error(`[TradeCopy] Execution cancelled for ${follower.accountId}`);
           this.failedSends++;
           return { success: false, reason: 'execution_cancelled' };
         }
+
+        releaseTradeSlot();
+        return { success: false, reason: 'execution_incomplete' };
       } catch (error) {
+        releaseTradeSlot();
         console.error(`[TradeCopy] Error copying to ${follower.accountId}:`, error);
         this.failedSends++;
         return { success: false, reason: 'general_error', error };
