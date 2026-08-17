@@ -5,10 +5,22 @@ import { readFileSync } from "node:fs";
 const routesSource = readFileSync("server/routes.ts", "utf8");
 
 test("position sync simulation route is authenticated and validates its payload", () => {
-  assert.match(routesSource, /app\.post\("\/api\/position-sync\/simulations"/);
-  assert.match(routesSource, /if \(!req\.session\?\.userId\) \{/);
-  assert.match(routesSource, /createPositionSyncSimulationSchema\.safeParse\(req\.body\)/);
-  assert.match(routesSource, /message: "Invalid position sync simulation payload"/);
+  const routeStart = routesSource.indexOf('app.post("/api/position-sync/simulations"');
+  const routeEnd = routesSource.indexOf('app.post("/api/position-sync/reviews"', routeStart);
+  const simulationRouteSource = routesSource.slice(routeStart, routeEnd);
+
+  assert.ok(routeStart >= 0 && routeEnd > routeStart);
+  assert.match(simulationRouteSource, /app\.post\("\/api\/position-sync\/simulations"/);
+  assert.match(simulationRouteSource, /if \(!req\.session\?\.userId\) \{/);
+  assert.match(simulationRouteSource, /createPositionSyncSimulationSchema\.safeParse\(req\.body\)/);
+  assert.match(simulationRouteSource, /message: "Invalid position sync simulation payload"/);
+  assert.match(simulationRouteSource, /operations\.position_sync_simulation_failed/);
+  assert.match(simulationRouteSource, /message: "Failed to simulate position sync"/);
+  assert.doesNotMatch(simulationRouteSource, /Error simulating position sync:/);
+  assert.doesNotMatch(
+    simulationRouteSource,
+    /message: error instanceof Error \? error\.message : "Unknown error occurred"/,
+  );
 });
 
 test("position sync simulation route uses the signed-in user's runtime overview", () => {

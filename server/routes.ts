@@ -940,10 +940,13 @@ export function registerRoutes(app: Express): Server {
         reviews,
       });
     } catch (error) {
-      console.error("Error loading copy-group alert reviews:", error);
+      operationalLogger.error("operations.copy_group_alert_reviews_load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: "Failed to export trade history",
+        message: "Failed to load copy-group alert reviews",
       });
     }
   });
@@ -1001,10 +1004,13 @@ export function registerRoutes(app: Express): Server {
         reviews: await copyGroupAlertReviewStore.listReviews(req.session.userId),
       });
     } catch (error) {
-      console.error("Error saving copy-group alert reviews:", error);
+      operationalLogger.error("operations.copy_group_alert_reviews_save_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to save copy-group alert reviews",
       });
     }
   });
@@ -1337,10 +1343,13 @@ export function registerRoutes(app: Express): Server {
         reviews,
       });
     } catch (error) {
-      console.error("Error loading position sync reviews:", error);
+      operationalLogger.error("operations.position_sync_reviews_load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load position sync reviews",
       });
     }
   });
@@ -1413,10 +1422,13 @@ export function registerRoutes(app: Express): Server {
         reviews,
       });
     } catch (error) {
-      console.error("Error simulating position sync:", error);
+      operationalLogger.error("operations.position_sync_simulation_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to simulate position sync",
       });
     }
   });
@@ -1513,10 +1525,13 @@ export function registerRoutes(app: Express): Server {
         reviews,
       });
     } catch (error) {
-      console.error("Error saving position sync reviews:", error);
+      operationalLogger.error("operations.position_sync_reviews_save_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to save position sync reviews",
       });
     }
   });
