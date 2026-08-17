@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const routesSource = readFileSync(new URL("./routes.ts", import.meta.url), "utf8");
+const createRoute = routesSource.slice(
+  routesSource.indexOf('app.post("/api/accounts"'),
+  routesSource.indexOf('app.get("/api/accounts"'),
+);
 
 test("account removal route is authenticated and owner scoped", () => {
   assert.match(routesSource, /app\.delete\("\/api\/accounts\/:id"/);
@@ -24,4 +28,12 @@ test("account removal clears account-scoped runtime state after deletion", () =>
   assert.match(routesSource, /rithmicReconnectValidationStore\.clear\(id\);/);
   assert.match(routesSource, /accountConnectionRecoveryStore\.remove\(userId, id\);/);
   assert.match(routesSource, /clearRuntimeSnapshotCache\(userId\);/);
+});
+
+test("account creation route logs failures safely and avoids returning raw exception messages", () => {
+  assert.match(createRoute, /if \(!req\.session\.userId\) \{/);
+  assert.match(createRoute, /insertAccountSchema\.parse/);
+  assert.match(createRoute, /operationalLogger\.error\("account\.create_failed"/);
+  assert.match(createRoute, /message: "Failed to create account"/);
+  assert.doesNotMatch(createRoute, /error instanceof Error \? error\.message/);
 });

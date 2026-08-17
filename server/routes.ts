@@ -3381,10 +3381,13 @@ export function registerRoutes(app: Express): Server {
         account: newAccount,
       });
     } catch (error) {
-      console.error('Error creating account:', error);
+      operationalLogger.error("account.create_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to create account",
       });
     }
   });
@@ -3491,10 +3494,14 @@ export function registerRoutes(app: Express): Server {
         account: updated,
       });
     } catch (error) {
-      console.error('Error connecting account:', error);
+      operationalLogger.error("account.connect_failed", {
+        error,
+        userId: req.session?.userId,
+        accountId: req.params?.id,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to connect account",
       });
     }
   });
@@ -3601,10 +3608,14 @@ export function registerRoutes(app: Express): Server {
         account: updated,
       });
     } catch (error) {
-      console.error('Error disconnecting account:', error);
+      operationalLogger.error("account.disconnect_failed", {
+        error,
+        userId: req.session?.userId,
+        accountId: req.params?.id,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to disconnect account",
       });
     }
   });

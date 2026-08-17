@@ -23,6 +23,8 @@ test('connect route refreshes saved Rithmic identity after successful authentica
     routesSource,
     /const updated = await updateAccountConnectionState\(\{\s*accountId: id,\s*userId: req\.session\.userId,\s*isConnected: true,/,
   );
+  assert.match(routesSource, /operationalLogger\.error\("account\.connect_failed"/);
+  assert.match(routesSource, /message: "Failed to connect account"/);
 });
 
 test('disconnect route tears down any cached Rithmic session before marking the account disconnected', () => {
@@ -44,6 +46,8 @@ test('disconnect route tears down any cached Rithmic session before marking the 
     routesSource,
     /const updated = await updateAccountConnectionState\(\{\s*accountId: id,\s*userId: req\.session\.userId,\s*isConnected: false,/,
   );
+  assert.match(routesSource, /operationalLogger\.error\("account\.disconnect_failed"/);
+  assert.match(routesSource, /message: "Failed to disconnect account"/);
 });
 
 test('trade copy status route returns the live engine status payload directly', () => {
