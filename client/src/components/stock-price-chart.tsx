@@ -45,7 +45,7 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
   const [brushIndexes, setBrushIndexes] = useState<{ startIndex?: number; endIndex?: number }>({});
   const [yZoom, setYZoom] = useState(1);
 
-  const { data, isLoading } = useQuery<{ success: boolean; data: { timeframe: string; candles: ChartData[] } }>({
+  const { data, isLoading, error } = useQuery<{ success: boolean; data: { timeframe: string; candles: ChartData[] } }>({
     queryKey: [`/api/stock/${symbol}/chart?timeframe=${selectedTimeframe}`],
     enabled: !!symbol,
     refetchInterval: 15000,
@@ -359,8 +359,13 @@ export function StockPriceChart({ symbol }: StockPriceChartProps) {
           </ResponsiveContainer>
         </div>
       ) : (
-        <div style={{ height: `${height}px` }} className="flex items-center justify-center text-muted-foreground">
-          <p>No chart data available</p>
+        <div style={{ height: `${height}px` }} className="flex items-center justify-center px-6 text-center text-muted-foreground">
+          <div>
+            <p className="font-medium text-foreground">Live chart unavailable</p>
+            <p className="mt-2 text-sm">
+              {error instanceof Error ? error.message : "No live chart history is available. No simulated candles are shown."}
+            </p>
+          </div>
         </div>
       )}
     </>

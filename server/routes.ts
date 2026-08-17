@@ -4204,77 +4204,6 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Helper function to generate simulated chart data
-  function generateSimulatedChartData(symbol: string, timeframe: string, res: any) {
-    const basePrice = 250 + Math.random() * 50; // Random base price between 250-300
-    const now = Date.now();
-    const candles: any[] = [];
-
-    let dataPoints = 30;
-    let interval = 24 * 60 * 60 * 1000; // 1 day
-
-    switch (timeframe) {
-      case '1D':
-        dataPoints = 78; // Every 5 minutes for 1 day
-        interval = 5 * 60 * 1000;
-        break;
-      case '5D':
-        dataPoints = 120;
-        interval = 15 * 60 * 1000;
-        break;
-      case '1M':
-        dataPoints = 30;
-        interval = 24 * 60 * 60 * 1000;
-        break;
-      case '6M':
-        dataPoints = 180;
-        interval = 24 * 60 * 60 * 1000;
-        break;
-      case '1Y':
-        dataPoints = 365;
-        interval = 24 * 60 * 60 * 1000;
-        break;
-      case '5Y':
-        dataPoints = 260; // Weekly data
-        interval = 7 * 24 * 60 * 60 * 1000;
-        break;
-    }
-
-    let price = basePrice;
-    const volatility = 0.02; // 2% volatility
-
-    for (let i = dataPoints; i >= 0; i--) {
-      const timestamp = now - (i * interval);
-      const changePercent = (Math.random() - 0.5) * volatility * 2;
-      const open = price;
-      const change = open * changePercent;
-      const close = open + change;
-      const high = Math.max(open, close) + Math.abs(change) * Math.random();
-      const low = Math.min(open, close) - Math.abs(change) * Math.random();
-
-      candles.push({
-        timestamp,
-        date: new Date(timestamp).toISOString(),
-        open,
-        high,
-        low,
-        close,
-        volume: Math.floor(10000000 + Math.random() * 50000000),
-      });
-
-      price = close;
-    }
-
-    return res.json({
-      success: true,
-      data: {
-        timeframe,
-        candles,
-        simulated: true, // Flag to indicate this is simulated data
-      },
-    });
-  }
-
   // Historical price data endpoint for charting (using Alpha Vantage)
   app.get("/api/stock/:symbol/chart", async (req, res) => {
     try {
@@ -4283,9 +4212,12 @@ export function registerRoutes(app: Express): Server {
       const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
 
       if (!apiKey) {
-        return res.status(500).json({
+        return res.status(503).json({
           success: false,
-          message: "Alpha Vantage API key not configured",
+          source: "UNAVAILABLE",
+          isLive: false,
+          message: "Live chart data is unavailable because Alpha Vantage is not configured. No simulated candles are shown.",
+          data: { timeframe, candles: [] },
         });
       }
 
@@ -4329,17 +4261,27 @@ export function registerRoutes(app: Express): Server {
       const response = await fetch(url);
       const data = await response.json();
 
-      // Check for API errors - use fallback simulated data if rate limited
+      // Never replace provider failures with generated prices.
       if (data.Note || data['Error Message'] || data.Information) {
-        console.log('Alpha Vantage rate limit hit, using simulated data');
-        return generateSimulatedChartData(symbol, timeframe as string, res);
+        return res.status(503).json({
+          success: false,
+          source: "UNAVAILABLE",
+          isLive: false,
+          message: "Live chart data is temporarily unavailable from Alpha Vantage. No simulated candles are shown.",
+          data: { timeframe, candles: [] },
+        });
       }
 
       // Extract time series data
       const timeSeriesKey = Object.keys(data).find(key => key.includes('Time Series'));
       if (!timeSeriesKey || !data[timeSeriesKey]) {
-        console.log('No time series data, using simulated data');
-        return generateSimulatedChartData(symbol, timeframe as string, res);
+        return res.status(502).json({
+          success: false,
+          source: "UNAVAILABLE",
+          isLive: false,
+          message: "Alpha Vantage returned no live chart history. No simulated candles are shown.",
+          data: { timeframe, candles: [] },
+        });
       }
 
       const timeSeries = data[timeSeriesKey];
@@ -4381,6 +4323,8 @@ export function registerRoutes(app: Express): Server {
 
       return res.json({
         success: true,
+        source: "ALPHA_VANTAGE",
+        isLive: true,
         data: {
           timeframe,
           candles: filtered,
@@ -4390,7 +4334,10 @@ export function registerRoutes(app: Express): Server {
       console.error('Error fetching chart data:', error);
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Failed to fetch chart data',
+        source: "UNAVAILABLE",
+        isLive: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch live chart data',
+        data: { timeframe: req.query.timeframe ?? '1M', candles: [] },
       });
     }
   });
