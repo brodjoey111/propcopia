@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -14,21 +15,32 @@ import { HelpChat } from "@/components/help-chat";
 import { LeaderboardTicker } from "@/components/leaderboard-ticker";
 import { KillSwitchBanner } from "@/components/kill-switch";
 import { TopNotificationBanner } from "@/components/top-notification-banner";
-import NotFound from "@/pages/not-found";
-import Landing from "@/pages/landing";
-import Auth from "@/pages/auth";
-import Dashboard from "@/pages/dashboard";
-import Accounts from "@/pages/accounts";
-import Trades from "@/pages/trades";
-import Activity from "@/pages/activity";
-import Notifications from "@/pages/notifications";
-import Social from "@/pages/social";
-import EconomicCalendar from "@/pages/economic-calendar";
-import MarketMovers from "@/pages/market-movers";
-import Watchlist from "@/pages/watchlist";
-import Settings from "@/pages/settings";
-import TestConnection from "@/pages/test-connection";
-import Pricing from "@/pages/pricing";
+const NotFound = lazy(() => import("@/pages/not-found"));
+const Landing = lazy(() => import("@/pages/landing"));
+const Auth = lazy(() => import("@/pages/auth"));
+const Dashboard = lazy(() => import("@/pages/dashboard"));
+const Accounts = lazy(() => import("@/pages/accounts"));
+const Trades = lazy(() => import("@/pages/trades"));
+const Activity = lazy(() => import("@/pages/activity"));
+const Notifications = lazy(() => import("@/pages/notifications"));
+const Social = lazy(() => import("@/pages/social"));
+const EconomicCalendar = lazy(() => import("@/pages/economic-calendar"));
+const MarketMovers = lazy(() => import("@/pages/market-movers"));
+const Watchlist = lazy(() => import("@/pages/watchlist"));
+const Settings = lazy(() => import("@/pages/settings"));
+const TestConnection = lazy(() => import("@/pages/test-connection"));
+const Pricing = lazy(() => import("@/pages/pricing"));
+
+function PageLoadingFallback() {
+  return (
+    <div className="flex min-h-[45vh] items-center justify-center px-6" role="status" aria-live="polite">
+      <div className="rounded-2xl border border-white/8 bg-[rgba(8,16,32,0.82)] px-6 py-5 text-center shadow-2xl backdrop-blur-xl">
+        <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-cyan-300/20 border-t-cyan-300" />
+        <p className="mt-3 text-sm font-medium text-zinc-200">Opening workspace...</p>
+      </div>
+    </div>
+  );
+}
 
 function AppRouter() {
   return (
@@ -98,19 +110,21 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <UserProvider>
-          {isPublicPage && <CandlestickBackground />}
-          {location === "/" ? (
-            <Landing />
-          ) : location === "/auth" ? (
-            <Auth />
-          ) : location === "/pricing" ? (
-            <Pricing />
-          ) : (
-            <>
-              <CandlestickBackground />
-              <AppLayout />
-            </>
-          )}
+          <Suspense fallback={<PageLoadingFallback />}>
+            {isPublicPage && <CandlestickBackground />}
+            {location === "/" ? (
+              <Landing />
+            ) : location === "/auth" ? (
+              <Auth />
+            ) : location === "/pricing" ? (
+              <Pricing />
+            ) : (
+              <>
+                <CandlestickBackground />
+                <AppLayout />
+              </>
+            )}
+          </Suspense>
           <Toaster />
         </UserProvider>
       </TooltipProvider>
