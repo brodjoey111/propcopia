@@ -458,8 +458,14 @@ export default function Dashboard() {
       completed: 0,
     },
     actionCounts: [],
-    items: [],
-  };
+      items: [],
+    };
+  const brokerWaitCount = executionRecovery.items.filter(
+    (item) => item.lifecycleStatus === "SENT",
+  ).length;
+  const fillWaitCount = executionRecovery.items.filter(
+    (item) => item.lifecycleStatus === "ACKNOWLEDGED",
+  ).length;
   const tradeLoggerStats = runtimeOverviewData?.tradeLogger ?? {
     pendingCount: 0,
     maxPendingCount: 0,
@@ -1281,12 +1287,13 @@ export default function Dashboard() {
                 </Badge>
               </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
                 {[
                   { label: "Failed", value: executionRecovery.counts.failed },
                   { label: "Stale", value: executionRecovery.counts.stale },
                   { label: "Partial", value: executionRecovery.counts.partial },
-                  { label: "Active", value: executionRecovery.counts.active },
+                  { label: "Broker wait", value: brokerWaitCount },
+                  { label: "Fill wait", value: fillWaitCount },
                   { label: "Cleared", value: executionRecovery.counts.completed },
                 ].map((item) => (
                   <div key={item.label} className="rounded-2xl border border-white/8 bg-black/10 px-3 py-3">

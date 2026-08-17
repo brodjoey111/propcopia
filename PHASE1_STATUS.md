@@ -28,6 +28,7 @@ Branch: `feature/broker-manager`
 - Client trade-history lifecycle summaries now distinguish broker-submission waits from acknowledged fill waits so `SENT` executions stay visible in dashboard/operator views
 - Server execution-recovery payloads now distinguish fresh and stale broker-submission waits from acknowledged and partial-fill states for dashboard and operator follow-up consumers
 - Activity execution follow-up boards now surface broker-wait and fill-wait labels directly in the operator queue instead of collapsing every live execution into a generic active state
+- Dashboard execution-recovery summary cards now break broker-submission waits and acknowledged fill waits out into separate counts instead of one generic active bucket
 
 ## Current Verification Baseline
 
@@ -36,6 +37,7 @@ Branch: `feature/broker-manager`
 - Focused client execution-summary suite: `29/29` passing on 2026-08-17
 - Focused execution-recovery suite: `18/18` passing on 2026-08-17
 - Focused activity execution follow-up suite: `10/10` passing on 2026-08-17
+- Focused dashboard execution-recovery suite: `5/5` passing on 2026-08-17
 
 ## Remaining Phase 1 Work
 
