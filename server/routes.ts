@@ -56,6 +56,7 @@ import { reconnectSavedRithmicTestAccount } from "./rithmic-saved-reconnect-serv
 import { rithmicReconnectCoordinator } from "./reconnect-coordinator";
 import { accountConnectionRecoveryStore } from "./account-connection-recovery-store";
 import { evaluateAccountRemoval } from "./account-removal-guard";
+import { parseAccountName } from "./account-name";
 import {
   buildAccountsRuntimeOverview,
   buildDashboardRuntimeOverview,
@@ -3619,6 +3620,38 @@ export function registerRoutes(app: Express): Server {
       });
     } catch (error) {
       console.error("Error removing account:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.patch("/api/accounts/:id/name", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
+
+      const parsedName = parseAccountName(req.body);
+      if (!parsedName.success) {
+        return res.status(400).json({ success: false, message: parsedName.message });
+      }
+
+      const [updated] = await db
+        .update(accounts)
+        .set({ name: parsedName.name })
+        .where(and(eq(accounts.id, req.params.id), eq(accounts.userId, req.session.userId)))
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ success: false, message: "Account not found" });
+      }
+
+      clearRuntimeSnapshotCache(req.session.userId);
+      return res.json({ success: true, account: updated });
+    } catch (error) {
+      console.error("Error renaming account:", error);
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : "Unknown error occurred",

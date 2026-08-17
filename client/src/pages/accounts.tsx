@@ -6,6 +6,7 @@ import { BrokerSettingsDialog } from "@/components/broker-settings-dialog";
 import { RiskSettingsDialog, type RiskSettings } from "@/components/risk-settings-dialog";
 import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
 import { RemoveAccountAlert } from "@/components/remove-account-alert";
+import { RenameAccountDialog } from "@/components/rename-account-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { AccountGroupsView } from "@/components/account-groups";
 import { Button } from "@/components/ui/button";
@@ -73,7 +74,7 @@ import {
   SESSION_STATUS_POLL_MS,
 } from "@/lib/live-query-config";
 import type { AccountsRuntimeOverviewResponse } from "@/lib/runtime-overview";
-import { ShieldAlert, Loader2, LayoutGrid, List, Table2, Settings, Globe, Layers, Trash2 } from "lucide-react";
+import { ShieldAlert, Loader2, LayoutGrid, List, Table2, Settings, Globe, Layers, Trash2, Pencil } from "lucide-react";
 import type { Account } from "@shared/schema";
 import type { LicenseSnapshot } from "@shared/billing";
 
@@ -336,6 +337,35 @@ export default function Accounts() {
       queryClient.invalidateQueries({ queryKey: ['/api/billing/status'] });
     },
   });
+  const renameAccountMutation = useMutation({
+    mutationFn: async ({ accountId, name }: { accountId: string; name: string }) => {
+      const response = await fetch(`/api/accounts/${accountId}/name`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.message ?? 'Failed to rename account');
+      }
+      return payload as { account: Account };
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData<{ success: boolean; accounts: Account[] } | undefined>(
+        ['/api/accounts'],
+        (current) => current
+          ? {
+              ...current,
+              accounts: current.accounts.map((account) =>
+                account.id === result.account.id ? result.account : account,
+              ),
+            }
+          : current,
+      );
+      refreshAccountsRuntimeOverviewQuery();
+    },
+  });
   const revalidateRithmicReadinessMutation = useMutation({
     mutationFn: (accountId: string) => revalidateRithmicReadiness(accountId),
     onSuccess: () => {
@@ -416,6 +446,23 @@ export default function Accounts() {
         description: error instanceof Error ? error.message : "Unknown error",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleRenameAccount = async (account: Account, name: string) => {
+    try {
+      await renameAccountMutation.mutateAsync({ accountId: account.id, name });
+      toast({
+        title: "Account Renamed",
+        description: `${account.name} is now shown as ${name}.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Account Not Renamed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+      throw error;
     }
   };
 
@@ -783,7 +830,8 @@ export default function Accounts() {
   const accountActionPending =
     connectAccountMutation.isPending ||
     disconnectAccountMutation.isPending ||
-    removeAccountMutation.isPending;
+    removeAccountMutation.isPending ||
+    renameAccountMutation.isPending;
   const accountControlsDisabled =
     sessionActionPending ||
     accountActionPending;
@@ -1138,6 +1186,28 @@ export default function Accounts() {
       {!options?.iconOnly && <span className="ml-2">Remove saved account</span>}
     </Button>
   );
+  const renderRenameAccountButton = (
+    account: Account,
+    options?: { className?: string; iconOnly?: boolean },
+  ) => (
+    <RenameAccountDialog
+      accountId={account.id}
+      accountName={account.name}
+      onSave={(name) => handleRenameAccount(account, name)}
+    >
+      <Button
+        variant="outline"
+        size="sm"
+        className={options?.className}
+        disabled={accountControlsDisabled}
+        title="Rename saved account"
+        data-testid={`button-rename-account-${account.id}`}
+      >
+        <Pencil className={options?.iconOnly ? "h-3 w-3" : "mr-2 h-3 w-3"} />
+        {!options?.iconOnly && "Rename"}
+      </Button>
+    </RenameAccountDialog>
+  );
   const renderCompactAccountActions = (account: Account) => (
     <>
       {renderSessionMasterButton(account, {
@@ -1152,6 +1222,7 @@ export default function Accounts() {
         iconOnly: true,
         title: account.riskMode === 'global' ? 'Using global defaults' : 'Custom risk settings',
       })}
+      {renderRenameAccountButton(account, { iconOnly: true })}
       {renderAccountConnectionButton(account)}
       {renderRemoveAccountButton(account, { iconOnly: true })}
     </>
@@ -2048,6 +2119,7 @@ export default function Accounts() {
                         {renderAccountTypeButton(account, { className: 'w-full' })}
                         {renderBrokerSettingsButton(account, { className: 'w-full' })}
                         {renderRiskSettingsButton(account, { className: 'w-full' })}
+                        {renderRenameAccountButton(account, { className: 'w-full' })}
                         {renderRemoveAccountButton(account, { className: 'w-full text-destructive' })}
                       </div>
                     }
