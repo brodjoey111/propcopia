@@ -84,6 +84,7 @@ import {
 import { establishAuthenticatedSession } from "./auth-session";
 import { buildLicenseSnapshot } from "./license-service";
 import { operationalLogger } from "./operational-logger";
+import { buildNotificationDeliveryPreview } from "@shared/notification-policy";
 
 tradeHistoryPersistence.attach(tradeHistoryStore);
 
@@ -1874,6 +1875,14 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
       const notifications = await getOrCreateRuntimeSnapshot({
         scope: "notifications",
         userId: req.session.userId,
@@ -1918,9 +1927,18 @@ export function registerRoutes(app: Express): Server {
         },
       });
 
+      const delivery = buildNotificationDeliveryPreview(notifications.notifications, {
+        notifyTrades: user.notifyTrades ?? true,
+        notifyErrors: user.notifyErrors ?? true,
+        notifyConnection: user.notifyConnection ?? true,
+      });
+
       return res.json({
         success: true,
         ...notifications,
+        unreadEstimate: delivery.notifications.length,
+        notifications: delivery.notifications,
+        delivery: delivery.summary,
       });
     } catch (error) {
       console.error("Error building notifications feed:", error);

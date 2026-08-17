@@ -1,3 +1,9 @@
+import {
+  applyNotificationPolicy,
+  type NotificationDeliverySummary,
+  type NotificationPreferences,
+} from "@shared/notification-policy";
+
 export interface NotificationItem {
   id: string;
   timestamp: string;
@@ -45,6 +51,7 @@ export interface NotificationsResponse {
   generatedAt: string;
   unreadEstimate: number;
   notifications: NotificationItem[];
+  delivery?: NotificationDeliverySummary;
 }
 
 export interface NotificationSummary {
@@ -67,11 +74,7 @@ export interface ClusteredNotificationItem extends NotificationItem {
   relatedItems: NotificationItem[];
 }
 
-export interface NotificationPreferences {
-  notifyTrades?: boolean;
-  notifyErrors?: boolean;
-  notifyConnection?: boolean;
-}
+export type { NotificationPreferences } from "@shared/notification-policy";
 
 export type NotificationFilter = "all" | "trade" | "copy_group" | "position" | "risk" | "error" | "warn";
 
@@ -344,23 +347,7 @@ export function applyNotificationPreferences(
   notifications: NotificationItem[],
   preferences: NotificationPreferences,
 ): NotificationItem[] {
-  return notifications.filter((notification) => {
-    if (notification.category === "trade" && preferences.notifyTrades === false) {
-      return false;
-    }
-
-    const isConnectionNotification =
-      notification.category === "copy_group" || notification.category === "position";
-    if (isConnectionNotification && preferences.notifyConnection === false) {
-      return false;
-    }
-
-    if (notification.severity === "error" && preferences.notifyErrors === false) {
-      return false;
-    }
-
-    return true;
-  });
+  return applyNotificationPolicy(notifications, preferences);
 }
 
 export function buildRiskNotificationFollowUpQueue(

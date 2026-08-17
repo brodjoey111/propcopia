@@ -708,6 +708,21 @@ export default function Settings() {
                   data-testid="switch-show-reviewed-notifications"
                 />
               </div>
+
+              <div className="grid gap-3 border-t border-white/8 pt-5 sm:grid-cols-3">
+                <div className="rounded-xl border border-emerald-400/15 bg-emerald-400/[0.06] p-3">
+                  <p className="text-xs font-medium text-emerald-200">In-app</p>
+                  <p className="mt-1 text-xs text-emerald-100/70">Active while PropCopia is open</p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                  <p className="text-xs font-medium text-zinc-300">Email</p>
+                  <p className="mt-1 text-xs text-zinc-500">Not connected yet</p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                  <p className="text-xs font-medium text-zinc-300">Push</p>
+                  <p className="mt-1 text-xs text-zinc-500">Not connected yet</p>
+                </div>
+              </div>
             </div>
           </Card>
         </div>

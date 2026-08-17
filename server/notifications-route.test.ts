@@ -16,4 +16,11 @@ test("routes expose the authenticated notifications endpoint", () => {
   assert.match(routesSource, /rithmicInstances/);
   assert.match(routesSource, /rithmicReconnectValidationStore/);
   assert.match(routesSource, /rithmicReadinessReviewStore/);
+  assert.match(routesSource, /storage\.getUser\(req\.session\.userId\)/);
+  assert.match(routesSource, /buildNotificationDeliveryPreview\(notifications\.notifications/);
+  assert.match(routesSource, /notifyTrades: user\.notifyTrades \?\? true/);
+  assert.match(routesSource, /notifyErrors: user\.notifyErrors \?\? true/);
+  assert.match(routesSource, /notifyConnection: user\.notifyConnection \?\? true/);
+  assert.match(routesSource, /unreadEstimate: delivery\.notifications\.length/);
+  assert.match(routesSource, /delivery: delivery\.summary/);
 });
