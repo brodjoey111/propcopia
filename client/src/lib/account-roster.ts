@@ -1,6 +1,19 @@
 export type AccountRosterFilter = "all" | "connected" | "disconnected" | "master" | "follower";
 export type AccountRosterSort = "name" | "connection" | "role";
 
+export function normalizeAccountRosterFilter(value: string | null): AccountRosterFilter {
+  return value === "connected" ||
+    value === "disconnected" ||
+    value === "master" ||
+    value === "follower"
+    ? value
+    : "all";
+}
+
+export function normalizeAccountRosterSort(value: string | null): AccountRosterSort {
+  return value === "connection" || value === "role" ? value : "name";
+}
+
 export interface AccountRosterItem {
   account: {
     id: string;

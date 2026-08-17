@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { filterAndSortAccountRoster, type AccountRosterItem } from "./account-roster";
+import {
+  filterAndSortAccountRoster,
+  normalizeAccountRosterFilter,
+  normalizeAccountRosterSort,
+  type AccountRosterItem,
+} from "./account-roster";
 
 const items: AccountRosterItem[] = [
   { account: { id: "2", name: "Zulu Follower", platform: "Rithmic", accountType: "follower", isConnected: false } },
@@ -36,4 +41,13 @@ test("account roster sorting never mutates the source response", () => {
   const roleOrder = filterAndSortAccountRoster(items, { query: "", filter: "all", sort: "role" });
   assert.deepEqual(roleOrder.map((item) => item.account.id), ["1", "3", "2"]);
   assert.deepEqual(items.map((item) => item.account.id), sourceOrder);
+});
+
+test("account roster preferences reject stale or unsupported stored values", () => {
+  assert.equal(normalizeAccountRosterFilter("connected"), "connected");
+  assert.equal(normalizeAccountRosterFilter("unknown"), "all");
+  assert.equal(normalizeAccountRosterFilter(null), "all");
+  assert.equal(normalizeAccountRosterSort("role"), "role");
+  assert.equal(normalizeAccountRosterSort("profit"), "name");
+  assert.equal(normalizeAccountRosterSort(null), "name");
 });

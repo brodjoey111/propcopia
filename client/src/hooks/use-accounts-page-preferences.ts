@@ -4,8 +4,18 @@ import {
   DEFAULT_RISK_SETTINGS,
   type RiskSettings,
 } from "@/components/risk-settings-dialog";
+import {
+  normalizeAccountRosterFilter,
+  normalizeAccountRosterSort,
+  type AccountRosterFilter,
+  type AccountRosterSort,
+} from "@/lib/account-roster";
 
 export type AccountsViewMode = "grid" | "list" | "table" | "groups";
+
+export function normalizeAccountsViewMode(value: string | null): AccountsViewMode {
+  return value === "list" || value === "table" || value === "groups" ? value : "grid";
+}
 
 interface UseAccountsPagePreferencesOptions {
   connectedAccountIds: string[];
@@ -15,7 +25,27 @@ interface UseAccountsPagePreferencesOptions {
 export function useAccountsPagePreferences(
   options: UseAccountsPagePreferencesOptions,
 ) {
-  const [viewMode, setViewMode] = useState<AccountsViewMode>("grid");
+  const [viewMode, setViewMode] = useState<AccountsViewMode>(() => {
+    try {
+      return normalizeAccountsViewMode(localStorage.getItem("accounts-view-mode"));
+    } catch {
+      return "grid";
+    }
+  });
+  const [rosterFilter, setRosterFilter] = useState<AccountRosterFilter>(() => {
+    try {
+      return normalizeAccountRosterFilter(localStorage.getItem("accounts-roster-filter"));
+    } catch {
+      return "all";
+    }
+  });
+  const [rosterSort, setRosterSort] = useState<AccountRosterSort>(() => {
+    try {
+      return normalizeAccountRosterSort(localStorage.getItem("accounts-roster-sort"));
+    } catch {
+      return "name";
+    }
+  });
   const [sessionMasterAccountId, setSessionMasterAccountId] = useState<string | null>(() => {
     try {
       return localStorage.getItem("copy-session-master-account-id");
@@ -34,15 +64,6 @@ export function useAccountsPagePreferences(
     }
   });
   const [globalSettingsServerSynced, setGlobalSettingsServerSynced] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("accounts-view-mode");
-      if (saved) {
-        setViewMode(saved as AccountsViewMode);
-      }
-    }
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -88,6 +109,18 @@ export function useAccountsPagePreferences(
   }, [viewMode]);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("accounts-roster-filter", rosterFilter);
+    }
+  }, [rosterFilter]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("accounts-roster-sort", rosterSort);
+    }
+  }, [rosterSort]);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -131,6 +164,10 @@ export function useAccountsPagePreferences(
   return {
     viewMode,
     setViewMode,
+    rosterFilter,
+    setRosterFilter,
+    rosterSort,
+    setRosterSort,
     sessionMasterAccountId,
     setSessionMasterAccountId,
     activeSessionMasterAccountId: options.serverMasterAccountId ?? sessionMasterAccountId,

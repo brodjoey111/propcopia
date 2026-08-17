@@ -133,8 +133,6 @@ export default function Accounts() {
     accountName: string;
   }>({ open: false, accountId: '', accountName: '' });
   const [rosterQuery, setRosterQuery] = useState("");
-  const [rosterFilter, setRosterFilter] = useState<AccountRosterFilter>("all");
-  const [rosterSort, setRosterSort] = useState<AccountRosterSort>("name");
   const deferredRosterQuery = useDeferredValue(rosterQuery);
 
   const { data: accountsData, isLoading } = useQuery<{ success: boolean; accounts: Account[] }>({
@@ -243,6 +241,10 @@ export default function Accounts() {
   const {
     viewMode,
     setViewMode,
+    rosterFilter,
+    setRosterFilter,
+    rosterSort,
+    setRosterSort,
     setSessionMasterAccountId,
     activeSessionMasterAccountId,
     globalSettings,
