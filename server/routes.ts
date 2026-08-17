@@ -2651,6 +2651,10 @@ export function registerRoutes(app: Express): Server {
   });
   app.post("/api/tradovate/test-connection", async (req, res) => {
     try {
+      if (!req.session?.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
+
       const { username, password, cid, secret, environment } = req.body;
 
       if (!username || !password) {
@@ -2703,6 +2707,10 @@ export function registerRoutes(app: Express): Server {
 
   app.post("/api/tradeify/test-connection", async (req, res) => {
     try {
+      if (!req.session?.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
+
       const { username, apiKey } = req.body;
 
       if (!username || !apiKey) {
@@ -2758,6 +2766,10 @@ export function registerRoutes(app: Express): Server {
 
   app.post("/api/rithmic/test-connection", async (req, res) => {
     try {
+      if (!req.session?.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
+
       const { username, password, systemName, environment } = req.body;
 
       if (!username || !password) {
@@ -2920,7 +2932,24 @@ export function registerRoutes(app: Express): Server {
 
   app.get("/api/tradovate/accounts/:username", async (req, res) => {
     try {
+      if (!req.session?.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
+
       const { username } = req.params;
+      const [ownedAccount] = await db
+        .select({ id: accounts.id })
+        .from(accounts)
+        .where(and(
+          eq(accounts.userId, req.session.userId),
+          eq(accounts.tradovateUsername, username),
+        ))
+        .limit(1);
+
+      if (!ownedAccount) {
+        return res.status(404).json({ success: false, message: "Tradovate account not found" });
+      }
+
       const tradovateAPI = tradovateInstances.get(username);
 
       if (!tradovateAPI) {
@@ -2937,10 +2966,10 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      const accounts = await tradovateAPI.getAccountInfo();
+      const brokerAccounts = await tradovateAPI.getAccountInfo();
       return res.json({
         success: true,
-        data: accounts,
+        data: brokerAccounts,
       });
     } catch (error) {
       console.error('Error fetching Tradovate accounts:', error);
@@ -2953,7 +2982,24 @@ export function registerRoutes(app: Express): Server {
 
   app.get("/api/tradovate/positions/:username", async (req, res) => {
     try {
+      if (!req.session?.userId) {
+        return res.status(401).json({ success: false, message: "Not authenticated" });
+      }
+
       const { username } = req.params;
+      const [ownedAccount] = await db
+        .select({ id: accounts.id })
+        .from(accounts)
+        .where(and(
+          eq(accounts.userId, req.session.userId),
+          eq(accounts.tradovateUsername, username),
+        ))
+        .limit(1);
+
+      if (!ownedAccount) {
+        return res.status(404).json({ success: false, message: "Tradovate account not found" });
+      }
+
       const tradovateAPI = tradovateInstances.get(username);
 
       if (!tradovateAPI) {
