@@ -10,6 +10,9 @@ test("settings provides an authenticated password-change flow", () => {
   assert.match(source, /input-current-password/);
   assert.match(source, /input-new-password/);
   assert.match(source, /input-confirm-new-password/);
+  assert.match(source, /changePasswordSchema\.safeParse/);
+  assert.match(source, /password-change-validation-message/);
+  assert.match(source, /Password update blocked/);
   assert.match(source, /PASSWORD_MIN_LENGTH/);
   assert.match(source, /setCurrentPassword\(""\)/);
 });

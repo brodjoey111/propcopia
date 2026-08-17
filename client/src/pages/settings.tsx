@@ -22,7 +22,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { EmptyState } from "@/components/empty-state";
 import type { Account } from "@shared/schema";
-import { PASSWORD_MIN_LENGTH } from "@shared/auth";
+import { changePasswordSchema, PASSWORD_MIN_LENGTH } from "@shared/auth";
 import type { LicenseSnapshot } from "@shared/billing";
 import { prepareProfileImage } from "@/lib/profile-image";
 
@@ -77,6 +77,17 @@ export default function Settings() {
   const followerAccounts = (accountsData?.accounts ?? []).filter(
     (account) => account.accountType === "follower",
   );
+  const passwordValidation = changePasswordSchema.safeParse({
+    currentPassword,
+    newPassword,
+  });
+  const passwordValidationMessage = !passwordValidation.success
+    ? passwordValidation.error.issues[0]?.message ?? "Enter a valid new password."
+    : null;
+  const passwordsMatch = !confirmNewPassword || newPassword === confirmNewPassword;
+  const passwordFormMessage = !passwordsMatch
+    ? "Re-enter the same new password in both fields."
+    : passwordValidationMessage;
 
   useEffect(() => {
     setBio(user?.bio || "");
@@ -222,20 +233,18 @@ export default function Settings() {
       });
     },
   });
+  const canSubmitPasswordChange =
+    !changePasswordMutation.isPending &&
+    Boolean(currentPassword) &&
+    Boolean(newPassword) &&
+    Boolean(confirmNewPassword) &&
+    !passwordFormMessage;
 
   const handleChangePassword = () => {
-    if (newPassword.length < PASSWORD_MIN_LENGTH) {
+    if (passwordFormMessage) {
       toast({
-        title: "Password too short",
-        description: `Use at least ${PASSWORD_MIN_LENGTH} characters.`,
-        variant: "destructive",
-      });
-      return;
-    }
-    if (newPassword !== confirmNewPassword) {
-      toast({
-        title: "Passwords do not match",
-        description: "Re-enter the same new password in both fields.",
+        title: "Password update blocked",
+        description: passwordFormMessage,
         variant: "destructive",
       });
       return;
@@ -447,14 +456,17 @@ export default function Settings() {
               <p className="text-xs text-muted-foreground">
                 Use at least {PASSWORD_MIN_LENGTH} characters. Longer passphrases are encouraged.
               </p>
+              {passwordFormMessage ? (
+                <p
+                  className="text-xs text-amber-300"
+                  data-testid="password-change-validation-message"
+                >
+                  {passwordFormMessage}
+                </p>
+              ) : null}
               <Button
                 onClick={handleChangePassword}
-                disabled={
-                  changePasswordMutation.isPending ||
-                  !currentPassword ||
-                  !newPassword ||
-                  !confirmNewPassword
-                }
+                disabled={!canSubmitPasswordChange}
                 data-testid="button-change-password"
               >
                 {changePasswordMutation.isPending ? "Updating..." : "Update Password"}

@@ -20,6 +20,8 @@ export async function establishAuthenticatedSession(
   await new Promise<void>((resolve, reject) => {
     req.session.save((error) => {
       if (error) {
+        delete req.session.userId;
+        delete req.session.username;
         reject(error);
         return;
       }

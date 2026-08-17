@@ -51,3 +51,30 @@ test("session rotation errors stop authentication before identity is assigned", 
   );
   assert.equal(session.userId, "old-user");
 });
+
+test("save errors clear the pending authenticated identity before failing", async () => {
+  const session = {
+    regenerate(callback: (error?: Error) => void) {
+      callback();
+    },
+    save(callback: (error?: Error) => void) {
+      callback(new Error("save failed"));
+    },
+  } as {
+    userId?: string;
+    username?: string;
+    regenerate(callback: (error?: Error) => void): void;
+    save(callback: (error?: Error) => void): void;
+  };
+
+  await assert.rejects(
+    establishAuthenticatedSession(
+      { session } as unknown as Request,
+      { id: "user-2", username: "operator" },
+    ),
+    { message: "save failed" },
+  );
+
+  assert.equal(session.userId, undefined);
+  assert.equal(session.username, undefined);
+});
