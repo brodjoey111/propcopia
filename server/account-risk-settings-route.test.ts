@@ -15,6 +15,8 @@ test('risk settings route keeps account lookup and update scoped to the signed-i
     routesSource,
     /where\(and\(eq\(accounts\.id, id\), eq\(accounts\.userId, req\.session\.userId\)\)\)/,
   );
+  assert.match(routesSource, /operationalLogger\.error\("risk\.account_settings_save_failed"/);
+  assert.match(routesSource, /message: "Failed to save risk settings"/);
 });
 
 test('risk settings PATCH preserves omitted fields and supports explicit null limits', () => {

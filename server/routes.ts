@@ -3243,10 +3243,13 @@ export function registerRoutes(app: Express): Server {
         }),
       });
     } catch (error) {
-      console.error("Error loading global risk settings:", error);
+      operationalLogger.error("risk.global_settings_load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load global risk settings",
       });
     }
   });
@@ -3302,10 +3305,13 @@ export function registerRoutes(app: Express): Server {
         activeSessionUpdateCount,
       });
     } catch (error) {
-      console.error("Error saving global risk settings:", error);
+      operationalLogger.error("risk.global_settings_save_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to save global risk settings",
       });
     }
   });
@@ -4011,10 +4017,14 @@ export function registerRoutes(app: Express): Server {
       }
       return res.json({ success: true, account: updated, activeSessionUpdated });
     } catch (error) {
-      console.error('Error saving risk settings:', error);
+      operationalLogger.error("risk.account_settings_save_failed", {
+        error,
+        userId: req.session?.userId,
+        accountId: req.params?.id,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: "Failed to save risk settings",
       });
     }
   });
