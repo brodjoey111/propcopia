@@ -2664,14 +2664,24 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.get("/api/auth/me", async (req, res) => {
-    if (req.session?.userId) {
-      const user = await storage.getUser(req.session.userId);
+    const userId = req.session?.userId;
+    if (userId) {
+      const user = await storage.getUser(userId);
       if (user) {
         return res.json({
           success: true,
           user: serializeAuthenticatedUser(user),
         });
       }
+
+      operationalLogger.warn("auth.stale_session_cleared", { userId });
+      const session = req.session;
+      if (session) {
+        await new Promise<void>((resolve) => {
+          session.destroy(() => resolve());
+        });
+      }
+      res.clearCookie("connect.sid");
     }
     return res.status(401).json({
       success: false,

@@ -27,3 +27,16 @@ test("password-change success does not serialize user or credential data", () =>
   assert.doesNotMatch(route, /serializeAuthenticatedUser/);
   assert.doesNotMatch(route, /password: hashedPassword/);
 });
+
+test("auth me clears stale sessions before returning not authenticated", () => {
+  const routeStart = routesSource.indexOf('app.get("/api/auth/me"');
+  const nextRoute = routesSource.indexOf("\n  app.", routeStart + 1);
+  const route = routesSource.slice(routeStart, nextRoute);
+  assert.match(route, /const userId = req\.session\?\.userId/);
+  assert.match(route, /const user = await storage\.getUser\(userId\)/);
+  assert.match(route, /operationalLogger\.warn\("auth\.stale_session_cleared"/);
+  assert.match(route, /session\.destroy\(\(\) => resolve\(\)\)/);
+  assert.match(route, /res\.clearCookie\("connect\.sid"\)/);
+  assert.match(route, /serializeAuthenticatedUser\(user\)/);
+  assert.doesNotMatch(route, /password:/);
+});
