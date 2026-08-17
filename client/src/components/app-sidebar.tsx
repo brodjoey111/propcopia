@@ -19,6 +19,7 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { useNotifications } from "@/hooks/use-notifications";
+import { getProfileInitial, getProfileSubtitle } from "@/lib/user-profile-display";
 
 const menuItems = [
   {
@@ -121,15 +122,15 @@ export function AppSidebar() {
           <Avatar className="h-8 w-8">
             <AvatarImage src={user?.profilePicture || undefined} alt={user?.username} />
             <AvatarFallback>
-              {user?.username?.charAt(0).toUpperCase() || <User className="h-4 w-4" />}
+              {user?.username ? getProfileInitial(user.username) : <User className="h-4 w-4" />}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 overflow-hidden">
             <p className="truncate text-sm font-medium" data-testid="text-username">
               {user?.username || "User"}
             </p>
-            <p className="truncate text-xs text-muted-foreground">
-              {user?.bio || "Trader"}
+            <p className="truncate text-xs text-muted-foreground" data-testid="text-user-title">
+              {getProfileSubtitle(user)}
             </p>
           </div>
         </div>
