@@ -965,6 +965,31 @@ test("buildNotifications includes overdue execution follow-up alerts for open re
       message: "Broker acknowledged order (WORKING)",
     });
 
+    (tradeHistoryStore as any).upsert("sent-stale", {
+      historyId: "sent-stale",
+      intentId: "sent-stale",
+      masterAccountId: "master-1",
+      masterFillId: "fill-sent-stale",
+      followerAccountId: "acct-1",
+      symbol: "MES",
+      lifecycleStatus: "SENT",
+      createdAt: "2026-08-11T11:42:00.000Z",
+      updatedAt: "2026-08-11T11:46:00.000Z",
+      sentAt: "2026-08-11T11:46:00.000Z",
+      brokerOrderId: "BRK-SENT-1",
+      events: [
+        {
+          type: "execution.sent",
+          timestamp: "2026-08-11T11:46:00.000Z",
+          message: "Execution sent to broker",
+        },
+      ],
+    }, {
+      type: "execution.sent",
+      timestamp: "2026-08-11T11:46:00.000Z",
+      message: "Execution sent to broker",
+    });
+
     (tradeHistoryStore as any).upsert("failed-reviewed", {
       historyId: "failed-reviewed",
       intentId: "failed-reviewed",
@@ -1054,6 +1079,12 @@ test("buildNotifications includes overdue execution follow-up alerts for open re
           severity: "warn",
           title: "NQ broker recheck overdue",
           message: "acknowledged has been in flight for 12 minutes without a new lifecycle update. No operator assigned.",
+        },
+        {
+          id: "execution-follow-up:sent-stale:stale",
+          severity: "warn",
+          title: "MES broker recheck overdue",
+          message: "sent has been in flight for 14 minutes without a new lifecycle update. No operator assigned.",
         },
         {
           id: "execution-follow-up:failed-open:review",

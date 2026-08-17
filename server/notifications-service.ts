@@ -91,6 +91,7 @@ const FAILED_TRADE_STATUSES = new Set<TradeHistoryLifecycleStatus>([
   "RULE_REJECTED",
 ]);
 const ACTIVE_TRADE_STATUSES = new Set<TradeHistoryLifecycleStatus>([
+  "SENT",
   "ACKNOWLEDGED",
   "PARTIALLY_FILLED",
 ]);
@@ -570,10 +571,13 @@ export async function buildNotifications(
     }
   }
 
-  const tradeAlerts = tradeHistoryStore.listRecent({
+  const recentTrades = tradeHistoryStore.listRecent({
     accountIds: userAccountIds,
     limit: 100,
-  }).filter((record) => TRADE_NOTIFICATION_STATUSES.has(record.lifecycleStatus));
+  });
+  const tradeAlerts = recentTrades.filter((record) =>
+    TRADE_NOTIFICATION_STATUSES.has(record.lifecycleStatus),
+  );
 
   for (const record of tradeAlerts) {
     const review = executionFollowUpReviewsByHistoryId.get(record.historyId);
@@ -601,7 +605,7 @@ export async function buildNotifications(
   );
   notifications.push(
     ...buildExecutionFollowUpNotifications({
-      records: tradeAlerts,
+      records: recentTrades,
       reviewsByHistoryId: executionFollowUpReviewsByHistoryId,
       now,
     }),

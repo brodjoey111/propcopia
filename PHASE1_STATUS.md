@@ -24,6 +24,7 @@ Branch: `feature/broker-manager`
 - Execution-history idempotency for duplicate and out-of-order acknowledgement/fill events
 - Follower fill-pipeline reconciliation now defers cumulative progress handling to the execution manager
 - Trade-copy engine runtime failures now emit structured operational log events instead of raw console errors
+- Overdue `SENT` executions now surface in execution follow-up notifications alongside stale acknowledged and partial orders
 
 ## Current Verification Baseline
 
