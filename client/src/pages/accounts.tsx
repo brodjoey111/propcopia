@@ -56,6 +56,7 @@ import {
 import {
   prepareAccountRuntimeViewModels,
 } from "@/lib/account-runtime-view";
+import { buildLicenseSummary } from "@/lib/license-summary";
 import {
   buildRithmicReadinessViewItems,
   getRithmicAccounts,
@@ -72,6 +73,7 @@ import {
 import type { AccountsRuntimeOverviewResponse } from "@/lib/runtime-overview";
 import { ShieldAlert, Loader2, LayoutGrid, List, Table2, Settings, Globe, Layers } from "lucide-react";
 import type { Account } from "@shared/schema";
+import type { LicenseSnapshot } from "@shared/billing";
 
 interface AuthMeResponse {
   success: boolean;
@@ -99,6 +101,11 @@ interface TradeCopyStatusResponse {
   };
 }
 
+interface BillingStatusResponse {
+  success: boolean;
+  license: LicenseSnapshot;
+}
+
 type HttpError = Error & {
   status?: number;
 };
@@ -121,6 +128,10 @@ export default function Accounts() {
   const { data: authData } = useQuery<AuthMeResponse | null>({
     queryKey: ['/api/auth/me'],
     queryFn: getQueryFn({ on401: 'returnNull' }),
+  });
+  const { data: billingStatusData } = useQuery<BillingStatusResponse>({
+    queryKey: ['/api/billing/status'],
+    enabled: !!authData?.user?.id,
   });
   const { data: tradeCopyStatusData } = useQuery<TradeCopyStatusResponse | null>({
     queryKey: authData?.user?.id ? ['/api/trade-copy/status', authData.user.id] : ['/api/trade-copy/status', 'anonymous'],
@@ -907,6 +918,12 @@ export default function Accounts() {
   const warningRiskCount = accountRiskOverview?.summary.warningAccounts ?? 0;
   const safeRiskCount = accountRiskOverview?.summary.safeAccounts ?? 0;
   const pendingRiskCount = accountRiskOverview?.summary.unavailableAccounts ?? 0;
+  const licenseSummary = billingStatusData?.license
+    ? buildLicenseSummary(billingStatusData.license, {
+        masterAccounts: accounts.filter((account) => account.accountType === 'master').length,
+        followerAccounts: accounts.filter((account) => account.accountType === 'follower').length,
+      })
+    : null;
   const positionSyncPulse = describePositionSyncOverview(positionSyncOverview);
   const positionSyncRepairSummary = summarizePositionSyncRepairOpportunities(positionSyncOverview);
   const topPositionSyncGroups = sortPositionSyncGroups(positionSyncOverview?.groups ?? []).slice(0, 3);
@@ -1167,6 +1184,27 @@ export default function Accounts() {
           <AddAccountDialog onAdd={handleAddAccount} />
         </div>
       </div>
+
+      {licenseSummary ? (
+        <div
+          className={`rounded-[1.2rem] border px-4 py-3 ${
+            licenseSummary.tone === 'danger'
+              ? 'border-red-500/30 bg-red-500/10'
+              : licenseSummary.tone === 'warn'
+                ? 'border-amber-500/30 bg-amber-500/10'
+                : 'border-white/10 bg-white/[0.03]'
+          }`}
+          data-testid="account-license-summary"
+        >
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-semibold">{licenseSummary.title}</p>
+            <Badge variant="outline" className="w-fit text-[10px] uppercase tracking-[0.18em]">
+              License
+            </Badge>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">{licenseSummary.detail}</p>
+        </div>
+      ) : null}
 
       {/* ── Global Risk Defaults panel ───────────────────────────── */}
       <div className="panel-surface rounded-[1.4rem] p-4 flex flex-col gap-4 sm:flex-row sm:items-center">
