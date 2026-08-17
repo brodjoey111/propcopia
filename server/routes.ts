@@ -45,6 +45,7 @@ import { clearRuntimeSnapshotCache, getOrCreateRuntimeSnapshot } from "./runtime
 import { evaluateAccountRisk } from "./account-risk-service";
 import { buildRithmicReadiness } from "./rithmic-readiness-service";
 import { RithmicReconnectValidationStore } from "./rithmic-reconnect-validation";
+import { reconnectSavedRithmicTestAccount } from "./rithmic-saved-reconnect-service";
 import {
   buildAccountsRuntimeOverview,
   buildDashboardRuntimeOverview,
@@ -2520,40 +2521,33 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      if (!existing.rithmicUsername || !existing.rithmicPassword) {
-        return res.status(400).json({
-          success: false,
-          message: "Rithmic credentials are missing for this saved account.",
-        });
-      }
-
-      const rithmicAPI = new RithmicAPI({
-        username: existing.rithmicUsername,
-        password: existing.rithmicPassword,
-        environment: (existing.rithmicEnvironment as "test" | "live") ?? "test",
+      const reconnect = await reconnectSavedRithmicTestAccount({
+        account: existing,
         systemName: resolveRithmicSystemName(existing),
+        sessions: rithmicInstances,
+        validationStore: rithmicReconnectValidationStore,
+        createSession: (credentials) => new RithmicAPI(credentials),
+        refreshIdentity: (account, rithmicAPI) =>
+          refreshRithmicAccountIdentity(account, req.session.userId!, rithmicAPI, {
+            allowDiscoveryFailure: true,
+          }),
       });
-      const connectionTest = await rithmicAPI.authenticate();
 
-      if (!connectionTest.success) {
-        await rithmicAPI.disconnect();
+      if (!reconnect.success) {
         return res.status(400).json({
           success: false,
-          message: connectionTest.message,
+          message: reconnect.message,
         });
       }
 
-      rithmicInstances.set(existing.rithmicUsername, rithmicAPI);
-      existing = await refreshRithmicAccountIdentity(existing, req.session.userId, rithmicAPI, {
-        allowDiscoveryFailure: true,
-      });
-      rithmicReconnectValidationStore.markValidated(existing.id, {
-        validatedAt: new Date().toISOString(),
-        source: "saved_connect",
-      });
+      existing = reconnect.account;
 
       const reconnectValidation = rithmicReconnectValidationStore.get(existing.id);
-      const readiness = buildRithmicReadiness(existing, rithmicAPI, reconnectValidation);
+      const readiness = buildRithmicReadiness(
+        existing,
+        existing.rithmicUsername ? rithmicInstances.get(existing.rithmicUsername) : undefined,
+        reconnectValidation,
+      );
 
       return res.json({
         success: true,
@@ -2716,37 +2710,26 @@ export function registerRoutes(app: Express): Server {
       }
 
       if (existing.platform === "Rithmic") {
-        if (!existing.rithmicUsername || !existing.rithmicPassword) {
-          return res.status(400).json({
-            success: false,
-            message: "Rithmic credentials are missing for this saved account.",
-          });
-        }
-
-        const rithmicAPI = new RithmicAPI({
-          username: existing.rithmicUsername,
-          password: existing.rithmicPassword,
-          environment: (existing.rithmicEnvironment as "test" | "live") ?? "test",
+        const reconnect = await reconnectSavedRithmicTestAccount({
+          account: existing,
           systemName: resolveRithmicSystemName(existing),
+          sessions: rithmicInstances,
+          validationStore: rithmicReconnectValidationStore,
+          createSession: (credentials) => new RithmicAPI(credentials),
+          refreshIdentity: (account, rithmicAPI) =>
+            refreshRithmicAccountIdentity(account, req.session.userId!, rithmicAPI, {
+              allowDiscoveryFailure: true,
+            }),
         });
-        const connectionTest = await rithmicAPI.authenticate();
 
-        if (!connectionTest.success) {
-          await rithmicAPI.disconnect();
+        if (!reconnect.success) {
           return res.status(400).json({
             success: false,
-            message: connectionTest.message,
+            message: reconnect.message,
           });
         }
 
-        rithmicInstances.set(existing.rithmicUsername, rithmicAPI);
-        existing = await refreshRithmicAccountIdentity(existing, req.session.userId, rithmicAPI, {
-          allowDiscoveryFailure: true,
-        });
-        rithmicReconnectValidationStore.markValidated(existing.id, {
-          validatedAt: new Date().toISOString(),
-          source: "saved_connect",
-        });
+        existing = reconnect.account;
       }
 
       const updated = await updateAccountConnectionState({

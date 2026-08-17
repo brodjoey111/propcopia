@@ -45,7 +45,7 @@ test('routes refresh saved Rithmic identities during connect and trade-copy star
   assert.match(routesSource, /async function refreshRithmicAccountIdentity\(/);
   assert.match(
     routesSource,
-    /existing = await refreshRithmicAccountIdentity\(existing, req\.session\.userId, rithmicAPI, \{\s*allowDiscoveryFailure: true,\s*\}\);/,
+    /refreshIdentity: \(account, rithmicAPI\) =>\s*refreshRithmicAccountIdentity\(account, req\.session\.userId!, rithmicAPI, \{\s*allowDiscoveryFailure: true,\s*\}\),/,
   );
   assert.match(routesSource, /const refreshedMasterAccount = await refreshRithmicAccountIdentity\(masterAccount, userId\)/);
   assert.match(routesSource, /followerAccounts\.map\(\(account\) => refreshRithmicAccountIdentity\(account, userId\)\)/);

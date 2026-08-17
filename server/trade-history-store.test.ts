@@ -115,6 +115,37 @@ test('tracks partial fills without forcing the record into a final fill state', 
   store.clear();
 });
 
+test('tracks a cancelled intent as a terminal cancelled history record', () => {
+  const store = new TradeHistoryStore();
+  store.start();
+
+  const intent = {
+    intentId: 'intent-cancelled',
+    masterAccountId: 'master-cancelled',
+    masterFillId: 'fill-cancelled',
+    followerAccountId: 'follower-cancelled',
+    symbol: 'NQ',
+    side: 'SELL' as const,
+    quantity: 1,
+    createdAt: '2026-08-17T12:00:00.000Z',
+    status: 'NEW' as const,
+  };
+
+  propCopiaEventBus.publish('intent.created', { intent });
+  propCopiaEventBus.publish('intent.updated', {
+    intent: { ...intent, status: 'CANCELLED' },
+  });
+
+  const record = store.get(intent.intentId);
+  assert.ok(record);
+  assert.equal(record.intentStatus, 'CANCELLED');
+  assert.equal(record.lifecycleStatus, 'CANCELLED');
+  assert.equal(record.events[0]?.message, 'Intent moved to CANCELLED');
+
+  store.stop();
+  store.clear();
+});
+
 test('tracks rule-level skips without requiring an intent', () => {
   const store = new TradeHistoryStore();
   store.start();

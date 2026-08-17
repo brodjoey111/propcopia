@@ -7,7 +7,7 @@ const routesSource = fs.readFileSync(new URL("./routes.ts", import.meta.url), "u
 test("saved Rithmic reconnect authenticates without rerunning account discovery", () => {
   assert.match(
     routesSource,
-    /existing\.platform === "Rithmic"[\s\S]*?const connectionTest = await rithmicAPI\.authenticate\(\);/,
+    /existing\.platform === "Rithmic"[\s\S]*?reconnectSavedRithmicTestAccount\(\{/,
   );
   assert.doesNotMatch(
     routesSource,
@@ -18,6 +18,14 @@ test("saved Rithmic reconnect authenticates without rerunning account discovery"
 test("saved Rithmic reconnect tolerates account identity refresh failures after login", () => {
   assert.match(
     routesSource,
-    /refreshRithmicAccountIdentity\(existing, req\.session\.userId, rithmicAPI, \{\s*allowDiscoveryFailure: true,\s*\}\)/,
+    /refreshRithmicAccountIdentity\(account, req\.session\.userId!, rithmicAPI, \{\s*allowDiscoveryFailure: true,\s*\}\)/,
   );
+});
+
+test("saved Rithmic reconnect delegates session cleanup and validation to the shared service", () => {
+  assert.match(routesSource, /sessions: rithmicInstances,/);
+  assert.match(routesSource, /validationStore: rithmicReconnectValidationStore,/);
+  assert.match(routesSource, /createSession: \(credentials\) => new RithmicAPI\(credentials\),/);
+  assert.match(routesSource, /if \(!reconnect\.success\) \{/);
+  assert.match(routesSource, /existing = reconnect\.account;/);
 });

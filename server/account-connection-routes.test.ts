@@ -6,18 +6,15 @@ const routesSource = readFileSync(new URL('./routes.ts', import.meta.url), 'utf8
 
 test('connect route refreshes saved Rithmic identity after successful authentication before marking the account connected', () => {
   assert.match(routesSource, /app\.post\(\"\/api\/accounts\/:id\/connect\"/);
-  assert.match(routesSource, /const connectionTest = await rithmicAPI\.authenticate\(\);/);
+  assert.match(routesSource, /const reconnect = await reconnectSavedRithmicTestAccount\(\{/);
   assert.match(
     routesSource,
-    /existing = await refreshRithmicAccountIdentity\(existing, req\.session\.userId, rithmicAPI, \{\s*allowDiscoveryFailure: true,\s*\}\);/,
+    /refreshRithmicAccountIdentity\(account, req\.session\.userId!, rithmicAPI, \{\s*allowDiscoveryFailure: true,\s*\}\)/,
   );
+  assert.match(routesSource, /existing = reconnect\.account;/);
   assert.match(
     routesSource,
     /const updated = await updateAccountConnectionState\(\{\s*accountId: id,\s*userId: req\.session\.userId,\s*isConnected: true,/,
-  );
-  assert.match(
-    routesSource,
-    /rithmicReconnectValidationStore\.markValidated\(existing\.id,\s*\{\s*validatedAt: new Date\(\)\.toISOString\(\),\s*source: "saved_connect",\s*\}\);/,
   );
 });
 

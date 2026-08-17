@@ -26,17 +26,16 @@ test("Rithmic readiness route builds the readiness payload from the cached Rithm
   assert.match(routesSource, /return res\.json\(\{\s*success: true,\s*readiness,\s*\}\);/);
 });
 
-test("Rithmic readiness revalidate route authenticates the saved account and refreshes reconnect proof", () => {
+test("Rithmic readiness revalidate route uses the shared saved reconnect workflow", () => {
   assert.match(routesSource, /app\.post\(\"\/api\/accounts\/:id\/rithmic-readiness\/revalidate\"/);
-  assert.match(routesSource, /const rithmicAPI = new RithmicAPI\(\{/);
-  assert.match(routesSource, /const connectionTest = await rithmicAPI\.authenticate\(\);/);
+  assert.match(routesSource, /const reconnect = await reconnectSavedRithmicTestAccount\(\{/);
   assert.match(
     routesSource,
-    /existing = await refreshRithmicAccountIdentity\(existing, req\.session\.userId, rithmicAPI, \{\s*allowDiscoveryFailure: true,\s*\}\);/,
+    /refreshIdentity: \(account, rithmicAPI\) =>\s*refreshRithmicAccountIdentity\(account, req\.session\.userId!, rithmicAPI, \{\s*allowDiscoveryFailure: true,\s*\}\),/,
   );
+  assert.match(routesSource, /existing = reconnect\.account;/);
   assert.match(
     routesSource,
-    /rithmicReconnectValidationStore\.markValidated\(existing\.id,\s*\{\s*validatedAt: new Date\(\)\.toISOString\(\),\s*source: "saved_connect",\s*\}\);/,
+    /existing\.rithmicUsername \? rithmicInstances\.get\(existing\.rithmicUsername\) : undefined,/,
   );
-  assert.match(routesSource, /const readiness = buildRithmicReadiness\(existing, rithmicAPI, reconnectValidation\);/);
 });

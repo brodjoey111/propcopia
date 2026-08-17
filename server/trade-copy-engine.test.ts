@@ -670,7 +670,7 @@ test('connectRithmicMasterAccount subscribes to fills and routes them into the c
   assert.equal(fakeMaster.subscribedAccountId, 'apex-broker-27');
 
   fakeMaster.emitFill({
-    accountId: 'master-rithmic',
+    accountId: 'apex-broker-27',
     symbol: 'ES',
     side: 'BUY',
     quantity: 1,
@@ -691,6 +691,44 @@ test('connectRithmicMasterAccount subscribes to fills and routes them into the c
   assert.equal(status.lastMasterFillId, 'rithmic-fill-1');
   assert.equal(status.lastMasterFillSymbol, 'ES');
   assert.equal(status.lastMasterFillAt, '2026-08-03T12:00:00.000Z');
+});
+
+test('Rithmic master fill boundary ignores wrong-account and duplicate fills', async () => {
+  const engine = new TradeCopyEngine('demo', new TradeIntentManager());
+  const socket = new FakeFollowerWebSocket();
+  await addFollowerWithWebSocket(engine, createFollowerAccount('follower-boundary'), socket);
+  const fakeMaster = createFakeRithmicMasterApi();
+  const receivedMasterIds: string[] = [];
+
+  engine.on('masterFillReceived', (fill) => {
+    receivedMasterIds.push(fill.masterAccountId);
+  });
+  engine.setRithmicMasterBrokerAccountId('expected-broker-account');
+  await engine.connectRithmicMasterAccount('saved-master-account', fakeMaster.api as any);
+
+  const fill = {
+    accountId: 'different-broker-account',
+    symbol: 'NQ',
+    side: 'SELL',
+    quantity: 1,
+    price: 21000,
+    timestamp: Date.parse('2026-08-17T12:00:00.000Z'),
+    fillId: 'boundary-fill-1',
+  };
+
+  fakeMaster.emitFill(fill);
+  await Promise.resolve();
+  assert.equal(socket.sentMessages.length, 0);
+  assert.equal(engine.getStatus().lastMasterFillId, null);
+
+  fakeMaster.emitFill({ ...fill, accountId: 'expected-broker-account' });
+  await waitFor(() => socket.sentMessages.length === 1);
+  fakeMaster.emitFill({ ...fill, accountId: 'expected-broker-account' });
+  await Promise.resolve();
+
+  assert.equal(socket.sentMessages.length, 1);
+  assert.deepEqual(receivedMasterIds, ['saved-master-account']);
+  assert.equal(engine.getStatus().lastMasterFillId, 'boundary-fill-1');
 });
 
 test('permanent config values are not stored in the follower runtime record', async () => {
@@ -1042,6 +1080,89 @@ test('follower reconnect scheduling stops after the maximum retry attempts', () 
     (engine as any).scheduleFollowerReconnect(connection);
     assert.deepEqual(recordedDelays, []);
     assert.equal(connection.reconnectAttempts, 5);
+  } finally {
+    global.setTimeout = originalSetTimeout;
+    global.clearTimeout = originalClearTimeout;
+  }
+});
+
+test('follower reconnect timer runs recovery and clears the pending retry state', async () => {
+  const engine = new TradeCopyEngine('demo', new TradeIntentManager());
+  const scheduledCallbacks: Array<() => void> = [];
+  const originalSetTimeout = global.setTimeout;
+  const originalClearTimeout = global.clearTimeout;
+  let reconnectCalls = 0;
+
+  global.setTimeout = ((callback: (...args: any[]) => void) => {
+    scheduledCallbacks.push(callback);
+    return { callback } as unknown as NodeJS.Timeout;
+  }) as typeof setTimeout;
+  global.clearTimeout = (() => {}) as typeof clearTimeout;
+
+  try {
+    const connection = {
+      accountId: 'follower-recovery',
+      positionScaling: 100,
+      maxContracts: undefined,
+      copySizingMode: 'MULTIPLIER' as const,
+      fixedQuantity: undefined,
+      reverseCopying: false,
+      blockedTickers: [],
+      ws: null,
+      accessToken: 'access-token',
+      isReady: false,
+      reconnectAttempts: 0,
+    };
+
+    (engine as any).connectFollowerWebSocket = async (target: typeof connection) => {
+      reconnectCalls += 1;
+      target.isReady = true;
+      target.reconnectAttempts = 0;
+    };
+
+    (engine as any).scheduleFollowerReconnect(connection);
+    assert.equal((engine as any).followerReconnectTimeouts.has(connection.accountId), true);
+
+    scheduledCallbacks[0]();
+    await Promise.resolve();
+
+    assert.equal(reconnectCalls, 1);
+    assert.equal(connection.isReady, true);
+    assert.equal(connection.reconnectAttempts, 0);
+    assert.equal((engine as any).followerReconnectTimeouts.has(connection.accountId), false);
+    assert.equal((engine as any).reconnectTimeouts.size, 0);
+  } finally {
+    global.setTimeout = originalSetTimeout;
+    global.clearTimeout = originalClearTimeout;
+  }
+});
+
+test('disconnect cancels a pending follower reconnect', async () => {
+  const engine = new TradeCopyEngine('demo', new TradeIntentManager());
+  const socket = new FakeFollowerWebSocket();
+  await addFollowerWithWebSocket(engine, createFollowerAccount('follower-stop-retry'), socket);
+  const connection = getFollowerConnection(engine, 'follower-stop-retry');
+  const clearedTimeouts: NodeJS.Timeout[] = [];
+  const originalSetTimeout = global.setTimeout;
+  const originalClearTimeout = global.clearTimeout;
+
+  global.setTimeout = ((callback: (...args: any[]) => void) => {
+    return { callback } as unknown as NodeJS.Timeout;
+  }) as typeof setTimeout;
+  global.clearTimeout = ((timeout: NodeJS.Timeout) => {
+    clearedTimeouts.push(timeout);
+  }) as typeof clearTimeout;
+
+  try {
+    connection.isReady = false;
+    (engine as any).scheduleFollowerReconnect(connection);
+    const pendingTimeout = (engine as any).followerReconnectTimeouts.get(connection.accountId);
+
+    await engine.disconnect();
+
+    assert.deepEqual(clearedTimeouts, [pendingTimeout]);
+    assert.equal((engine as any).followerReconnectTimeouts.size, 0);
+    assert.equal((engine as any).reconnectTimeouts.size, 0);
   } finally {
     global.setTimeout = originalSetTimeout;
     global.clearTimeout = originalClearTimeout;

@@ -1102,6 +1102,13 @@ export class TradeCopyEngine extends EventEmitter {
   private handleRithmicMasterFill(fill: RithmicOrderFillEvent): void {
     const receiveTime = performance.now();
 
+    if (!this.masterBrokerAccountId || fill.accountId !== this.masterBrokerAccountId) {
+      console.warn(
+        `[TradeCopy] Ignoring Rithmic fill for broker account ${fill.accountId}; expected ${this.masterBrokerAccountId ?? 'none'}`,
+      );
+      return;
+    }
+
     const trade: TradeNotification = {
       accountId: fill.accountId,
       symbol: fill.symbol,
@@ -1126,7 +1133,7 @@ export class TradeCopyEngine extends EventEmitter {
     this.lastMasterFillId = fill.fillId;
     this.lastMasterFillSymbol = fill.symbol;
     const masterFillPayload: MasterFillReceivedPayload = {
-      masterAccountId: trade.accountId,
+      masterAccountId: this.masterAccountId ?? trade.accountId,
       fillId: fill.fillId,
       symbol: fill.symbol,
       side: fill.side,
