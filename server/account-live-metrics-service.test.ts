@@ -123,19 +123,16 @@ test("buildAccountLiveMetrics normalizes live balances across Tradovate, Tradeif
         [
           "rithmic-user",
           {
-            async testConnection() {
-              return {
-                success: true,
-                message: "ok",
-                data: [
-                  {
-                    id: "R-1",
-                    name: "Rithmic Main",
-                    balance: 22100.75,
-                    currency: "USD",
-                  },
-                ],
-              };
+            isAuthenticated() {
+              return true;
+            },
+            getDiscoveredAccounts() {
+              return [{
+                id: "R-1",
+                name: "Rithmic Main",
+                balance: 22100.75,
+                currency: "USD",
+              }];
             },
           },
         ],
@@ -216,11 +213,11 @@ test("buildAccountLiveMetrics marks disconnected, unavailable, and error states"
         [
           "rithmic-user",
           {
-            async testConnection() {
-              return {
-                success: false,
-                message: "Saved Rithmic session could not be verified.",
-              };
+            isAuthenticated() {
+              return false;
+            },
+            getDiscoveredAccounts() {
+              throw new Error("disconnected sessions must not be queried");
             },
           },
         ],
@@ -228,9 +225,9 @@ test("buildAccountLiveMetrics marks disconnected, unavailable, and error states"
     },
   );
 
-  assert.equal(result.summary.disconnectedAccounts, 1);
   assert.equal(result.summary.unavailableAccounts, 1);
-  assert.equal(result.summary.errorAccounts, 1);
+  assert.equal(result.summary.disconnectedAccounts, 2);
+  assert.equal(result.summary.errorAccounts, 0);
   assert.deepEqual(
     result.accounts.map((account) => ({
       accountId: account.accountId,
@@ -250,8 +247,8 @@ test("buildAccountLiveMetrics marks disconnected, unavailable, and error states"
       },
       {
         accountId: "rithmic-error",
-        status: "ERROR",
-        reason: "Saved Rithmic session could not be verified.",
+        status: "DISCONNECTED",
+        reason: "Rithmic session is not authenticated.",
       },
     ],
   );

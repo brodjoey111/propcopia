@@ -243,6 +243,7 @@ export class RithmicAPI extends EventEmitter {
   private authenticated = false;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private lastLoginMetadata?: RithmicLoginMetadata;
+  private discoveredAccounts: RithmicAccount[] = [];
 
   constructor(credentials: RithmicCredentials) {
     super();
@@ -966,10 +967,17 @@ export class RithmicAPI extends EventEmitter {
     data?: RithmicAccount[];
     authData?: RithmicLoginMetadata;
   }> {
-    const authResult = await this.authenticate();
+    const authResult = this.isAuthenticated()
+      ? {
+          success: true,
+          message: 'Already authenticated with Rithmic',
+          authData: this.lastLoginMetadata,
+        }
+      : await this.authenticate();
     if (!authResult.success) return authResult;
     try {
       const accounts = await this.fetchAccountList();
+      this.discoveredAccounts = accounts.map((account) => ({ ...account }));
       return {
         success: true,
         message: 'Successfully connected to Rithmic',
@@ -1511,6 +1519,10 @@ export class RithmicAPI extends EventEmitter {
     return this.lastLoginMetadata;
   }
 
+  getDiscoveredAccounts(): RithmicAccount[] {
+    return this.discoveredAccounts.map((account) => ({ ...account }));
+  }
+
   private startHeartbeat() {
     this.heartbeatInterval = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
@@ -1531,6 +1543,7 @@ export class RithmicAPI extends EventEmitter {
     }
     this.ws = null;
     this.authenticated = false;
+    this.discoveredAccounts = [];
     console.log('[RithmicAPI] Disconnected');
   }
 }

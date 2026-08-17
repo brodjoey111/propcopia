@@ -41,11 +41,8 @@ export interface TradeifyAccountMetricsApiLike {
 }
 
 export interface RithmicAccountMetricsApiLike {
-  testConnection(): Promise<{
-    success: boolean;
-    message: string;
-    data?: unknown[];
-  }>;
+  isAuthenticated(): boolean;
+  getDiscoveredAccounts(): unknown[];
 }
 
 export interface AccountLiveMetricsDependencies {
@@ -351,24 +348,22 @@ async function buildRithmicSnapshot(
     };
   }
 
+  if (!api.isAuthenticated()) {
+    return {
+      accountId: account.id,
+      userId: account.userId,
+      name: account.name,
+      platform: account.platform,
+      accountType: account.accountType,
+      brokerAccountId,
+      status: "DISCONNECTED",
+      reason: "Rithmic session is not authenticated.",
+      capturedAt,
+    };
+  }
+
   try {
-    const connectionTest = await api.testConnection();
-
-    if (!connectionTest.success) {
-      return {
-        accountId: account.id,
-        userId: account.userId,
-        name: account.name,
-        platform: account.platform,
-        accountType: account.accountType,
-        brokerAccountId,
-        status: "ERROR",
-        reason: connectionTest.message || "Failed to verify Rithmic session.",
-        capturedAt,
-      };
-    }
-
-    const matchedAccount = (connectionTest.data ?? []).find((entry) =>
+    const matchedAccount = api.getDiscoveredAccounts().find((entry) =>
       matchesSavedAccount(entry as Record<string, unknown>, [brokerAccountId], [account.name]),
     );
 
