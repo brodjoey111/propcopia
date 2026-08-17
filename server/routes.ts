@@ -467,18 +467,23 @@ async function refreshRithmicAccountIdentity(
     return account;
   }
 
+  const existingApi = rithmicInstances.get(account.rithmicUsername);
   const api =
     rithmicApi ??
-    rithmicInstances.get(account.rithmicUsername) ??
+    existingApi ??
     new RithmicAPI({
       username: account.rithmicUsername,
       password: account.rithmicPassword,
       environment: (account.rithmicEnvironment as "test" | "live") ?? "test",
       systemName: resolveRithmicSystemName(account),
     });
+  const ownsNewSession = !rithmicApi && !existingApi;
 
   const connectionTest = await api.testConnection();
   if (!connectionTest.success) {
+    if (ownsNewSession) {
+      await disconnectBrokerSessionQuietly(api);
+    }
     if (options?.allowDiscoveryFailure) {
       console.warn(
         `[Rithmic] Skipping account identity refresh for ${account.id}: ${connectionTest.message}`,
@@ -489,7 +494,9 @@ async function refreshRithmicAccountIdentity(
     throw new Error(connectionTest.message || "Rithmic account refresh failed.");
   }
 
-  rithmicInstances.set(account.rithmicUsername, api);
+  if (ownsNewSession) {
+    await replaceBrokerSession(rithmicInstances, account.rithmicUsername, api);
+  }
 
   const discoveredAccounts = (connectionTest.data ?? []).map((discovered) => ({
     id: String(discovered.id),
