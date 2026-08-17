@@ -12,10 +12,32 @@ export type LicenseEntitlementDecision =
       limit?: number;
     };
 
+export type TradingLicenseDecision =
+  | { allowed: true }
+  | {
+      allowed: false;
+      code: "LICENSE_INACTIVE";
+      message: string;
+    };
+
 type AccountSummary = {
   id: string;
   accountType: string;
 };
+
+export function evaluateTradingLicense(
+  license: LicenseSnapshot,
+): TradingLicenseDecision {
+  if (license.accessAllowed) {
+    return { allowed: true };
+  }
+
+  return {
+    allowed: false,
+    code: "LICENSE_INACTIVE",
+    message: "Your subscription is not active. Restore billing access before starting or resuming trade copying.",
+  };
+}
 
 export function evaluateAccountEntitlement(input: {
   license: LicenseSnapshot;

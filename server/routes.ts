@@ -83,7 +83,10 @@ import {
 } from "@shared/auth";
 import { establishAuthenticatedSession } from "./auth-session";
 import { buildLicenseSnapshot } from "./license-service";
-import { evaluateAccountEntitlement } from "./license-entitlement-service";
+import {
+  evaluateAccountEntitlement,
+  evaluateTradingLicense,
+} from "./license-entitlement-service";
 import { operationalLogger } from "./operational-logger";
 import { buildNotificationDeliveryPreview } from "@shared/notification-policy";
 import {
@@ -2163,6 +2166,15 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+      const licenseDecision = evaluateTradingLicense(buildLicenseSnapshot(user));
+      if (!licenseDecision.allowed) {
+        return res.status(403).json({ success: false, ...licenseDecision });
+      }
+
       const { groupId } = req.body ?? {};
       if (!groupId) {
         return res.status(400).json({
@@ -2336,6 +2348,15 @@ export function registerRoutes(app: Express): Server {
           success: false,
           message: "Not authenticated",
         });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+      const licenseDecision = evaluateTradingLicense(buildLicenseSnapshot(user));
+      if (!licenseDecision.allowed) {
+        return res.status(403).json({ success: false, ...licenseDecision });
       }
 
       const { groupId } = req.body ?? {};
@@ -3735,6 +3756,14 @@ export function registerRoutes(app: Express): Server {
           success: false,
           message: "Logout is in progress. Sign in again before starting trade copying.",
         });
+      }
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+      const licenseDecision = evaluateTradingLicense(buildLicenseSnapshot(user));
+      if (!licenseDecision.allowed) {
+        return res.status(403).json({ success: false, ...licenseDecision });
       }
       const killSwitchState = getKillSwitchState(userId);
       if (killSwitchState.active) {
