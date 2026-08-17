@@ -15,6 +15,8 @@ test("Rithmic readiness list is owner-scoped and precedes the parameter route", 
   assert.match(listRoute, /eq\(accounts\.platform, "Rithmic"\)/);
   assert.match(listRoute, /rithmicInstances\.forUser\(userId\)/);
   assert.match(listRoute, /accounts: readinessAccounts/);
+  assert.match(listRoute, /operationalLogger\.error\("rithmic\.readiness_list_load_failed"/);
+  assert.match(listRoute, /message: "Failed to load Rithmic readiness list"/);
 });
 
 test("Rithmic readiness route is account-scoped and requires an authenticated session", () => {
@@ -37,6 +39,8 @@ test("Rithmic readiness route builds the readiness payload from the user's cache
   assert.match(routesSource, /const reconnectValidation = rithmicReconnectValidationStore\.get\(existing\.id\);/);
   assert.match(routesSource, /const readiness = buildRithmicReadiness\(existing, instance, reconnectValidation\);/);
   assert.match(routesSource, /return res\.json\(\{\s*success: true,\s*readiness,\s*\}\);/);
+  assert.match(routesSource, /operationalLogger\.error\("rithmic\.readiness_load_failed"/);
+  assert.match(routesSource, /message: "Failed to load Rithmic readiness"/);
 });
 
 test("Rithmic readiness revalidate route uses the shared saved reconnect workflow", () => {
@@ -51,4 +55,6 @@ test("Rithmic readiness revalidate route uses the shared saved reconnect workflo
     routesSource,
     /rithmicInstances\.forUser\(req\.session\.userId\)\.get\(existing\.rithmicUsername\)/,
   );
+  assert.match(routesSource, /operationalLogger\.error\("rithmic\.readiness_revalidate_failed"/);
+  assert.match(routesSource, /message: "Failed to revalidate Rithmic readiness"/);
 });

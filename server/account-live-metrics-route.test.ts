@@ -11,4 +11,6 @@ test("routes expose the authenticated live account metrics endpoint", () => {
   assert.match(routesSource, /tradovateInstances/);
   assert.match(routesSource, /tradeifyInstances/);
   assert.match(routesSource, /rithmicInstances/);
+  assert.match(routesSource, /operationalLogger\.error\("runtime\.account_live_metrics_load_failed"/);
+  assert.match(routesSource, /message: "Failed to load account live metrics"/);
 });

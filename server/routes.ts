@@ -1165,10 +1165,13 @@ export function registerRoutes(app: Express): Server {
         ...snapshot,
       });
     } catch (error) {
-      console.error("Error building position snapshot:", error);
+      operationalLogger.error("runtime.position_snapshot_load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load position snapshot",
       });
     }
   });
@@ -1206,10 +1209,13 @@ export function registerRoutes(app: Express): Server {
         ...snapshot,
       });
     } catch (error) {
-      console.error("Error building account live metrics snapshot:", error);
+      operationalLogger.error("runtime.account_live_metrics_load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load account live metrics",
       });
     }
   });
@@ -1263,10 +1269,13 @@ export function registerRoutes(app: Express): Server {
         ...lightweightOverview,
       });
     } catch (error) {
-      console.error("Error building accounts runtime overview:", error);
+      operationalLogger.error("runtime.accounts_overview_load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load accounts overview",
       });
     }
   });
@@ -1298,10 +1307,13 @@ export function registerRoutes(app: Express): Server {
         ...filteredOverview,
       });
     } catch (error) {
-      console.error("Error building position sync plans:", error);
+      operationalLogger.error("runtime.position_sync_plans_load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load position sync plans",
       });
     }
   });
@@ -3037,10 +3049,13 @@ export function registerRoutes(app: Express): Server {
         accounts: readinessAccounts,
       });
     } catch (error) {
-      console.error("Error loading Rithmic readiness list:", error);
+      operationalLogger.error("rithmic.readiness_list_load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load Rithmic readiness list",
       });
     }
   });
@@ -3085,10 +3100,14 @@ export function registerRoutes(app: Express): Server {
         readiness,
       });
     } catch (error) {
-      console.error("Error loading Rithmic readiness:", error);
+      operationalLogger.error("rithmic.readiness_load_failed", {
+        error,
+        userId: req.session?.userId,
+        accountId: req.params?.id,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load Rithmic readiness",
       });
     }
   });
@@ -3151,10 +3170,14 @@ export function registerRoutes(app: Express): Server {
         readiness,
       });
     } catch (error) {
-      console.error("Error revalidating Rithmic readiness:", error);
+      operationalLogger.error("rithmic.readiness_revalidate_failed", {
+        error,
+        userId: req.session?.userId,
+        accountId: req.params?.id,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to revalidate Rithmic readiness",
       });
     }
   });
