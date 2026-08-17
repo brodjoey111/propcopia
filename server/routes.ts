@@ -99,12 +99,14 @@ const tradeifyInstances = new Map<string, TradeifyAPI>();
 const rithmicInstances = new Map<string, RithmicAPI>();
 const rithmicReconnectValidationStore = new RithmicReconnectValidationStore();
 const tradeCopyEngines = new Map<string, TradeCopyEngine>();
+const tradeCopyStartsInProgress = new Set<string>();
 let marketDataWebSocketServer: WebSocketServer | null = null;
 const authAttemptLimiter = new AttemptRateLimiter();
 const authRateLimit = createAuthRateLimitMiddleware(authAttemptLimiter);
 
 export async function shutdownRouteRuntime(): Promise<void> {
   const failures: unknown[] = [];
+  tradeCopyStartsInProgress.clear();
   const settlePhase = async (tasks: Array<() => Promise<unknown>>) => {
     const results = await Promise.allSettled(tasks.map((task) => task()));
     failures.push(...results
@@ -3539,6 +3541,9 @@ export function registerRoutes(app: Express): Server {
 
   // Trade copying routes
   app.post("/api/trade-copy/start", async (req, res) => {
+    let pendingEngine: TradeCopyEngine | null = null;
+    let reservedUserId: string | null = null;
+
     try {
       if (!req.session?.userId) {
         return res.status(401).json({ success: false, message: "Not authenticated" });
@@ -3571,32 +3576,17 @@ export function registerRoutes(app: Express): Server {
 
       // Prevent stale follower/master wiring from being mixed into a new session.
       const existingEngine = tradeCopyEngines.get(userId);
-      if (existingEngine) {
+      if (existingEngine || tradeCopyStartsInProgress.has(userId)) {
         return res.status(409).json({
           success: false,
-          message: "A trade-copy session is already running. Stop the current session before starting a new one.",
+          message: existingEngine
+            ? "A trade-copy session is already running. Stop the current session before starting a new one."
+            : "A trade-copy session is already starting. Wait for it to finish before trying again.",
         });
       }
 
-      const engine = new TradeCopyEngine(environment);
-      tradeCopyEngines.set(userId, engine);
-
-      // Connect trade logger to engine events
-      engine.on('tradeCopied', ({ trade, metrics, followerCount }) => {
-        // Async logging (non-blocking)
-        tradeLogger.logTrade({
-          masterAccountId: trade.accountId,
-          symbol: trade.symbol,
-          action: trade.action,
-          quantity: trade.quantity,
-          price: trade.price.toString(),
-          status: 'copied',
-        }).catch(err => {
-          console.error('[TradeCopy] Error logging trade:', err);
-        });
-
-        console.log(`[TradeCopy] Trade copied to ${followerCount} followers in ${metrics.totalLatency.toFixed(2)}ms`);
-      });
+      tradeCopyStartsInProgress.add(userId);
+      reservedUserId = userId;
 
       const [masterAccount] = await db
         .select()
@@ -3685,16 +3675,33 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
+      if (masterConnection.platform === 'Rithmic' && !refreshedMasterAccount.rithmicAccountId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Saved Rithmic account ID is missing for the selected master account. Re-add or reconnect this account.',
+        });
+      }
+
+      pendingEngine = new TradeCopyEngine(environment);
+      const engine = pendingEngine;
+      engine.on('tradeCopied', ({ trade, metrics, followerCount }) => {
+        tradeLogger.logTrade({
+          masterAccountId: trade.accountId,
+          symbol: trade.symbol,
+          action: trade.action,
+          quantity: trade.quantity,
+          price: trade.price.toString(),
+          status: 'copied',
+        }).catch(err => {
+          console.error('[TradeCopy] Error logging trade:', err);
+        });
+
+        console.log(`[TradeCopy] Trade copied to ${followerCount} followers in ${metrics.totalLatency.toFixed(2)}ms`);
+      });
+
       if (masterConnection.platform === 'Tradovate') {
         await engine.connectMasterAccount(masterAccountId, masterConnection.accessToken!);
       } else {
-        if (!refreshedMasterAccount.rithmicAccountId) {
-          return res.status(400).json({
-            success: false,
-            message: 'Saved Rithmic account ID is missing for the selected master account. Re-add or reconnect this account.',
-          });
-        }
-
         const credentials = masterConnection.rithmicCredentials!;
         const existingInstance = rithmicInstances.get(credentials.username);
         const rithmicApi =
@@ -3719,7 +3726,7 @@ export function registerRoutes(app: Express): Server {
           rithmicInstances.set(credentials.username, rithmicApi);
         }
 
-        engine.setRithmicMasterBrokerAccountId(refreshedMasterAccount.rithmicAccountId);
+        engine.setRithmicMasterBrokerAccountId(refreshedMasterAccount.rithmicAccountId!);
         await engine.connectRithmicMasterAccount(masterAccountId, rithmicApi);
       }
 
@@ -3729,6 +3736,8 @@ export function registerRoutes(app: Express): Server {
           followerConnection.brokerConfig,
         );
       }
+
+      tradeCopyEngines.set(userId, engine);
 
       console.log(
         '[TradeCopy] Session wiring ready',
@@ -3759,11 +3768,23 @@ export function registerRoutes(app: Express): Server {
         },
       });
     } catch (error) {
+      if (pendingEngine) {
+        if (reservedUserId && tradeCopyEngines.get(reservedUserId) === pendingEngine) {
+          tradeCopyEngines.delete(reservedUserId);
+        }
+        await pendingEngine.disconnect().catch((disconnectError) => {
+          console.error('[TradeCopy] Error cleaning up failed session start:', disconnectError);
+        });
+      }
       console.error('Error starting trade copying:', error);
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Unknown error occurred',
       });
+    } finally {
+      if (reservedUserId) {
+        tradeCopyStartsInProgress.delete(reservedUserId);
+      }
     }
   });
 

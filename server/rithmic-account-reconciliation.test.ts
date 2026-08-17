@@ -49,5 +49,5 @@ test('routes refresh saved Rithmic identities during connect and trade-copy star
   );
   assert.match(routesSource, /const refreshedMasterAccount = await refreshRithmicAccountIdentity\(masterAccount, userId\)/);
   assert.match(routesSource, /followerAccounts\.map\(\(account\) => refreshRithmicAccountIdentity\(account, userId\)\)/);
-  assert.match(routesSource, /engine\.setRithmicMasterBrokerAccountId\(refreshedMasterAccount\.rithmicAccountId\)/);
+  assert.match(routesSource, /engine\.setRithmicMasterBrokerAccountId\(refreshedMasterAccount\.rithmicAccountId!\)/);
 });
