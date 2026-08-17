@@ -24,12 +24,20 @@ interface EconomicEvent {
   previous?: string;
 }
 
+interface EconomicCalendarResponse {
+  source: "LIVE" | "UNAVAILABLE";
+  isLive: boolean;
+  message: string;
+  events: EconomicEvent[];
+}
+
 export default function EconomicCalendar() {
   const [selectedEvent, setSelectedEvent] = useState<EconomicEvent | null>(null);
   
-  const { data: events, isLoading } = useQuery<EconomicEvent[]>({
+  const { data: calendarData, isLoading } = useQuery<EconomicCalendarResponse>({
     queryKey: ["/api/economic-calendar"],
   });
+  const events = calendarData?.events ?? [];
 
   const getImpactColor = (impact: string) => {
     switch (impact) {
@@ -223,11 +231,14 @@ export default function EconomicCalendar() {
         })}
       </div>
 
-      {(!events || events.length === 0) && (
+      {events.length === 0 && (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-20">
             <Calendar className="h-12 w-12 text-muted-foreground" />
-            <p className="mt-4 text-muted-foreground">No upcoming economic events</p>
+            <p className="mt-4 font-medium text-foreground">Live calendar unavailable</p>
+            <p className="mt-2 max-w-xl text-center text-sm text-muted-foreground">
+              {calendarData?.message ?? "No live economic events are available. No simulated events are shown."}
+            </p>
           </CardContent>
         </Card>
       )}
