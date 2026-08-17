@@ -83,6 +83,7 @@ import {
 } from "@shared/auth";
 import { establishAuthenticatedSession } from "./auth-session";
 import { buildLicenseSnapshot } from "./license-service";
+import { evaluateAccountEntitlement } from "./license-entitlement-service";
 import { operationalLogger } from "./operational-logger";
 import { buildNotificationDeliveryPreview } from "@shared/notification-policy";
 import {
@@ -3219,6 +3220,30 @@ export function registerRoutes(app: Express): Server {
         ...req.body,
         userId: req.session.userId,
       });
+      if (accountData.accountType !== "master" && accountData.accountType !== "follower") {
+        return res.status(400).json({
+          success: false,
+          message: "Account type must be either master or follower.",
+        });
+      }
+
+      const [user, userAccounts] = await Promise.all([
+        storage.getUser(req.session.userId),
+        db.select({ id: accounts.id, accountType: accounts.accountType })
+          .from(accounts)
+          .where(eq(accounts.userId, req.session.userId)),
+      ]);
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+      const entitlement = evaluateAccountEntitlement({
+        license: buildLicenseSnapshot(user),
+        accounts: userAccounts,
+        requestedType: accountData.accountType,
+      });
+      if (!entitlement.allowed) {
+        return res.status(403).json({ success: false, ...entitlement });
+      }
 
       let accountValues = accountData;
       if (
@@ -3556,6 +3581,27 @@ export function registerRoutes(app: Express): Server {
           success: false,
           message: "Disconnect this account before changing it between master and follower.",
         });
+      }
+
+      if (existing.accountType !== requestedAccountType) {
+        const [user, userAccounts] = await Promise.all([
+          storage.getUser(req.session.userId),
+          db.select({ id: accounts.id, accountType: accounts.accountType })
+            .from(accounts)
+            .where(eq(accounts.userId, req.session.userId)),
+        ]);
+        if (!user) {
+          return res.status(404).json({ success: false, message: "User not found" });
+        }
+        const entitlement = evaluateAccountEntitlement({
+          license: buildLicenseSnapshot(user),
+          accounts: userAccounts,
+          requestedType: requestedAccountType,
+          excludeAccountId: existing.id,
+        });
+        if (!entitlement.allowed) {
+          return res.status(403).json({ success: false, ...entitlement });
+        }
       }
 
       const [updated] = await db

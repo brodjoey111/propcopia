@@ -39,7 +39,7 @@ export function buildLicenseSnapshot(state: StoredLicenseState): LicenseSnapshot
     plan: BILLING_PLANS[planId],
     status,
     accessAllowed: source === "development" || status === "active" || status === "trialing",
-    enforcementEnabled: false,
+    enforcementEnabled: source === "stripe",
     source,
     currentPeriodEnd: serializePeriodEnd(state.licenseCurrentPeriodEnd),
   };

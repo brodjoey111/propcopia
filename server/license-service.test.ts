@@ -24,7 +24,7 @@ test("missing license data safely resolves to unrestricted development access", 
   });
 });
 
-test("Stripe-backed states report access honestly without enabling enforcement", () => {
+test("Stripe-backed states enable server-side entitlement enforcement", () => {
   const active = buildLicenseSnapshot({
     licensePlan: "professional",
     licenseStatus: "trialing",
@@ -39,7 +39,7 @@ test("Stripe-backed states report access honestly without enabling enforcement",
 
   assert.equal(active.source, "stripe");
   assert.equal(active.accessAllowed, true);
-  assert.equal(active.enforcementEnabled, false);
+  assert.equal(active.enforcementEnabled, true);
   assert.equal(active.currentPeriodEnd, "2026-09-01T12:00:00.000Z");
   assert.equal(canceled.accessAllowed, false);
   assert.equal(JSON.stringify(active).includes("cus_private"), false);
