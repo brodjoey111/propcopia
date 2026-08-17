@@ -105,6 +105,7 @@ const rithmicInstances = new UserBrokerSessionRegistry<RithmicAPI>();
 const rithmicReconnectValidationStore = new RithmicReconnectValidationStore();
 const tradeCopyEngines = new Map<string, TradeCopyEngine>();
 const tradeCopyStartsInProgress = new Set<string>();
+const usersLoggingOut = new Set<string>();
 let marketDataWebSocketServer: WebSocketServer | null = null;
 const authAttemptLimiter = new AttemptRateLimiter();
 const authRateLimit = createAuthRateLimitMiddleware(authAttemptLimiter);
@@ -2547,16 +2548,19 @@ export function registerRoutes(app: Express): Server {
   app.post("/api/auth/logout", async (req, res) => {
     const userId = req.session?.userId;
     if (userId) {
+      usersLoggingOut.add(userId);
       await cleanupUserRouteRuntime(userId);
     }
 
     const session = req.session;
     if (!session) {
+      if (userId) usersLoggingOut.delete(userId);
       res.clearCookie('connect.sid');
       return res.json({ success: true, message: "Logged out successfully" });
     }
 
     session.destroy((err) => {
+      if (userId) usersLoggingOut.delete(userId);
       if (err) {
         return res.status(500).json({
           success: false,
@@ -3680,6 +3684,12 @@ export function registerRoutes(app: Express): Server {
       }
 
       const userId = req.session.userId;
+      if (usersLoggingOut.has(userId)) {
+        return res.status(409).json({
+          success: false,
+          message: "Logout is in progress. Sign in again before starting trade copying.",
+        });
+      }
       const killSwitchState = getKillSwitchState(userId);
       if (killSwitchState.active) {
         return res.status(423).json({
@@ -3866,6 +3876,16 @@ export function registerRoutes(app: Express): Server {
           followerConnection.account,
           followerConnection.brokerConfig,
         );
+      }
+
+      if (usersLoggingOut.has(userId)) {
+        await engine.disconnect();
+        pendingEngine = null;
+        await cleanupUserRouteRuntime(userId);
+        return res.status(409).json({
+          success: false,
+          message: "Logout interrupted trade-copy startup. Sign in again to restart it.",
+        });
       }
 
       tradeCopyEngines.set(userId, engine);
