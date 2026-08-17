@@ -57,6 +57,7 @@ import { rithmicReconnectCoordinator } from "./reconnect-coordinator";
 import { accountConnectionRecoveryStore } from "./account-connection-recovery-store";
 import { evaluateAccountRemoval } from "./account-removal-guard";
 import { parseAccountName } from "./account-name";
+import { logAccountAuditEvent } from "./account-audit-logger";
 import {
   buildAccountsRuntimeOverview,
   buildDashboardRuntimeOverview,
@@ -3336,6 +3337,12 @@ export function registerRoutes(app: Express): Server {
 
       const [newAccount] = await db.insert(accounts).values(accountValues).returning();
       clearRuntimeSnapshotCache(req.session.userId);
+      logAccountAuditEvent("created", {
+        userId: req.session.userId,
+        accountId: newAccount.id,
+        platform: newAccount.platform,
+        accountType: newAccount.accountType,
+      });
 
       return res.json({
         success: true,
@@ -3440,6 +3447,12 @@ export function registerRoutes(app: Express): Server {
         });
       }
       clearRuntimeSnapshotCache(req.session.userId);
+      logAccountAuditEvent("connected", {
+        userId: req.session.userId,
+        accountId: updated.id,
+        platform: updated.platform,
+        accountType: updated.accountType,
+      });
 
       return res.json({
         success: true,
@@ -3541,6 +3554,12 @@ export function registerRoutes(app: Express): Server {
 
       accountConnectionRecoveryStore.disconnected(req.session.userId, id);
       clearRuntimeSnapshotCache(req.session.userId);
+      logAccountAuditEvent("disconnected", {
+        userId: req.session.userId,
+        accountId: updated.id,
+        platform: updated.platform,
+        accountType: updated.accountType,
+      });
 
       return res.json({
         success: true,
@@ -3613,6 +3632,12 @@ export function registerRoutes(app: Express): Server {
       rithmicReconnectValidationStore.clear(id);
       accountConnectionRecoveryStore.remove(userId, id);
       clearRuntimeSnapshotCache(userId);
+      logAccountAuditEvent("removed", {
+        userId,
+        accountId: id,
+        platform: existing.platform,
+        accountType: existing.accountType,
+      });
 
       return res.json({
         success: true,
@@ -3649,6 +3674,12 @@ export function registerRoutes(app: Express): Server {
       }
 
       clearRuntimeSnapshotCache(req.session.userId);
+      logAccountAuditEvent("renamed", {
+        userId: req.session.userId,
+        accountId: updated.id,
+        platform: updated.platform,
+        accountType: updated.accountType,
+      });
       return res.json({ success: true, account: updated });
     } catch (error) {
       console.error("Error renaming account:", error);
@@ -3790,6 +3821,15 @@ export function registerRoutes(app: Express): Server {
         .where(and(eq(accounts.id, id), eq(accounts.userId, req.session.userId)))
         .returning();
       clearRuntimeSnapshotCache(req.session.userId);
+      if (existing.accountType !== updated.accountType) {
+        logAccountAuditEvent("role_changed", {
+          userId: req.session.userId,
+          accountId: updated.id,
+          platform: updated.platform,
+          accountType: updated.accountType,
+          previousAccountType: existing.accountType,
+        });
+      }
 
       return res.json({
         success: true,
