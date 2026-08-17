@@ -4,4 +4,4 @@
 - [x] Split broker-submission waits and acknowledged fill waits into separate dashboard summary counts
 - [x] Add focused dashboard coverage for the new broker-state summary cards
 - [x] Verify the focused dashboard execution-recovery suite and `npm run check`
-- [ ] Commit and push the Phase 64 checkpoint
+- [x] Commit and push the Phase 64 checkpoint
