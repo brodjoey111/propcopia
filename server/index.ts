@@ -8,6 +8,8 @@ import { buildSessionCookieSettings } from "./session-config";
 import { resetStaleAccountConnections } from "./startup-connection-reconciliation";
 import { accountConnectionRecoveryStore } from "./account-connection-recovery-store";
 import { buildLivenessPayload, buildRuntimeConfig } from "./runtime-config";
+import { operationalLogger } from "./operational-logger";
+import { buildRequestLogDecision } from "./request-observability";
 
 const app = express();
 const startedAtMs = Date.now();
@@ -67,27 +69,26 @@ app.use(express.urlencoded({ extended: false }));
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
+  const userId = req.session.userId;
 
   res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
+    const decision = buildRequestLogDecision({
+      method: req.method,
+      path,
+      statusCode: res.statusCode,
+      durationMs: Date.now() - start,
+      userId,
+    });
+    if (!decision) {
+      return;
+    }
 
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
+    if (decision.level === "error") {
+      operationalLogger.error(decision.event, decision.context);
+    } else if (decision.level === "warn") {
+      operationalLogger.warn(decision.event, decision.context);
+    } else {
+      operationalLogger.info(decision.event, decision.context);
     }
   });
 
@@ -127,6 +128,6 @@ app.use((req, res, next) => {
   // It is the only port that is not firewalled.
   const port = runtimeConfig.port;
   server.listen(port, "127.0.0.1", () => {
-  log(`serving on port ${port}`);
-});
+    log(`serving on port ${port}`);
+  });
 })();
