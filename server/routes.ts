@@ -3411,10 +3411,13 @@ export function registerRoutes(app: Express): Server {
         accounts: userAccounts,
       });
     } catch (error) {
-      console.error('Error fetching accounts:', error);
+      operationalLogger.error("account.list_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to load accounts",
       });
     }
   });
@@ -3690,10 +3693,14 @@ export function registerRoutes(app: Express): Server {
         account: removed,
       });
     } catch (error) {
-      console.error("Error removing account:", error);
+      operationalLogger.error("account.remove_failed", {
+        error,
+        userId: req.session?.userId,
+        accountId: req.params?.id,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to remove account",
       });
     }
   });
@@ -3728,10 +3735,14 @@ export function registerRoutes(app: Express): Server {
       });
       return res.json({ success: true, account: updated });
     } catch (error) {
-      console.error("Error renaming account:", error);
+      operationalLogger.error("account.rename_failed", {
+        error,
+        userId: req.session?.userId,
+        accountId: req.params?.id,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to rename account",
       });
     }
   });
@@ -3799,10 +3810,14 @@ export function registerRoutes(app: Express): Server {
         account: updated,
       });
     } catch (error) {
-      console.error('Error updating broker settings:', error);
+      operationalLogger.error("account.broker_settings_update_failed", {
+        error,
+        userId: req.session?.userId,
+        accountId: req.params?.id,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to update broker settings",
       });
     }
   });
@@ -3889,10 +3904,14 @@ export function registerRoutes(app: Express): Server {
         account: updated,
       });
     } catch (error) {
-      console.error('Error updating account type:', error);
+      operationalLogger.error("account.type_update_failed", {
+        error,
+        userId: req.session?.userId,
+        accountId: req.params?.id,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to update account type",
       });
     }
   });

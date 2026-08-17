@@ -9,6 +9,8 @@ test("account name route validates and updates only the signed-in owner's accoun
   assert.match(routesSource, /const parsedName = parseAccountName\(req\.body\);/);
   assert.match(routesSource, /eq\(accounts\.id, req\.params\.id\), eq\(accounts\.userId, req\.session\.userId\)/);
   assert.match(routesSource, /\.set\(\{ name: parsedName\.name \}\)/);
+  assert.match(routesSource, /operationalLogger\.error\("account\.rename_failed"/);
+  assert.match(routesSource, /message: "Failed to rename account"/);
 });
 
 test("account name route refreshes runtime snapshots without changing broker state", () => {

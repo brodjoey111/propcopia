@@ -28,6 +28,8 @@ test("account removal clears account-scoped runtime state after deletion", () =>
   assert.match(routesSource, /rithmicReconnectValidationStore\.clear\(id\);/);
   assert.match(routesSource, /accountConnectionRecoveryStore\.remove\(userId, id\);/);
   assert.match(routesSource, /clearRuntimeSnapshotCache\(userId\);/);
+  assert.match(routesSource, /operationalLogger\.error\("account\.remove_failed"/);
+  assert.match(routesSource, /message: "Failed to remove account"/);
 });
 
 test("account creation route logs failures safely and avoids returning raw exception messages", () => {

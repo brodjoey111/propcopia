@@ -66,5 +66,7 @@ test('accounts list route returns only the authenticated user records', () => {
   assert.match(accountsRoute, /if \(!req\.session\.userId\) \{/);
   assert.match(accountsRoute, /select\(\)\s*\.from\(accounts\)\s*\.where\(eq\(accounts\.userId, req\.session\.userId\)\)/);
   assert.match(accountsRoute, /accounts: userAccounts/);
+  assert.match(accountsRoute, /operationalLogger\.error\("account\.list_failed"/);
+  assert.match(accountsRoute, /message: "Failed to load accounts"/);
   assert.doesNotMatch(accountsRoute, /req\.body\.userId/);
 });

@@ -8,4 +8,6 @@ test('routes expose the account type update path with the disconnect guard', () 
   assert.match(routesSource, /app\.patch\(\"\/api\/accounts\/:id\/account-type\"/);
   assert.match(routesSource, /Disconnect this account before changing it between master and follower/);
   assert.match(routesSource, /accountType: requestedAccountType/);
+  assert.match(routesSource, /operationalLogger\.error\("account\.type_update_failed"/);
+  assert.match(routesSource, /message: "Failed to update account type"/);
 });
