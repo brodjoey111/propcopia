@@ -8,8 +8,11 @@ test("routes expose the authenticated user settings update path", () => {
   const storageSource = readFileSync("server/storage.ts", "utf8");
 
   assert.match(routesSource, /app\.patch\("\/api\/user\/settings"/);
+  assert.match(routesSource, /if \(!req\.session\?\.userId\)/);
   assert.match(routesSource, /updateUserSettingsSchema\.safeParse/);
   assert.match(routesSource, /storage\.updateUserSettings/);
+  assert.match(routesSource, /operationalLogger\.error\("user\.settings_update_failed"/);
+  assert.match(routesSource, /message: "Failed to update settings"/);
   assert.match(routesSource, /showReviewedNotifications:\s*user\.showReviewedNotifications\s*\?\?\s*true/);
   assert.match(routesSource, /copyGroupsUngroupedName:\s*user\.copyGroupsUngroupedName\s*\?\?\s*"Ungrouped"/);
   assert.match(routesSource, /activityQueueSort:\s*user\.activityQueueSort\s*\?\?\s*"recent"/);

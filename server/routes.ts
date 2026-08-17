@@ -2763,10 +2763,13 @@ export function registerRoutes(app: Express): Server {
         user: serializeAuthenticatedUser(updatedUser),
       });
     } catch (error) {
-      console.error('Profile update error:', error);
+      operationalLogger.error("user.profile_update_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to update profile",
       });
     }
   });
@@ -3527,10 +3530,13 @@ export function registerRoutes(app: Express): Server {
         user: serializeAuthenticatedUser(updatedUser),
       });
     } catch (error) {
-      console.error("User settings update error:", error);
+      operationalLogger.error("user.settings_update_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to update settings",
       });
     }
   });
