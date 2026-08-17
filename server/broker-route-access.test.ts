@@ -21,6 +21,46 @@ test("broker credential tests require an authenticated session", () => {
   }
 });
 
+test("broker credential test failures use operational logging and fixed 500 messages", () => {
+  const tradovateRoute = routeSource(
+    'app.post("/api/tradovate/test-connection"',
+    'app.post("/api/tradeify/test-connection"',
+  );
+  const tradeifyRoute = routeSource(
+    'app.post("/api/tradeify/test-connection"',
+    'app.post("/api/rithmic/test-connection"',
+  );
+  const rithmicRoute = routeSource(
+    'app.post("/api/rithmic/test-connection"',
+    'app.get("/api/accounts/:id/rithmic-readiness"',
+  );
+
+  assert.match(tradovateRoute, /operationalLogger\.error\("broker\.tradovate_test_connection_failed"/);
+  assert.match(tradovateRoute, /message: "Failed to test Tradovate connection"/);
+  assert.doesNotMatch(tradovateRoute, /Tradovate connection error:/);
+  assert.doesNotMatch(
+    tradovateRoute,
+    /message: error instanceof Error \? error\.message : 'Unknown error occurred'/,
+  );
+
+  assert.match(tradeifyRoute, /operationalLogger\.error\("broker\.tradeify_test_connection_failed"/);
+  assert.match(tradeifyRoute, /message: "Failed to test Tradeify connection"/);
+  assert.doesNotMatch(tradeifyRoute, /Tradeify connection error:/);
+  assert.doesNotMatch(
+    tradeifyRoute,
+    /message: error instanceof Error \? error\.message : 'Unknown error occurred'/,
+  );
+
+  assert.match(rithmicRoute, /operationalLogger\.error\("broker\.rithmic_test_connection_failed"/);
+  assert.match(rithmicRoute, /await disconnectBrokerSessionQuietly\(candidateSession\);/);
+  assert.match(rithmicRoute, /message: "Failed to test Rithmic connection"/);
+  assert.doesNotMatch(rithmicRoute, /Rithmic connection error:/);
+  assert.doesNotMatch(
+    rithmicRoute,
+    /message: error instanceof Error \? error\.message : 'Unknown error occurred'/,
+  );
+});
+
 test("Tradovate account and position reads verify saved-account ownership", () => {
   const routes = [
     routeSource('app.get("/api/tradovate/accounts/:username"', 'app.get("/api/tradovate/positions/:username"'),

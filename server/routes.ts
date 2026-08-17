@@ -2929,10 +2929,15 @@ export function registerRoutes(app: Express): Server {
         accounts: connectionTest.data,
       });
     } catch (error) {
-      console.error('Tradovate connection error:', error);
+      operationalLogger.error("broker.tradovate_test_connection_failed", {
+        error,
+        userId: req.session?.userId,
+        username: req.body?.username,
+        environment: req.body?.environment,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to test Tradovate connection",
       });
     }
   });
@@ -2993,10 +2998,14 @@ export function registerRoutes(app: Express): Server {
         message: connectionTest.message || 'Connection test failed',
       });
     } catch (error) {
-      console.error('Tradeify connection error:', error);
+      operationalLogger.error("broker.tradeify_test_connection_failed", {
+        error,
+        userId: req.session?.userId,
+        username: req.body?.username,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to test Tradeify connection",
       });
     }
   });
@@ -3062,10 +3071,16 @@ export function registerRoutes(app: Express): Server {
       if (candidateSession) {
         await disconnectBrokerSessionQuietly(candidateSession);
       }
-      console.error('Rithmic connection error:', error);
+      operationalLogger.error("broker.rithmic_test_connection_failed", {
+        error,
+        userId: req.session?.userId,
+        username: req.body?.username,
+        systemName: req.body?.systemName,
+        environment: req.body?.environment,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to test Rithmic connection",
       });
     }
   });
