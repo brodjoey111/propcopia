@@ -201,3 +201,35 @@ test("summarizeExecutionRecovery distinguishes fresh and stale sent broker submi
   );
   assert.equal(result.items[1]?.recoveryWindow.label, "Fresh acknowledgement window");
 });
+
+test("summarizeExecutionRecovery calls out active broker waits and fill waits in the top-level summary", () => {
+  const result = summarizeExecutionRecovery(
+    [
+      createTradeRecord({
+        historyId: "sent-fresh",
+        lifecycleStatus: "SENT",
+        sentAt: "2026-08-12T12:08:00.000Z",
+        updatedAt: "2026-08-12T12:08:00.000Z",
+        acknowledgedAt: undefined,
+      }),
+      createTradeRecord({
+        historyId: "ack-fresh",
+        lifecycleStatus: "ACKNOWLEDGED",
+        acknowledgedAt: "2026-08-12T12:07:00.000Z",
+        updatedAt: "2026-08-12T12:07:00.000Z",
+      }),
+    ],
+    {
+      now: "2026-08-12T12:10:00.000Z",
+      staleThresholdMinutes: 5,
+      limit: 5,
+    },
+  );
+
+  assert.equal(result.headline, "2 executions currently in flight");
+  assert.equal(
+    result.detail,
+    "1 broker submission is still waiting on acknowledgement and 1 acknowledged order is still waiting on fills.",
+  );
+  assert.equal(result.primaryActionLabel, "Wait for next update");
+});

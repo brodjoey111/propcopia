@@ -441,6 +441,50 @@ function buildExecutionRecoveryDetail(input: {
   return input.record.lastErrorMessage ?? "Execution stopped before completion.";
 }
 
+function buildExecutionRecoveryActiveSummaryDetail(
+  records: TradeHistoryRecord[],
+): string {
+  const sentCount = records.filter((record) => record.lifecycleStatus === "SENT").length;
+  const acknowledgedCount = records.filter(
+    (record) => record.lifecycleStatus === "ACKNOWLEDGED",
+  ).length;
+  const queuedCount = records.filter((record) => record.lifecycleStatus === "QUEUED").length;
+  const intentCount = records.filter(
+    (record) => record.lifecycleStatus === "INTENT_CREATED",
+  ).length;
+  const parts: string[] = [];
+
+  if (sentCount > 0) {
+    parts.push(
+      `${sentCount} broker submission${sentCount === 1 ? " is" : "s are"} still waiting on acknowledgement`,
+    );
+  }
+
+  if (acknowledgedCount > 0) {
+    parts.push(
+      `${acknowledgedCount} acknowledged order${acknowledgedCount === 1 ? " is" : "s are"} still waiting on fills`,
+    );
+  }
+
+  if (queuedCount > 0) {
+    parts.push(
+      `${queuedCount} queued execution${queuedCount === 1 ? " is" : "s are"} waiting to route`,
+    );
+  }
+
+  if (intentCount > 0) {
+    parts.push(
+      `${intentCount} intent${intentCount === 1 ? " is" : "s are"} still waiting to queue`,
+    );
+  }
+
+  if (parts.length === 0) {
+    return "Orders are still moving through the queue or broker acknowledgement steps.";
+  }
+
+  return `${parts.join(" and ")}.`;
+}
+
 function buildExecutionRecoveryItem(
   record: TradeHistoryRecord,
   nowMs: number,
@@ -1067,7 +1111,7 @@ export function summarizeExecutionRecovery(
   if (counts.active > 0) {
     return {
       headline: `${counts.active} execution${counts.active === 1 ? "" : "s"} currently in flight`,
-      detail: "Orders are still moving through the queue or broker acknowledgement steps.",
+      detail: buildExecutionRecoveryActiveSummaryDetail(records),
       tone: "ok",
       staleThresholdMinutes,
       primaryActionLabel,
