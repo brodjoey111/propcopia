@@ -22,6 +22,7 @@ Branch: `feature/broker-manager`
 - Trade history list and CSV export route hardening
 - Trade-copy runtime cleanup, kill-switch activation, AI chat, and market websocket error logging
 - Execution-history idempotency for duplicate and out-of-order acknowledgement/fill events
+- Follower fill-pipeline reconciliation now defers cumulative progress handling to the execution manager
 
 ## Current Verification Baseline
 

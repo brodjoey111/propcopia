@@ -1616,6 +1616,89 @@ test('follower execution fill stream rolls repeated fills from partial to final 
   assert.equal(executionManager.getExecutionState(execution.intentId)?.fillId, 'follower-partial-2');
 });
 
+test('follower execution fill stream ignores duplicate cumulative progress before the final fill', async () => {
+  const tradeIntentManager = new TradeIntentManager();
+  const engine = new TradeCopyEngine('demo', tradeIntentManager);
+  const fake = createFillStreamingBrokerAdapter();
+
+  (engine as any).createFollowerBrokerAdapter = () => fake.adapter;
+
+  await engine.addFollowerAccount(
+    createFollowerAccount('follower-rithmic-cumulative', {
+      platform: 'Rithmic',
+      rithmicAccountId: 'rithmic-cumulative-account',
+      rithmicSystemName: 'Rithmic Test',
+    }),
+    {
+      kind: 'rithmic',
+      environment: 'test',
+      username: 'user-1',
+      password: 'pass-1',
+      exchange: 'CME',
+      systemName: 'Rithmic Test',
+    },
+  );
+
+  await copyTrade(engine, 'fill-rithmic-cumulative');
+
+  const executionManager = getExecutionManager(engine);
+  const execution = executionManager.getAllExecutions()[0];
+  assert.equal(execution.status, 'COMPLETED');
+  assert.equal(tradeIntentManager.getIntent(execution.intentId)?.status, 'SENT');
+
+  fake.emitFill({
+    accountId: 'rithmic-cumulative-account',
+    brokerKey: 'follower-ws:follower-rithmic-cumulative',
+    brokerOrderId: execution.brokerOrderId,
+    symbol: 'ES',
+    side: 'BUY',
+    fillId: 'follower-cumulative-1',
+    filledAt: '2026-08-04T13:00:05.000Z',
+    filledQuantity: 1,
+    cumulativeFilledQuantity: 1,
+    remainingQuantity: 1,
+    averageFillPrice: 6402.25,
+  });
+
+  fake.emitFill({
+    accountId: 'rithmic-cumulative-account',
+    brokerKey: 'follower-ws:follower-rithmic-cumulative',
+    brokerOrderId: execution.brokerOrderId,
+    symbol: 'ES',
+    side: 'BUY',
+    fillId: 'follower-cumulative-1',
+    filledAt: '2026-08-04T13:00:04.000Z',
+    filledQuantity: 1,
+    cumulativeFilledQuantity: 1,
+    remainingQuantity: 1,
+    averageFillPrice: 6402.25,
+  });
+
+  assert.equal(tradeIntentManager.getIntent(execution.intentId)?.status, 'ACKNOWLEDGED');
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.filledQuantity, 1);
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.remainingQuantity, 1);
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.partialFillCount, 1);
+
+  fake.emitFill({
+    accountId: 'rithmic-cumulative-account',
+    brokerKey: 'follower-ws:follower-rithmic-cumulative',
+    brokerOrderId: execution.brokerOrderId,
+    symbol: 'ES',
+    side: 'BUY',
+    fillId: 'follower-cumulative-2',
+    filledAt: '2026-08-04T13:00:06.000Z',
+    filledQuantity: 1,
+    cumulativeFilledQuantity: 2,
+    remainingQuantity: 0,
+    averageFillPrice: 6402.5,
+  });
+
+  assert.equal(tradeIntentManager.getIntent(execution.intentId)?.status, 'FILLED');
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.filledQuantity, 2);
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.remainingQuantity, 0);
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.fillId, 'follower-cumulative-2');
+});
+
 test('offline master-to-follower simulation completes submission, partial fill, and final fill', async () => {
   const tradeIntentManager = new TradeIntentManager();
   const engine = new TradeCopyEngine('demo', tradeIntentManager);

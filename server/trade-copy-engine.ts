@@ -806,28 +806,15 @@ export class TradeCopyEngine extends EventEmitter {
     }
 
     try {
-      const remainingQuantity = candidate.remainingQuantity ?? candidate.request.quantity;
-      const incrementalFilledQuantity = fill.filledQuantity ?? remainingQuantity;
-      const cumulativeFilledQuantity = Math.min(
-        (candidate.filledQuantity ?? 0) + incrementalFilledQuantity,
-        candidate.request.quantity,
-      );
-
-      const fillPayload = {
+      this.executionManager.recordPartialFill(candidate.intentId, {
         brokerOrderId: fill.brokerOrderId,
         fillId: fill.fillId,
         filledAt: fill.filledAt,
-        filledQuantity: incrementalFilledQuantity,
-        cumulativeFilledQuantity,
-        remainingQuantity: Math.max(candidate.request.quantity - cumulativeFilledQuantity, 0),
+        filledQuantity: fill.filledQuantity,
+        cumulativeFilledQuantity: fill.cumulativeFilledQuantity,
+        remainingQuantity: fill.remainingQuantity,
         averageFillPrice: fill.averageFillPrice,
-      };
-
-      if (cumulativeFilledQuantity >= candidate.request.quantity) {
-        this.executionManager.recordFill(candidate.intentId, fillPayload);
-      } else {
-        this.executionManager.recordPartialFill(candidate.intentId, fillPayload);
-      }
+      });
     } catch (error) {
       console.error(
         `[TradeCopy] Failed to record follower fill for intent ${candidate.intentId}:`,
