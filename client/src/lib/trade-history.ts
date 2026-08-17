@@ -211,6 +211,38 @@ const IN_FLIGHT_STATUSES = new Set<TradeHistoryLifecycleStatus>([
   "PARTIALLY_FILLED",
 ]);
 
+function formatCountLabel(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function buildBrokerPipelineDetail(input: {
+  sentCount: number;
+  acknowledgedCount: number;
+  acknowledgedVerb?: "received" | "waiting";
+}): string | null {
+  const parts: string[] = [];
+
+  if (input.sentCount > 0) {
+    parts.push(
+      `${formatCountLabel(input.sentCount, "order is", "orders are")} still waiting on broker acknowledgement`,
+    );
+  }
+
+  if (input.acknowledgedCount > 0) {
+    parts.push(
+      input.acknowledgedVerb === "received"
+        ? `${formatCountLabel(input.acknowledgedCount, "broker acknowledgement", "broker acknowledgements")} received so far`
+        : `${formatCountLabel(input.acknowledgedCount, "acknowledged order is", "acknowledged orders are")} still waiting on fills`,
+    );
+  }
+
+  if (parts.length === 0) {
+    return null;
+  }
+
+  return `${parts.join(" and ")}.`;
+}
+
 function buildExecutionSummary(record: TradeHistoryApiRecord): TradeHistoryRow["executionSummary"] {
   const filledQuantity =
     typeof record.filledQuantity === "number"
@@ -555,6 +587,9 @@ export function describeTradeLifecycleOverview(
   const acknowledgedCount = records.filter(
     (record) => record.lifecycleStatus === "ACKNOWLEDGED",
   ).length;
+  const sentCount = records.filter(
+    (record) => record.lifecycleStatus === "SENT",
+  ).length;
   const partialCount = records.filter(
     (record) => record.lifecycleStatus === "PARTIALLY_FILLED",
   ).length;
@@ -572,8 +607,12 @@ export function describeTradeLifecycleOverview(
     return {
       headline: `${issueCount} execution${issueCount === 1 ? " needs" : "s need"} attention`,
       detail:
-        acknowledgedCount > 0
-          ? `${acknowledgedCount} acknowledged order${acknowledgedCount === 1 ? " is" : "s are"} still waiting on fills.`
+        sentCount > 0 || acknowledgedCount > 0
+          ? (buildBrokerPipelineDetail({
+              sentCount,
+              acknowledgedCount,
+              acknowledgedVerb: "waiting",
+            }) ?? `${Math.max(inFlightCount, 0)} order${inFlightCount === 1 ? "" : "s"} are still moving through the pipeline.`)
           : `${Math.max(inFlightCount, 0)} order${inFlightCount === 1 ? "" : "s"} are still moving through the pipeline.`,
       tone: "danger",
     };
@@ -588,9 +627,11 @@ export function describeTradeLifecycleOverview(
       detail:
         partialCount > 0
           ? `${partialCount} order${partialCount === 1 ? " still needs" : " orders still need"} remaining fills before they are complete.`
-          : acknowledgedCount > 0
-          ? `${acknowledgedCount} broker acknowledgement${acknowledgedCount === 1 ? "" : "s"} received so far.`
-          : "Orders are moving from intent creation into broker handoff.",
+          : buildBrokerPipelineDetail({
+              sentCount,
+              acknowledgedCount,
+              acknowledgedVerb: "received",
+            }) ?? "Orders are moving from intent creation into broker handoff.",
       tone: "warn",
     };
   }
@@ -610,7 +651,7 @@ export function buildTradeLifecycleStageCards(
 
   const intents = count(["INTENT_CREATED"]);
   const queued = count(["QUEUED"]);
-  const working = count(["SENT", "ACKNOWLEDGED"]);
+  const broker = count(["SENT", "ACKNOWLEDGED"]);
   const partial = count(["PARTIALLY_FILLED"]);
   const filled = count(["FILLED"]);
   const exceptions = count([
@@ -632,9 +673,9 @@ export function buildTradeLifecycleStageCards(
       tone: queued > 0 ? "warn" : "muted",
     },
     {
-      label: "Working",
-      value: String(working),
-      tone: working > 0 ? "warn" : "muted",
+      label: "Broker",
+      value: String(broker),
+      tone: broker > 0 ? "warn" : "muted",
     },
     {
       label: "Partial",
@@ -822,6 +863,10 @@ export function buildDashboardExecutionAttentionCards(
   const acknowledgedCount = records.filter(
     (record) => record.lifecycleStatus === "ACKNOWLEDGED",
   ).length;
+  const sentCount = records.filter(
+    (record) => record.lifecycleStatus === "SENT",
+  ).length;
+  const brokerCount = sentCount + acknowledgedCount;
 
   return [
     {
@@ -843,13 +888,15 @@ export function buildDashboardExecutionAttentionCards(
           : "No partial fills waiting",
     },
     {
-      label: "Acknowledged",
-      value: String(acknowledgedCount),
-      tone: acknowledgedCount > 0 ? "watch" : "ok",
+      label: "Broker",
+      value: String(brokerCount),
+      tone: brokerCount > 0 ? "watch" : "ok",
       detail:
-        acknowledgedCount > 0
-          ? `${acknowledgedCount} broker acknowledgement${acknowledgedCount === 1 ? "" : "s"} still waiting on fills`
-          : "No acknowledged orders waiting",
+        buildBrokerPipelineDetail({
+          sentCount,
+          acknowledgedCount,
+          acknowledgedVerb: "waiting",
+        })?.replace(/\.$/, "") ?? "No broker-routed orders waiting",
     },
   ];
 }

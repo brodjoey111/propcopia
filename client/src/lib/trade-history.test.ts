@@ -252,6 +252,23 @@ test("describeTradeLifecycleOverview highlights exceptions before in-flight work
   assert.equal(overview.tone, "danger");
 });
 
+test("describeTradeLifecycleOverview calls out sent orders waiting on acknowledgement", () => {
+  const overview = describeTradeLifecycleOverview([
+    createRecord({ lifecycleStatus: "FAILED", failedAt: "2026-08-04T12:00:05.000Z" }),
+    createRecord({
+      historyId: "2",
+      lifecycleStatus: "SENT",
+      filledAt: undefined,
+      sentAt: "2026-08-04T12:00:03.000Z",
+      updatedAt: "2026-08-04T12:00:03.000Z",
+    }),
+  ]);
+
+  assert.equal(overview.headline, "1 execution needs attention");
+  assert.equal(overview.detail, "1 order is still waiting on broker acknowledgement.");
+  assert.equal(overview.tone, "danger");
+});
+
 test("describeTradeLifecycleOverview calls out partial fills as active work", () => {
   const overview = describeTradeLifecycleOverview([
     createRecord({
@@ -272,16 +289,17 @@ test("buildTradeLifecycleStageCards groups records into simple lifecycle buckets
   const cards = buildTradeLifecycleStageCards([
     createRecord({ lifecycleStatus: "INTENT_CREATED", filledAt: undefined }),
     createRecord({ historyId: "2", lifecycleStatus: "QUEUED", filledAt: undefined }),
-    createRecord({ historyId: "3", lifecycleStatus: "ACKNOWLEDGED", filledAt: undefined }),
-    createRecord({ historyId: "4", lifecycleStatus: "PARTIALLY_FILLED", filledAt: undefined }),
-    createRecord({ historyId: "5", lifecycleStatus: "FILLED" }),
-    createRecord({ historyId: "6", lifecycleStatus: "RULE_REJECTED", filledAt: undefined }),
+    createRecord({ historyId: "3", lifecycleStatus: "SENT", filledAt: undefined }),
+    createRecord({ historyId: "4", lifecycleStatus: "ACKNOWLEDGED", filledAt: undefined }),
+    createRecord({ historyId: "5", lifecycleStatus: "PARTIALLY_FILLED", filledAt: undefined }),
+    createRecord({ historyId: "6", lifecycleStatus: "FILLED" }),
+    createRecord({ historyId: "7", lifecycleStatus: "RULE_REJECTED", filledAt: undefined }),
   ]);
 
   assert.deepEqual(cards, [
     { label: "Intent", value: "1", tone: "warn" },
     { label: "Queued", value: "1", tone: "warn" },
-    { label: "Working", value: "1", tone: "warn" },
+    { label: "Broker", value: "2", tone: "warn" },
     { label: "Partial", value: "1", tone: "warn" },
     { label: "Filled", value: "1", tone: "ok" },
     { label: "Exceptions", value: "1", tone: "danger" },
@@ -414,7 +432,7 @@ test("buildDashboardExecutionPathRows pins failed and in-flight records ahead of
   );
 });
 
-test("buildDashboardExecutionAttentionCards summarizes failed, partial, and acknowledged work", () => {
+test("buildDashboardExecutionAttentionCards summarizes failed, partial, and broker-routed work", () => {
   const cards = buildDashboardExecutionAttentionCards([
     createRecord({
       historyId: "failed",
@@ -434,6 +452,13 @@ test("buildDashboardExecutionAttentionCards summarizes failed, partial, and ackn
       filledAt: undefined,
       updatedAt: "2026-08-04T12:00:04.000Z",
     }),
+    createRecord({
+      historyId: "sent",
+      lifecycleStatus: "SENT",
+      filledAt: undefined,
+      sentAt: "2026-08-04T12:00:03.000Z",
+      updatedAt: "2026-08-04T12:00:03.000Z",
+    }),
   ]);
 
   assert.deepEqual(cards, [
@@ -450,10 +475,10 @@ test("buildDashboardExecutionAttentionCards summarizes failed, partial, and ackn
       detail: "1 order still need remaining fills",
     },
     {
-      label: "Acknowledged",
-      value: "1",
+      label: "Broker",
+      value: "2",
       tone: "watch",
-      detail: "1 broker acknowledgement still waiting on fills",
+      detail: "1 order is still waiting on broker acknowledgement and 1 acknowledged order is still waiting on fills",
     },
   ]);
 });
