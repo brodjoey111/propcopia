@@ -22,6 +22,8 @@ interface DashboardAccountRosterPanelAccount {
   riskMode?: "global" | "custom";
   riskStatusLabel?: string;
   riskStatusTone?: "ok" | "warn" | "danger" | "muted";
+  hasLiveBalance: boolean;
+  hasLivePositions: boolean;
 }
 
 interface DashboardAccountRosterPanelProps {
@@ -54,15 +56,16 @@ export function DashboardAccountRosterPanel({
   onConfigure,
 }: DashboardAccountRosterPanelProps) {
   const [panelView, setPanelView] = useState<"compact" | "detailed">("compact");
+  const hasVerifiedBrokerData = dashboardAccounts.some(
+    (account) => account.hasLiveBalance || account.hasLivePositions,
+  );
 
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Account Roster</p>
-          <h2 className="mt-2 text-2xl font-semibold text-white">
-            {usingMockData ? "Mock account command cards" : "Live account command cards"}
-          </h2>
+          <h2 className="mt-2 text-2xl font-semibold text-white">Account command cards</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex flex-wrap gap-2">
@@ -93,7 +96,7 @@ export function DashboardAccountRosterPanel({
             </Button>
           )}
           <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-zinc-300">
-            {usingMockData ? "UI preview data" : "live data"}
+            {hasVerifiedBrokerData ? "verified broker values" : "saved values only"}
           </Badge>
         </div>
       </div>
@@ -159,15 +162,19 @@ export function DashboardAccountRosterPanel({
                     <>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-                          <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Balance</p>
+                          <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">
+                            {account.hasLiveBalance ? "Balance" : "Saved Balance"}
+                          </p>
                           <p className="mt-2 text-xl font-semibold text-white">{formatCurrency(account.balance)}</p>
                         </div>
                         <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-                          <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Open Positions</p>
+                          <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">
+                            {account.hasLivePositions ? "Open Positions" : "Saved Positions"}
+                          </p>
                           <p className="mt-2 text-xl font-semibold text-white">{account.openPositions}</p>
                         </div>
                         <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-                          <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Daily P&amp;L</p>
+                          <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Saved Daily P&amp;L</p>
                           <p className={`mt-2 text-xl font-semibold ${isPositive ? "text-emerald-300" : "text-rose-300"}`}>
                             {account.dailyPnl >= 0 ? "+" : "-"}
                             {formatCurrency(Math.abs(account.dailyPnl))}
@@ -175,10 +182,14 @@ export function DashboardAccountRosterPanel({
                         </div>
                         <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
                           <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Unrealized</p>
-                          <p className={`mt-2 text-xl font-semibold ${isUnrealizedPositive ? "text-cyan-300" : "text-rose-300"}`}>
-                            {account.unrealizedPnl >= 0 ? "+" : "-"}
-                            {formatCurrency(Math.abs(account.unrealizedPnl))}
-                          </p>
+                          {account.hasLivePositions ? (
+                            <p className={`mt-2 text-xl font-semibold ${isUnrealizedPositive ? "text-cyan-300" : "text-rose-300"}`}>
+                              {account.unrealizedPnl >= 0 ? "+" : "-"}
+                              {formatCurrency(Math.abs(account.unrealizedPnl))}
+                            </p>
+                          ) : (
+                            <p className="mt-2 text-xl font-semibold text-zinc-500">Unavailable</p>
+                          )}
                         </div>
                       </div>
 
@@ -206,10 +217,10 @@ export function DashboardAccountRosterPanel({
                         Compact view keeps the roster lighter. Switch to detailed view for balance, P&amp;L, and account controls context.
                       </p>
                       <div className="mt-3 flex flex-wrap gap-3 text-sm">
-                        <span className="text-zinc-300">Balance: {formatCurrency(account.balance)}</span>
-                        <span className="text-zinc-300">Open Positions: {account.openPositions}</span>
+                        <span className="text-zinc-300">{account.hasLiveBalance ? "Balance" : "Saved Balance"}: {formatCurrency(account.balance)}</span>
+                        <span className="text-zinc-300">{account.hasLivePositions ? "Open Positions" : "Saved Positions"}: {account.openPositions}</span>
                         <span className={isPositive ? "text-emerald-300" : "text-rose-300"}>
-                          Daily P&amp;L: {account.dailyPnl >= 0 ? "+" : "-"}{formatCurrency(Math.abs(account.dailyPnl))}
+                          Saved Daily P&amp;L: {account.dailyPnl >= 0 ? "+" : "-"}{formatCurrency(Math.abs(account.dailyPnl))}
                         </span>
                       </div>
                     </div>

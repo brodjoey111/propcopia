@@ -53,7 +53,8 @@ test("dashboard runtime overview includes a compact headline summary for account
   assert.match(source, /dashboardSummary:\s*\{/);
   assert.match(source, /totalAccounts:\s*input\.userAccounts\.length/);
   assert.match(source, /connectedAccounts:\s*input\.userAccounts\.filter\(\(account\) => account\.isConnected\)\.length/);
-  assert.match(source, /totalBuyingPower:\s*totalBalance \* 1\.92/);
+  assert.match(source, /totalBuyingPower:\s*null/);
+  assert.doesNotMatch(source, /totalBalance \* 1\.92/);
   assert.match(source, /totalOpenPositions:\s*accountsOverview\.positionSnapshot\.summary\.totalOpenPositions/);
 });
 

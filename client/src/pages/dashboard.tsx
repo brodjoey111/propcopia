@@ -148,64 +148,9 @@ type DashboardAccountView = {
   riskMode?: "global" | "custom";
   riskStatusLabel?: string;
   riskStatusTone?: "ok" | "warn" | "danger" | "muted";
+  hasLiveBalance: boolean;
+  hasLivePositions: boolean;
 };
-
-const mockAccounts: DashboardAccountView[] = [
-  {
-    id: "preview-master",
-    name: "Apex Master",
-    accountId: "RIT-48291",
-    platform: "Rithmic",
-    accountType: "master",
-    isConnected: true,
-    balance: 152340.52,
-    dailyPnl: 1284.7,
-    unrealizedPnl: 412.25,
-    openPositions: 2,
-  },
-  {
-    id: "preview-follower-1",
-    name: "TopStep Follower 01",
-    accountId: "RIT-48295",
-    platform: "Rithmic",
-    accountType: "follower",
-    isConnected: true,
-    balance: 50124.1,
-    dailyPnl: 426.11,
-    unrealizedPnl: 143.5,
-    openPositions: 2,
-    positionScaling: 100,
-    riskMode: "global",
-  },
-  {
-    id: "preview-follower-2",
-    name: "FundedNext Follower",
-    accountId: "RIT-48302",
-    platform: "Rithmic",
-    accountType: "follower",
-    isConnected: false,
-    balance: 49782.38,
-    dailyPnl: -132.85,
-    unrealizedPnl: 0,
-    openPositions: 0,
-    positionScaling: 80,
-    riskMode: "custom",
-  },
-];
-
-const mockPnlSeries = [
-  { label: "Mon", pnl: 220, equity: 248900 },
-  { label: "Tue", pnl: 640, equity: 249540 },
-  { label: "Wed", pnl: 310, equity: 249850 },
-  { label: "Thu", pnl: 1180, equity: 251030 },
-  { label: "Fri", pnl: 1575, equity: 252605 },
-];
-
-const mockPositions = [
-  { symbol: "NQU6", side: "Long", size: 2, avg: "19,842.25", account: "Apex Master", pnl: 412.25 },
-  { symbol: "ESU6", side: "Long", size: 1, avg: "6,402.75", account: "TopStep Follower 01", pnl: 143.5 },
-  { symbol: "CLV6", side: "Flat", size: 0, avg: "-", account: "FundedNext Follower", pnl: 0 },
-];
 
 async function getJson<T>(url: string): Promise<T> {
   const response = await fetch(url, {
@@ -276,7 +221,7 @@ export default function Dashboard() {
   const rithmicAccounts = getRithmicAccounts(accounts);
   const hasConnectedAccounts = accounts.some((account) => account.isConnected);
   const hasRithmicAccounts = rithmicAccounts.length > 0;
-  const usingMockData = accounts.length === 0;
+  const usingMockData = false;
   const {
     loadDetailSections,
     showAccountRoster,
@@ -495,9 +440,7 @@ export default function Dashboard() {
     ).map((item) => [item.accountId, item]),
   );
 
-  const dashboardAccounts: DashboardAccountView[] = usingMockData
-    ? mockAccounts
-    : accounts.map((account) => {
+  const dashboardAccounts: DashboardAccountView[] = accounts.map((account) => {
         const numericPnl = account.pnl ? parseFloat(account.pnl) : 0;
         const liveBalanceMetrics = accountBalanceMetricsById[account.id];
         const livePositionMetrics = positionMetricsById[account.id];
@@ -521,7 +464,7 @@ export default function Dashboard() {
           unrealizedPnl:
             livePositionMetrics?.hasLiveBrokerData
               ? livePositionMetrics.unrealizedPnl
-              : (account.openPositions ? numericPnl * 0.28 : 0),
+              : 0,
           openPositions:
             livePositionMetrics?.hasLiveBrokerData
               ? livePositionMetrics.openPositions
@@ -532,6 +475,8 @@ export default function Dashboard() {
           riskMode: (account.riskMode as "global" | "custom") || undefined,
           riskStatusLabel: riskBadge.label,
           riskStatusTone: riskBadge.tone,
+          hasLiveBalance: liveBalanceMetrics?.hasLiveBrokerData ?? false,
+          hasLivePositions: livePositionMetrics?.hasLiveBrokerData ?? false,
         };
       });
 
@@ -543,8 +488,22 @@ export default function Dashboard() {
     ?? dashboardAccounts.filter((account) => account.isConnected).length;
   const disconnectedAccountsCount = dashboardSummary?.disconnectedAccounts
     ?? (dashboardAccounts.length - connectedAccountsCount);
+  const hasAnyLiveData = dashboardAccounts.some(
+    (account) => account.hasLiveBalance || account.hasLivePositions,
+  );
+  const hasVerifiedLiveBalance = dashboardAccounts.length > 0
+    && dashboardAccounts.every((account) => account.hasLiveBalance);
+  const hasVerifiedLivePositions = dashboardAccounts.length > 0
+    && dashboardAccounts.every((account) => account.hasLivePositions);
+  const dashboardDataLabel = hasVerifiedLiveBalance && hasVerifiedLivePositions
+    ? "Verified Broker Data"
+    : hasAnyLiveData
+      ? "Mixed Broker and Saved Data"
+      : accounts.length > 0
+        ? "Saved Account Data"
+        : "No Account Data";
 
-  const totalBuyingPower = dashboardSummary?.totalBuyingPower ?? (totalBalance * 1.92);
+  const totalBuyingPower: number | null = null;
   const tradeHistorySummary = tradeAnalytics?.summary ?? {
     total: 0,
     filled: 0,
@@ -715,9 +674,7 @@ export default function Dashboard() {
     ?? operationsOverviewData?.positions.totalOpenPositions
     ?? positionSnapshotData?.summary.totalOpenPositions
     ?? dashboardAccounts.reduce((sum, account) => sum + account.openPositions, 0);
-  const riskShield = usingMockData
-    ? "Preview state"
-    : breachedRiskCount > 0
+  const riskShield = breachedRiskCount > 0
       ? "Breached"
       : warningRiskCount > 0
         ? "Watchlist"
@@ -1085,9 +1042,7 @@ export default function Dashboard() {
   };
 
   const livePositions = toDashboardPositionRows(positionSnapshotData?.accounts ?? []);
-  const positions = usingMockData
-    ? mockPositions
-    : livePositions;
+  const positions = livePositions;
 
   return (
     <div className="space-y-6 pb-8">
@@ -1097,7 +1052,7 @@ export default function Dashboard() {
           <div className="space-y-5">
             <div className="flex flex-wrap items-center gap-2">
               <Badge className="border-cyan-400/20 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/10">
-                {usingMockData ? "Design Preview" : "Broker Live"}
+                {dashboardDataLabel}
               </Badge>
               <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-zinc-300">
                 {currentDateLabel}
@@ -1173,30 +1128,34 @@ export default function Dashboard() {
             <div className="mt-5 space-y-3">
               {[
                 {
-                  label: "Net Liquidity",
+                  label: hasVerifiedLiveBalance ? "Net Liquidity" : "Saved Balance",
                   value: formatCurrency(totalBalance),
                   icon: Wallet,
                   tone: "text-white",
+                  status: hasVerifiedLiveBalance ? "broker live" : "not live",
                 },
                 {
                   label: "Buying Power",
-                  value: formatCurrency(totalBuyingPower),
+                  value: totalBuyingPower === null ? "Unavailable" : formatCurrency(totalBuyingPower),
                   icon: CircleDollarSign,
                   tone: "text-cyan-300",
+                  status: "not provided",
                 },
                 {
-                  label: "Daily P&L",
+                  label: "Saved Daily P&L",
                   value: `${totalDailyPnl >= 0 ? "+" : "-"}${formatCurrency(Math.abs(totalDailyPnl))}`,
                   icon: TrendingUp,
                   tone: getTone(totalDailyPnl),
+                  status: "not live",
                 },
                 {
-                  label: "Unrealized",
+                  label: hasVerifiedLivePositions ? "Unrealized" : "Unrealized P&L",
                   value: `${totalUnrealizedPnl >= 0 ? "+" : "-"}${formatCurrency(Math.abs(totalUnrealizedPnl))}`,
                   icon: Activity,
                   tone: getTone(totalUnrealizedPnl),
+                  status: hasVerifiedLivePositions ? "broker live" : "unavailable",
                 },
-              ].map(({ label, value, icon: Icon, tone }) => (
+              ].map(({ label, value, icon: Icon, tone, status }) => (
                 <div
                   key={label}
                   className="flex items-center justify-between rounded-2xl border border-white/8 bg-gradient-to-r from-white/[0.06] to-white/[0.02] px-4 py-3"
@@ -1212,7 +1171,7 @@ export default function Dashboard() {
                   </div>
                   <div className="text-right">
                     <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-600">status</div>
-                    <div className="mt-1 text-sm text-zinc-300">healthy</div>
+                    <div className="mt-1 text-sm text-zinc-300">{status}</div>
                   </div>
                 </div>
               ))}
@@ -1229,40 +1188,38 @@ export default function Dashboard() {
               <h2 className="mt-2 text-2xl font-semibold text-white">Execution throughput and fill quality</h2>
             </div>
             <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-sm text-emerald-300">
-              {usingMockData
-                ? `${mockPnlSeries[mockPnlSeries.length - 1].pnl} preview trades`
-                : `${tradeHistorySummary.total} recent lifecycle events`}
+              {tradeHistorySummary.total} recent lifecycle events
             </div>
           </div>
 
           <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
             <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
               <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Fill Rate</p>
-              <p className="mt-2 text-xl font-semibold text-white">{usingMockData ? "72%" : `${filledRate}%`}</p>
+              <p className="mt-2 text-xl font-semibold text-white">{filledRate}%</p>
             </div>
             <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
               <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Busiest Day</p>
               <p className="mt-2 text-xl font-semibold text-emerald-300">
-                {usingMockData ? "Thu" : `${bestExecutionDay.label} (${bestExecutionDay.total})`}
+                {bestExecutionDay.label} ({bestExecutionDay.total})
               </p>
             </div>
             <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
               <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Most Failures</p>
               <p className="mt-2 text-xl font-semibold text-rose-300">
-                {usingMockData ? "Tue" : `${highestFailureDay.label} (${highestFailureDay.failed})`}
+                {highestFailureDay.label} ({highestFailureDay.failed})
               </p>
             </div>
             <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
               <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Best Fill Day</p>
               <p className="mt-2 text-xl font-semibold text-cyan-300">
-                {usingMockData ? "Fri" : `${highestFilledDay.label} (${highestFilledDay.filled})`}
+                {highestFilledDay.label} ({highestFilledDay.filled})
               </p>
             </div>
           </div>
 
           <div className="h-[360px] rounded-[26px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.01))] p-4">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={usingMockData ? mockPnlSeries : dailyExecutionSeries}>
+              <AreaChart data={dailyExecutionSeries}>
                 <defs>
                   <linearGradient id="equityGlow" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.28} />
@@ -1287,14 +1244,14 @@ export default function Dashboard() {
                 />
                 <Area
                   type="monotone"
-                  dataKey={usingMockData ? "equity" : "total"}
+                  dataKey="total"
                   stroke="#38bdf8"
                   strokeWidth={2.5}
                   fill="url(#equityGlow)"
                 />
                 <Line
                   type="monotone"
-                  dataKey={usingMockData ? "pnl" : "filled"}
+                  dataKey="filled"
                   stroke="#4ade80"
                   strokeWidth={2.2}
                   dot={{ r: 3, fill: "#4ade80" }}

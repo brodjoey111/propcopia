@@ -74,7 +74,7 @@ export interface DashboardRuntimeOverviewResponse {
     connectedAccounts: number;
     disconnectedAccounts: number;
     totalBalance: number;
-    totalBuyingPower: number;
+    totalBuyingPower: number | null;
     totalDailyPnl: number;
     totalUnrealizedPnl: number;
     totalOpenPositions: number;

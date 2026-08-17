@@ -566,7 +566,7 @@ export interface DashboardRuntimeOverviewResult extends AccountsRuntimeOverviewR
     connectedAccounts: number;
     disconnectedAccounts: number;
     totalBalance: number;
-    totalBuyingPower: number;
+    totalBuyingPower: number | null;
     totalDailyPnl: number;
     totalUnrealizedPnl: number;
     totalOpenPositions: number;
@@ -1085,7 +1085,7 @@ export async function buildDashboardRuntimeOverview(
     connectedAccounts: input.userAccounts.filter((account) => account.isConnected).length,
     disconnectedAccounts: input.userAccounts.filter((account) => !account.isConnected).length,
     totalBalance,
-    totalBuyingPower: totalBalance * 1.92,
+    totalBuyingPower: null,
     totalDailyPnl,
     totalUnrealizedPnl,
     totalOpenPositions: accountsOverview.positionSnapshot.summary.totalOpenPositions,
