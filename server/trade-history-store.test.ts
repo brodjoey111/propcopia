@@ -115,6 +115,167 @@ test('tracks partial fills without forcing the record into a final fill state', 
   store.clear();
 });
 
+test('ignores duplicate and stale partial fills once progress has already advanced', () => {
+  const store = new TradeHistoryStore();
+  store.start();
+
+  propCopiaEventBus.publish('intent.created', {
+    intent: {
+      intentId: 'intent-partial-stable',
+      masterAccountId: 'master-partial-stable',
+      masterFillId: 'fill-partial-stable',
+      followerAccountId: 'follower-partial-stable',
+      symbol: 'ES',
+      side: 'BUY',
+      quantity: 3,
+      createdAt: '2026-08-04T12:00:00.000Z',
+      status: 'NEW',
+    },
+  });
+  propCopiaEventBus.publish('execution.partial_fill', {
+    intentId: 'intent-partial-stable',
+    followerAccountId: 'follower-partial-stable',
+    brokerKey: 'follower-ws:follower-partial-stable',
+    brokerOrderId: 'broker-partial-stable',
+    fillId: 'fill-follow-partial-stable-a',
+    cumulativeFilledQuantity: 2,
+    remainingQuantity: 1,
+    averageFillPrice: 6400.5,
+    filledAt: '2026-08-04T12:00:04.000Z',
+  });
+  propCopiaEventBus.publish('execution.partial_fill', {
+    intentId: 'intent-partial-stable',
+    followerAccountId: 'follower-partial-stable',
+    brokerKey: 'follower-ws:follower-partial-stable',
+    brokerOrderId: 'broker-partial-stable',
+    fillId: 'fill-follow-partial-stable-a',
+    cumulativeFilledQuantity: 2,
+    remainingQuantity: 1,
+    averageFillPrice: 6400.5,
+    filledAt: '2026-08-04T12:00:03.000Z',
+  });
+  propCopiaEventBus.publish('execution.partial_fill', {
+    intentId: 'intent-partial-stable',
+    followerAccountId: 'follower-partial-stable',
+    brokerKey: 'follower-ws:follower-partial-stable',
+    brokerOrderId: 'broker-partial-stable',
+    fillId: 'fill-follow-partial-stable-b',
+    cumulativeFilledQuantity: 1,
+    remainingQuantity: 2,
+    averageFillPrice: 6400.25,
+    filledAt: '2026-08-04T12:00:02.000Z',
+  });
+
+  const record = store.get('intent-partial-stable');
+  assert.ok(record);
+  assert.equal(record.lifecycleStatus, 'PARTIALLY_FILLED');
+  assert.equal(record.partialFillCount, 1);
+  assert.equal(record.filledQuantity, 2);
+  assert.equal(record.remainingQuantity, 1);
+  assert.equal(record.updatedAt, '2026-08-04T12:00:04.000Z');
+  assert.equal(record.events.length, 2);
+  assert.equal(record.events[0]?.message, 'Partial fill recorded (2/3)');
+
+  store.stop();
+  store.clear();
+});
+
+test('late acknowledgements do not downgrade a filled trade history record', () => {
+  const store = new TradeHistoryStore();
+  store.start();
+
+  propCopiaEventBus.publish('intent.created', {
+    intent: {
+      intentId: 'intent-filled-stable',
+      masterAccountId: 'master-filled-stable',
+      masterFillId: 'fill-filled-stable',
+      followerAccountId: 'follower-filled-stable',
+      symbol: 'NQ',
+      side: 'SELL',
+      quantity: 1,
+      createdAt: '2026-08-04T12:00:00.000Z',
+      status: 'NEW',
+    },
+  });
+  propCopiaEventBus.publish('execution.filled', {
+    intentId: 'intent-filled-stable',
+    followerAccountId: 'follower-filled-stable',
+    brokerKey: 'rithmic:follower-filled-stable',
+    brokerOrderId: 'broker-filled-stable',
+    fillId: 'fill-follow-filled-stable',
+    filledQuantity: 1,
+    averageFillPrice: 22000.25,
+    filledAt: '2026-08-04T12:00:04.000Z',
+  });
+  propCopiaEventBus.publish('execution.acknowledged', {
+    intentId: 'intent-filled-stable',
+    followerAccountId: 'follower-filled-stable',
+    brokerKey: 'rithmic:follower-filled-stable',
+    brokerOrderId: 'broker-filled-stable',
+    acknowledgedAt: '2026-08-04T12:00:03.000Z',
+    brokerStatus: 'WORKING',
+  });
+
+  const record = store.get('intent-filled-stable');
+  assert.ok(record);
+  assert.equal(record.lifecycleStatus, 'FILLED');
+  assert.equal(record.filledAt, '2026-08-04T12:00:04.000Z');
+  assert.equal(record.acknowledgedAt, undefined);
+  assert.equal(record.events.length, 2);
+  assert.equal(record.events[0]?.type, 'execution.filled');
+
+  store.stop();
+  store.clear();
+});
+
+test('duplicate filled events do not append redundant terminal history entries', () => {
+  const store = new TradeHistoryStore();
+  store.start();
+
+  propCopiaEventBus.publish('intent.created', {
+    intent: {
+      intentId: 'intent-filled-duplicate',
+      masterAccountId: 'master-filled-duplicate',
+      masterFillId: 'fill-filled-duplicate',
+      followerAccountId: 'follower-filled-duplicate',
+      symbol: 'YM',
+      side: 'BUY',
+      quantity: 2,
+      createdAt: '2026-08-04T12:00:00.000Z',
+      status: 'NEW',
+    },
+  });
+  propCopiaEventBus.publish('execution.filled', {
+    intentId: 'intent-filled-duplicate',
+    followerAccountId: 'follower-filled-duplicate',
+    brokerKey: 'follower-ws:follower-filled-duplicate',
+    brokerOrderId: 'broker-filled-duplicate',
+    fillId: 'fill-follow-duplicate',
+    filledQuantity: 2,
+    averageFillPrice: 41000.75,
+    filledAt: '2026-08-04T12:00:04.000Z',
+  });
+  propCopiaEventBus.publish('execution.filled', {
+    intentId: 'intent-filled-duplicate',
+    followerAccountId: 'follower-filled-duplicate',
+    brokerKey: 'follower-ws:follower-filled-duplicate',
+    brokerOrderId: 'broker-filled-duplicate',
+    fillId: 'fill-follow-duplicate',
+    filledQuantity: 2,
+    averageFillPrice: 41000.75,
+    filledAt: '2026-08-04T12:00:04.000Z',
+  });
+
+  const record = store.get('intent-filled-duplicate');
+  assert.ok(record);
+  assert.equal(record.lifecycleStatus, 'FILLED');
+  assert.equal(record.events.length, 2);
+  assert.equal(record.events[0]?.type, 'execution.filled');
+
+  store.stop();
+  store.clear();
+});
+
 test('tracks a cancelled intent as a terminal cancelled history record', () => {
   const store = new TradeHistoryStore();
   store.start();

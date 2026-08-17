@@ -21,6 +21,7 @@ Branch: `feature/broker-manager`
 - Broker credential test routes for Tradovate, Tradeify, and Rithmic Test
 - Trade history list and CSV export route hardening
 - Trade-copy runtime cleanup, kill-switch activation, AI chat, and market websocket error logging
+- Execution-history idempotency for duplicate and out-of-order acknowledgement/fill events
 
 ## Current Verification Baseline
 

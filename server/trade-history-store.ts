@@ -75,6 +75,10 @@ function buildRuleHistoryId(masterFillId: string, followerAccountId: string): st
   return `rule:${masterFillId}:${followerAccountId}`;
 }
 
+function isTimestampStale(existingTimestamp: string | undefined, nextTimestamp: string): boolean {
+  return typeof existingTimestamp === 'string' && existingTimestamp >= nextTimestamp;
+}
+
 export class TradeHistoryStore {
   private records = new Map<string, TradeHistoryRecord>();
   private started = false;
@@ -234,6 +238,17 @@ export class TradeHistoryStore {
     });
 
     this.subscribe('execution.acknowledged', (event) => {
+      const existing = this.records.get(event.intentId);
+      if (
+        !existing ||
+        existing.lifecycleStatus === 'FILLED' ||
+        existing.lifecycleStatus === 'FAILED' ||
+        existing.lifecycleStatus === 'CANCELLED' ||
+        isTimestampStale(existing.acknowledgedAt, event.acknowledgedAt)
+      ) {
+        return;
+      }
+
       this.patchIntentRecord(event.intentId, {
         brokerKey: event.brokerKey,
         brokerOrderId: event.brokerOrderId,
@@ -250,7 +265,24 @@ export class TradeHistoryStore {
 
     this.subscribe('execution.partial_fill', (event) => {
       const existing = this.records.get(event.intentId);
+      if (!existing) {
+        return;
+      }
+
       const cumulativeFilledQuantity = event.cumulativeFilledQuantity ?? event.filledQuantity;
+      if (
+        existing.lifecycleStatus === 'FILLED' ||
+        (typeof cumulativeFilledQuantity === 'number' &&
+          typeof existing.filledQuantity === 'number' &&
+          cumulativeFilledQuantity <= existing.filledQuantity) ||
+        (typeof cumulativeFilledQuantity !== 'number' &&
+          typeof existing.fillId === 'string' &&
+          existing.fillId === event.fillId &&
+          isTimestampStale(existing.updatedAt, event.filledAt))
+      ) {
+        return;
+      }
+
       this.patchIntentRecord(event.intentId, {
         brokerKey: event.brokerKey,
         brokerOrderId: event.brokerOrderId,
@@ -271,6 +303,16 @@ export class TradeHistoryStore {
     });
 
     this.subscribe('execution.filled', (event) => {
+      const existing = this.records.get(event.intentId);
+      if (
+        !existing ||
+        (existing.lifecycleStatus === 'FILLED' &&
+          ((typeof existing.fillId === 'string' && existing.fillId === event.fillId) ||
+            isTimestampStale(existing.filledAt, event.filledAt)))
+      ) {
+        return;
+      }
+
       this.patchIntentRecord(event.intentId, {
         brokerKey: event.brokerKey,
         brokerOrderId: event.brokerOrderId,
