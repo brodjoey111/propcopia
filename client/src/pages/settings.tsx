@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { PositionScalingControl } from "@/components/position-scaling-control";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -14,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Save, Upload, User as UserIcon, Users } from "lucide-react";
+import { ImageOff, Save, Upload, User as UserIcon, Users } from "lucide-react";
 import { useUser } from "@/contexts/user-context";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -38,6 +39,7 @@ export default function Settings() {
   const { user } = useUser();
   const { toast } = useToast();
   const [bio, setBio] = useState(user?.bio || "");
+  const [title, setTitle] = useState(user?.title || "");
   const [profilePicture, setProfilePicture] = useState(user?.profilePicture || "");
   const [isProcessingProfilePicture, setIsProcessingProfilePicture] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -78,6 +80,7 @@ export default function Settings() {
 
   useEffect(() => {
     setBio(user?.bio || "");
+    setTitle(user?.title || "");
     setProfilePicture(user?.profilePicture || "");
     setAutoCopy(user?.autoCopyEnabled ?? true);
     setCopyExits(user?.copyExitsEnabled ?? true);
@@ -112,7 +115,7 @@ export default function Settings() {
   }, [user]);
 
   const updateProfileMutation = useMutation({
-    mutationFn: async (data: { bio?: string | null; profilePicture?: string | null }) => {
+    mutationFn: async (data: { bio?: string | null; title?: string | null; profilePicture?: string | null }) => {
       const response = await apiRequest("PATCH", "/api/user/profile", data);
       return response.json();
     },
@@ -154,9 +157,15 @@ export default function Settings() {
   const handleSaveProfile = () => {
     updateProfileMutation.mutate({
       bio: bio.trim() || null,
+      title: title.trim() || null,
       profilePicture: profilePicture || null,
     });
   };
+
+  const profileHasChanges =
+    bio.trim() !== (user?.bio ?? "") ||
+    title.trim() !== (user?.title ?? "") ||
+    profilePicture !== (user?.profilePicture ?? "");
 
   const updateSettingsMutation = useMutation({
     mutationFn: async (data: {
@@ -321,12 +330,42 @@ export default function Settings() {
                     <Upload className="mr-2 h-3 w-3" />
                     {isProcessingProfilePicture ? "Preparing..." : "Upload Photo"}
                   </Button>
+                  {profilePicture ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setProfilePicture("")}
+                      disabled={isProcessingProfilePicture}
+                      className="text-muted-foreground hover:text-destructive"
+                      data-testid="button-remove-picture"
+                    >
+                      <ImageOff className="mr-2 h-3 w-3" />
+                      Remove
+                    </Button>
+                  ) : null}
+                  <p className="max-w-32 text-center text-[11px] leading-4 text-muted-foreground">
+                    Photos are cropped and optimized before saving.
+                  </p>
                 </div>
 
                 <div className="flex-1 space-y-4">
                   <div>
                     <Label htmlFor="username">Username</Label>
                     <p className="mt-1 text-sm font-medium">{user?.username}</p>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="profile-title">Professional title</Label>
+                    <Input
+                      id="profile-title"
+                      value={title}
+                      onChange={(event) => setTitle(event.target.value)}
+                      placeholder="e.g. Futures trader"
+                      maxLength={80}
+                      className="mt-1"
+                      data-testid="input-profile-title"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">{title.length}/80 characters</p>
                   </div>
 
                   <div>
@@ -348,7 +387,11 @@ export default function Settings() {
 
                   <Button
                     onClick={handleSaveProfile}
-                    disabled={updateProfileMutation.isPending || isProcessingProfilePicture}
+                    disabled={
+                      updateProfileMutation.isPending ||
+                      isProcessingProfilePicture ||
+                      !profileHasChanges
+                    }
                     data-testid="button-save-profile"
                   >
                     <Save className="mr-2 h-4 w-4" />
