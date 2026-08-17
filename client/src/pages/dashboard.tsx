@@ -1720,11 +1720,22 @@ export default function Dashboard() {
                 </p>
               </div>
               <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Avg Dispatch</p>
-                <p className="mt-2 text-xl font-semibold text-cyan-300">
-                  {copyGroupOverview.avgDispatchLatencyMs === null
+                <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">P95 Dispatch</p>
+                <p className={`mt-2 text-xl font-semibold ${
+                  copyGroupOverview.dispatchLatencyStatus === "high"
+                    ? "text-red-300"
+                    : copyGroupOverview.dispatchLatencyStatus === "watch"
+                      ? "text-amber-300"
+                      : "text-cyan-300"
+                }`}>
+                  {copyGroupOverview.p95DispatchLatencyMs === null
                     ? "No data"
-                    : `${copyGroupOverview.avgDispatchLatencyMs.toFixed(1)} ms`}
+                    : `${copyGroupOverview.p95DispatchLatencyMs.toFixed(1)} ms`}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {copyGroupOverview.dispatchLatencySampleSize > 0
+                    ? `${copyGroupOverview.dispatchLatencySampleSize} dispatch samples`
+                    : "Waiting for copied trades"}
                 </p>
               </div>
               <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">

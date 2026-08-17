@@ -51,6 +51,7 @@ function createGroup(overrides: Partial<CopyGroup>): CopyGroup {
       p50DispatchLatencyMs: 13,
       p95DispatchLatencyMs: 19,
       p99DispatchLatencyMs: 21,
+      dispatchLatencySampleSize: 12,
       lastUpdatedAt: "2026-08-04T12:00:00.000Z",
     },
     health: overrides.health ?? {
@@ -127,7 +128,47 @@ test("summarizeCopyGroups totals statuses and follower readiness", () => {
     connectedFollowers: 3,
     totalFollowers: 5,
     avgDispatchLatencyMs: 17,
+    p95DispatchLatencyMs: 19,
+    p99DispatchLatencyMs: 21,
+    dispatchLatencySampleSize: 24,
+    dispatchLatencyStatus: "watch",
   });
+});
+
+test("summarizeCopyGroups classifies compact p95 dispatch latency states", () => {
+  const warming = summarizeCopyGroups([createGroup({})]);
+  const healthy = summarizeCopyGroups([createGroup({
+    statistics: {
+      ...createGroup({}).statistics,
+      p95DispatchLatencyMs: 12,
+      p99DispatchLatencyMs: 15,
+      dispatchLatencySampleSize: 25,
+    },
+  })]);
+  const high = summarizeCopyGroups([createGroup({
+    statistics: {
+      ...createGroup({}).statistics,
+      p95DispatchLatencyMs: 75,
+      p99DispatchLatencyMs: 90,
+      dispatchLatencySampleSize: 30,
+    },
+  })]);
+  const empty = summarizeCopyGroups([createGroup({
+    statistics: {
+      ...createGroup({}).statistics,
+      avgDispatchLatencyMs: 0,
+      p95DispatchLatencyMs: 0,
+      p99DispatchLatencyMs: 0,
+      dispatchLatencySampleSize: 0,
+    },
+  })]);
+
+  assert.equal(warming.dispatchLatencyStatus, "warming");
+  assert.equal(healthy.dispatchLatencyStatus, "healthy");
+  assert.equal(high.dispatchLatencyStatus, "high");
+  assert.equal(high.p95DispatchLatencyMs, 75);
+  assert.equal(empty.dispatchLatencyStatus, "no_data");
+  assert.equal(empty.p95DispatchLatencyMs, null);
 });
 
 test("buildCopyGroupActivityFeed sorts newest first and maps activity types", () => {

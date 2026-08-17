@@ -129,6 +129,7 @@ export interface CopyGroupStatistics {
   p50DispatchLatencyMs: number;
   p95DispatchLatencyMs: number;
   p99DispatchLatencyMs: number;
+  dispatchLatencySampleSize: number;
   lastUpdatedAt: string;
 }
 

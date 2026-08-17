@@ -441,6 +441,17 @@ test('tradeCopied updates only the correct group statistics', () => {
   const manager = new CopyGroupManager();
   const first = manager.registerGroup(createGroup('g1'), createFollowers('g1'));
   const second = manager.registerGroup(createGroup('g2'), createFollowers('g2'));
+  first.engine.getLatencyStats = () => ({
+    avgLatency: 12,
+    minLatency: 8,
+    maxLatency: 20,
+    p50: 10,
+    p95: 18,
+    p99: 20,
+    sampleSize: 7,
+    failedSends: 0,
+    targetMet15ms: false,
+  });
 
   first.engine.emit('tradeCopied', {
     followerCount: 2,
@@ -452,7 +463,11 @@ test('tradeCopied updates only the correct group statistics', () => {
   assert.equal(first.statistics.followerOrdersSubmitted, 2);
   assert.equal(first.statistics.followerOrdersSucceeded, 1);
   assert.equal(first.statistics.followerOrdersFailed, 1);
+  assert.equal(first.statistics.avgDispatchLatencyMs, 12);
+  assert.equal(first.statistics.p95DispatchLatencyMs, 18);
+  assert.equal(first.statistics.dispatchLatencySampleSize, 7);
   assert.equal(second.statistics.tradesObserved, 0);
+  assert.equal(second.statistics.dispatchLatencySampleSize, 0);
 });
 
 test('stop disconnects the engine and resets live flags', async () => {

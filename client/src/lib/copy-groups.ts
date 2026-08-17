@@ -59,6 +59,7 @@ export interface CopyGroupStatistics {
   p50DispatchLatencyMs: number;
   p95DispatchLatencyMs: number;
   p99DispatchLatencyMs: number;
+  dispatchLatencySampleSize: number;
   lastUpdatedAt: string;
 }
 
@@ -189,6 +190,10 @@ export interface CopyGroupOverview {
   connectedFollowers: number;
   totalFollowers: number;
   avgDispatchLatencyMs: number | null;
+  p95DispatchLatencyMs: number | null;
+  p99DispatchLatencyMs: number | null;
+  dispatchLatencySampleSize: number;
+  dispatchLatencyStatus: "no_data" | "warming" | "healthy" | "watch" | "high";
 }
 
 export type CopySessionSignalState = "ok" | "watch" | "alert" | "standby";
@@ -421,13 +426,36 @@ function formatDurationLabel(startTimestamp: string, endTimestamp = new Date().t
 }
 
 export function summarizeCopyGroups(groups: CopyGroup[]): CopyGroupOverview {
-  const latencySamples = groups
-    .map((group) => group.statistics.avgDispatchLatencyMs)
-    .filter((value) => Number.isFinite(value) && value > 0);
+  const groupsWithLatency = groups.filter((group) =>
+    Number.isFinite(group.statistics.avgDispatchLatencyMs) &&
+    group.statistics.avgDispatchLatencyMs > 0 &&
+    group.statistics.dispatchLatencySampleSize > 0
+  );
+  const latencySamples = groupsWithLatency.map((group) => group.statistics.avgDispatchLatencyMs);
 
   const avgDispatchLatencyMs = latencySamples.length > 0
     ? latencySamples.reduce((sum, value) => sum + value, 0) / latencySamples.length
     : null;
+  const p95DispatchLatencyMs = groupsWithLatency.length > 0
+    ? Math.max(...groupsWithLatency.map((group) => group.statistics.p95DispatchLatencyMs))
+    : null;
+  const p99DispatchLatencyMs = groupsWithLatency.length > 0
+    ? Math.max(...groupsWithLatency.map((group) => group.statistics.p99DispatchLatencyMs))
+    : null;
+  const dispatchLatencySampleSize = groupsWithLatency.reduce(
+    (sum, group) => sum + group.statistics.dispatchLatencySampleSize,
+    0,
+  );
+  const dispatchLatencyStatus: CopyGroupOverview["dispatchLatencyStatus"] =
+    dispatchLatencySampleSize === 0 || p95DispatchLatencyMs === null
+      ? "no_data"
+      : dispatchLatencySampleSize < 20
+        ? "warming"
+        : p95DispatchLatencyMs <= 15
+          ? "healthy"
+          : p95DispatchLatencyMs <= 50
+            ? "watch"
+            : "high";
 
   return {
     totalGroups: groups.length,
@@ -442,6 +470,10 @@ export function summarizeCopyGroups(groups: CopyGroup[]): CopyGroupOverview {
     connectedFollowers: groups.reduce((sum, group) => sum + group.runtime.connectedFollowerCount, 0),
     totalFollowers: groups.reduce((sum, group) => sum + group.runtime.totalFollowerCount, 0),
     avgDispatchLatencyMs,
+    p95DispatchLatencyMs,
+    p99DispatchLatencyMs,
+    dispatchLatencySampleSize,
+    dispatchLatencyStatus,
   };
 }
 
@@ -1620,6 +1652,7 @@ export function hydrateCopyGroup(detail: CopyGroupDetailApiRecord): CopyGroup {
       p50DispatchLatencyMs: 0,
       p95DispatchLatencyMs: 0,
       p99DispatchLatencyMs: 0,
+      dispatchLatencySampleSize: 0,
       lastUpdatedAt: new Date(0).toISOString(),
     },
     health: detail.runtime?.health ?? {

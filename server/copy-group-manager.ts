@@ -185,6 +185,7 @@ function createInitialStatistics(groupId: string): CopyGroupStatistics {
     p50DispatchLatencyMs: 0,
     p95DispatchLatencyMs: 0,
     p99DispatchLatencyMs: 0,
+    dispatchLatencySampleSize: 0,
     lastUpdatedAt: nowIso(),
   };
 }
@@ -895,6 +896,7 @@ export class CopyGroupManager {
         runtime.statistics.p50DispatchLatencyMs = latency.p50;
         runtime.statistics.p95DispatchLatencyMs = latency.p95;
         runtime.statistics.p99DispatchLatencyMs = latency.p99;
+        runtime.statistics.dispatchLatencySampleSize = latency.sampleSize;
       }
 
       runtime.state.lastExecutionAt = nowIso();

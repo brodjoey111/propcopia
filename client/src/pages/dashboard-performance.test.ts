@@ -20,6 +20,9 @@ test("dashboard defers lower detail queries until after the initial paint", () =
   assert.match(source, /Operator Follow-Up/);
   assert.match(source, /Restart Recovery/);
   assert.match(source, /Restart recoveries/);
+  assert.match(source, /P95 Dispatch/);
+  assert.match(source, /dispatchLatencySampleSize/);
+  assert.match(source, /dispatch samples/);
   assert.match(source, /runtimeSummary\?\.label !== "Restored offline"/);
   assert.match(source, /useOperatorFollowUpData/);
   assert.match(source, /useDashboardPositionSyncData/);
