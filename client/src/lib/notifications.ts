@@ -23,6 +23,7 @@ export interface NotificationItem {
     symbol: string;
     lifecycleStatus:
       | "FILLED"
+      | "SENT"
       | "ACKNOWLEDGED"
       | "PARTIALLY_FILLED"
       | "FAILED"
@@ -155,7 +156,10 @@ export function describeExecutionAttentionNotification(
     if (notification.tradeSummary.storyState === "working") {
       return {
         state: "watch",
-        label: "Waiting on fill",
+        label:
+          notification.tradeSummary.lifecycleStatus === "SENT"
+            ? "Waiting on broker"
+            : "Waiting on fill",
       };
     }
 
@@ -196,6 +200,16 @@ export function describeExecutionAttentionNotification(
     return {
       state: "watch",
       label: "Partial fill",
+    };
+  }
+
+  if (
+    normalized.includes("broker acknowledgement has not arrived") ||
+    normalized.includes("waiting on broker")
+  ) {
+    return {
+      state: "watch",
+      label: "Waiting on broker",
     };
   }
 

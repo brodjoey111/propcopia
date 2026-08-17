@@ -121,7 +121,7 @@ test("describeExecutionAttentionNotification flags failed trade alerts as attent
   });
 });
 
-test("describeExecutionAttentionNotification flags partial and acknowledged trade alerts as watch items", () => {
+test("describeExecutionAttentionNotification flags partial, sent, and acknowledged trade alerts as watch items", () => {
   const partialView = describeExecutionAttentionNotification(
     createNotification({
       category: "trade",
@@ -136,6 +136,21 @@ test("describeExecutionAttentionNotification flags partial and acknowledged trad
         relatedEventCount: 1,
         filledQuantity: 1,
         remainingQuantity: 1,
+      },
+    }),
+  );
+  const sentView = describeExecutionAttentionNotification(
+    createNotification({
+      category: "trade",
+      severity: "warn",
+      title: "ES sent",
+      message: "Broker acknowledgement has not arrived 14 minutes after submission.",
+      tradeSummary: {
+        symbol: "ES",
+        lifecycleStatus: "SENT",
+        storyState: "working",
+        attention: "watch",
+        relatedEventCount: 0,
       },
     }),
   );
@@ -158,6 +173,10 @@ test("describeExecutionAttentionNotification flags partial and acknowledged trad
   assert.deepEqual(partialView, {
     state: "watch",
     label: "Partial fill",
+  });
+  assert.deepEqual(sentView, {
+    state: "watch",
+    label: "Waiting on broker",
   });
   assert.deepEqual(acknowledgedView, {
     state: "watch",
