@@ -85,6 +85,11 @@ import { establishAuthenticatedSession } from "./auth-session";
 import { buildLicenseSnapshot } from "./license-service";
 import { operationalLogger } from "./operational-logger";
 import { buildNotificationDeliveryPreview } from "@shared/notification-policy";
+import {
+  AttemptRateLimiter,
+  buildAuthRateLimitKey,
+  createAuthRateLimitMiddleware,
+} from "./auth-rate-limit";
 
 tradeHistoryPersistence.attach(tradeHistoryStore);
 
@@ -95,6 +100,8 @@ const rithmicInstances = new Map<string, RithmicAPI>();
 const rithmicReconnectValidationStore = new RithmicReconnectValidationStore();
 const tradeCopyEngines = new Map<string, TradeCopyEngine>();
 let marketDataWebSocketServer: WebSocketServer | null = null;
+const authAttemptLimiter = new AttemptRateLimiter();
+const authRateLimit = createAuthRateLimitMiddleware(authAttemptLimiter);
 
 export async function shutdownRouteRuntime(): Promise<void> {
   const failures: unknown[] = [];
@@ -2382,7 +2389,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Authentication routes
-  app.post("/api/auth/signup", async (req, res) => {
+  app.post("/api/auth/signup", authRateLimit, async (req, res) => {
     try {
       const result = signupCredentialsSchema.safeParse(req.body);
       if (!result.success) {
@@ -2413,6 +2420,8 @@ export function registerRoutes(app: Express): Server {
         bio: "Novice Trader",
       });
 
+      authAttemptLimiter.reset(buildAuthRateLimitKey({ path: req.path, ip: req.ip }));
+
       return res.json({
         success: true,
         message: "Account created successfully",
@@ -2427,7 +2436,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", authRateLimit, async (req, res) => {
     try {
       const result = loginCredentialsSchema.safeParse(req.body);
       if (!result.success) {
@@ -2457,6 +2466,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       await establishAuthenticatedSession(req, user);
+      authAttemptLimiter.reset(buildAuthRateLimitKey({ path: req.path, ip: req.ip }));
       return res.json({
         success: true,
         message: "Login successful",
@@ -2487,7 +2497,7 @@ export function registerRoutes(app: Express): Server {
     });
   });
 
-  app.post("/api/auth/change-password", async (req, res) => {
+  app.post("/api/auth/change-password", authRateLimit, async (req, res) => {
     try {
       if (!req.session?.userId) {
         return res.status(401).json({
@@ -2522,6 +2532,11 @@ export function registerRoutes(app: Express): Server {
       }
 
       await establishAuthenticatedSession(req, user);
+      authAttemptLimiter.reset(buildAuthRateLimitKey({
+        path: req.path,
+        ip: req.ip,
+        userId: user.id,
+      }));
       return res.json({
         success: true,
         message: "Password updated successfully",
