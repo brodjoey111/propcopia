@@ -2,14 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-test("dashboard defers lower detail queries until after the initial paint", () => {
+test("dashboard reuses its overview payload and defers optional detail panels", () => {
   const source = readFileSync("client/src/pages/dashboard.tsx", "utf8");
 
   assert.match(source, /useDashboardDetailPreferences/);
-  assert.match(
-    source,
-    /enabled:\s*[\s\S]*?!!authData\?\.user\?\.id\s*&&[\s\S]*?hasConnectedAccounts\s*&&[\s\S]*?loadDetailSections\s*&&[\s\S]*?\(showAccountRoster \|\| showOpenPositions\)/,
-  );
+  assert.doesNotMatch(source, /\/api\/accounts\/live-metrics/);
+  assert.doesNotMatch(source, /\/api\/positions\/snapshot/);
+  assert.match(source, /runtimeOverviewData\?\.accountLiveMetrics\.accounts/);
+  assert.match(source, /runtimeOverviewData\?\.positionSnapshot\.accounts/);
   assert.match(source, /setShowAccountRoster\(\(current\) => !current\)/);
   assert.match(source, /setShowOpenPositions\(\(current\) => !current\)/);
   assert.match(source, /setShowCopyGroupDetail\(\(current\) => !current\)/);

@@ -36,11 +36,9 @@ import {
 import {
   buildAccountLiveMetricsById,
   toDashboardPositionRows,
-  type PositionSnapshotResponse,
 } from "@/lib/positions";
 import {
   buildAccountBalanceMetricsById,
-  type AccountLiveMetricsResponse,
 } from "@/lib/account-live-metrics";
 import {
   buildAccountRiskById,
@@ -320,60 +318,6 @@ export default function Dashboard() {
     refetchIntervalInBackground: false,
     staleTime: LIVE_QUERY_STALE_MS,
   });
-  const { data: accountLiveMetricsData } = useQuery<AccountLiveMetricsResponse | null>({
-    queryKey: authData?.user?.id ? ["/api/accounts/live-metrics", authData.user.id] : ["/api/accounts/live-metrics", "anonymous"],
-    queryFn: async ({ queryKey }) => {
-      const res = await fetch(queryKey[0] as string, {
-        credentials: "include",
-      });
-
-      if (res.status === 401 || res.status === 404) {
-        return null;
-      }
-
-      if (!res.ok) {
-        const text = (await res.text()) || res.statusText;
-        throw new Error(`${res.status}: ${text}`);
-      }
-
-      return res.json();
-    },
-    enabled:
-      !!authData?.user?.id &&
-      hasConnectedAccounts &&
-      loadDetailSections &&
-      (showAccountRoster || showOpenPositions),
-    refetchInterval: hasConnectedAccounts ? LIVE_QUERY_POLL_MS : false,
-    refetchIntervalInBackground: false,
-    staleTime: LIVE_QUERY_STALE_MS,
-  });
-  const { data: positionSnapshotData } = useQuery<PositionSnapshotResponse | null>({
-    queryKey: authData?.user?.id ? ["/api/positions/snapshot", authData.user.id] : ["/api/positions/snapshot", "anonymous"],
-    queryFn: async ({ queryKey }) => {
-      const res = await fetch(queryKey[0] as string, {
-        credentials: "include",
-      });
-
-      if (res.status === 401 || res.status === 404) {
-        return null;
-      }
-
-      if (!res.ok) {
-        const text = (await res.text()) || res.statusText;
-        throw new Error(`${res.status}: ${text}`);
-      }
-
-      return res.json();
-    },
-    enabled:
-      !!authData?.user?.id &&
-      hasConnectedAccounts &&
-      loadDetailSections &&
-      (showAccountRoster || showOpenPositions),
-    refetchInterval: hasConnectedAccounts ? LIVE_QUERY_POLL_MS : false,
-    refetchIntervalInBackground: false,
-    staleTime: LIVE_QUERY_STALE_MS,
-  });
   const copyGroupSnapshotData: CopyGroupSnapshotApiResponse | null = runtimeOverviewData?.copyGroups
     ? {
         success: true,
@@ -385,10 +329,10 @@ export default function Dashboard() {
   const operationsOverviewData: OperationsOverviewResponse | null = runtimeOverviewData?.operationsOverview ?? null;
   const positionSyncOverview = runtimeOverviewData?.positionSyncOverview ?? null;
   const dashboardSummary = runtimeOverviewData?.dashboardSummary ?? null;
-  const accountBalanceMetricsById = buildAccountBalanceMetricsById(accountLiveMetricsData?.accounts ?? []);
+  const accountBalanceMetricsById = buildAccountBalanceMetricsById(runtimeOverviewData?.accountLiveMetrics.accounts ?? []);
   const accountRiskOverview = runtimeOverviewData?.accountRiskOverview;
   const accountRiskById = buildAccountRiskById(accountRiskOverview?.accounts ?? []);
-  const positionMetricsById = buildAccountLiveMetricsById(positionSnapshotData?.accounts ?? []);
+  const positionMetricsById = buildAccountLiveMetricsById(runtimeOverviewData?.positionSnapshot.accounts ?? []);
   const tradeAnalytics = runtimeOverviewData?.tradeAnalytics;
   const hydratedCopyGroups = copyGroupSnapshotData?.groups.map((group) => hydrateCopyGroup(group)) ?? [];
   const copyGroupFeed = copyGroupSnapshotData
@@ -400,17 +344,11 @@ export default function Dashboard() {
       )
     : [];
   const refreshAccountsQuery = () => queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
-  const refreshAccountLiveMetricsQuery = () =>
-    queryClient.invalidateQueries({ queryKey: ["/api/accounts/live-metrics"] });
-  const refreshPositionSnapshotQuery = () =>
-    queryClient.invalidateQueries({ queryKey: ["/api/positions/snapshot"] });
   const refreshTradeCopyStatusQuery = () => queryClient.invalidateQueries({ queryKey: ["/api/trade-copy/status"] });
   const refreshDashboardRuntimeOverviewQuery = () =>
     queryClient.invalidateQueries({ queryKey: ["/api/runtime/dashboard-overview"] });
   const refreshDashboardSessionData = () => {
     refreshAccountsQuery();
-    refreshAccountLiveMetricsQuery();
-    refreshPositionSnapshotQuery();
     refreshTradeCopyStatusQuery();
     refreshDashboardRuntimeOverviewQuery();
   };
@@ -665,7 +603,7 @@ export default function Dashboard() {
     )
     .slice(0, 4);
   const totalUnrealizedPnl = dashboardSummary?.totalUnrealizedPnl
-    ?? positionSnapshotData?.accounts?.reduce(
+    ?? runtimeOverviewData?.positionSnapshot.accounts.reduce(
       (sum, account) =>
         sum + account.positions.reduce((positionSum, position) => positionSum + (position.unrealizedPnl ?? 0), 0),
       0,
@@ -673,7 +611,7 @@ export default function Dashboard() {
     ?? dashboardAccounts.reduce((sum, account) => sum + account.unrealizedPnl, 0);
   const totalOpenPositions = dashboardSummary?.totalOpenPositions
     ?? operationsOverviewData?.positions.totalOpenPositions
-    ?? positionSnapshotData?.summary.totalOpenPositions
+    ?? runtimeOverviewData?.positionSnapshot.summary.totalOpenPositions
     ?? dashboardAccounts.reduce((sum, account) => sum + account.openPositions, 0);
   const riskShield = breachedRiskCount > 0
       ? "Breached"
@@ -1042,7 +980,7 @@ export default function Dashboard() {
     }
   };
 
-  const livePositions = toDashboardPositionRows(positionSnapshotData?.accounts ?? []);
+  const livePositions = toDashboardPositionRows(runtimeOverviewData?.positionSnapshot.accounts ?? []);
   const positions = livePositions;
 
   return (

@@ -67,6 +67,8 @@ export interface AccountsRuntimeOverviewResponse {
 export interface DashboardRuntimeOverviewResponse {
   success: boolean;
   generatedAt: string;
+  positionSnapshot: PositionSnapshotResponse;
+  accountLiveMetrics: AccountLiveMetricsResponse;
   accountRiskOverview: AccountRiskOverviewResponse;
   positionSyncOverview?: PositionSyncOverviewResponse;
   dashboardSummary: {
