@@ -11,4 +11,6 @@ test("routes expose the authenticated operations overview endpoint", () => {
   assert.match(routesSource, /copyGroupManager\s*\.\s*getAllGroups\(\)/);
   assert.match(routesSource, /tradovateInstances/);
   assert.match(routesSource, /tradeifyInstances/);
+  assert.match(routesSource, /operationalLogger\.error\("operations\.overview_load_failed"/);
+  assert.match(routesSource, /message: "Failed to load operations overview"/);
 });

@@ -1520,10 +1520,13 @@ export function registerRoutes(app: Express): Server {
         reviews,
       });
     } catch (error) {
-      console.error("Error loading risk follow-up reviews:", error);
+      operationalLogger.error("operations.risk_follow_up_reviews_load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load risk follow-up reviews",
       });
     }
   });
@@ -1577,10 +1580,13 @@ export function registerRoutes(app: Express): Server {
         reviews: await riskFollowUpReviewStore.listReviews(req.session.userId),
       });
     } catch (error) {
-      console.error("Error saving risk follow-up reviews:", error);
+      operationalLogger.error("operations.risk_follow_up_reviews_save_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to save risk follow-up reviews",
       });
     }
   });
@@ -1606,10 +1612,13 @@ export function registerRoutes(app: Express): Server {
         ...overview,
       });
     } catch (error) {
-      console.error("Error building dashboard runtime overview:", error);
+      operationalLogger.error("operations.dashboard_overview_load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load dashboard overview",
       });
     }
   });
@@ -1644,10 +1653,13 @@ export function registerRoutes(app: Express): Server {
         ...lightweightOverview,
       });
     } catch (error) {
-      console.error("Error rechecking dashboard runtime overview:", error);
+      operationalLogger.error("operations.dashboard_overview_recheck_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to recheck dashboard overview",
       });
     }
   });
@@ -1667,10 +1679,13 @@ export function registerRoutes(app: Express): Server {
         reviews,
       });
     } catch (error) {
-      console.error("Error loading execution follow-up reviews:", error);
+      operationalLogger.error("operations.execution_follow_up_reviews_load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load execution follow-up reviews",
       });
     }
   });
@@ -1690,10 +1705,13 @@ export function registerRoutes(app: Express): Server {
         reviews,
       });
     } catch (error) {
-      console.error("Error loading Rithmic readiness reviews:", error);
+      operationalLogger.error("operations.rithmic_readiness_reviews_load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load Rithmic readiness reviews",
       });
     }
   });
@@ -1724,10 +1742,13 @@ export function registerRoutes(app: Express): Server {
         reviews: savedReviews,
       });
     } catch (error) {
-      console.error("Error saving Rithmic readiness reviews:", error);
+      operationalLogger.error("operations.rithmic_readiness_reviews_save_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to save Rithmic readiness reviews",
       });
     }
   });
@@ -1797,10 +1818,13 @@ export function registerRoutes(app: Express): Server {
         reviews: await executionFollowUpReviewStore.listReviews(req.session.userId),
       });
     } catch (error) {
-      console.error("Error saving execution follow-up reviews:", error);
+      operationalLogger.error("operations.execution_follow_up_reviews_save_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to save execution follow-up reviews",
       });
     }
   });
@@ -1835,10 +1859,14 @@ export function registerRoutes(app: Express): Server {
         ...overview,
       });
     } catch (error) {
-      console.error("Error rechecking dashboard recovery item:", error);
+      operationalLogger.error("operations.dashboard_recovery_recheck_failed", {
+        error,
+        userId: req.session?.userId,
+        historyId: req.params?.historyId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to recheck dashboard recovery item",
       });
     }
   });
@@ -1926,10 +1954,14 @@ export function registerRoutes(app: Express): Server {
         ...overview,
       });
     } catch (error) {
-      console.error("Error reviewing dashboard recovery item:", error);
+      operationalLogger.error("operations.dashboard_recovery_review_failed", {
+        error,
+        userId: req.session?.userId,
+        historyId: req.params?.historyId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to review dashboard recovery item",
       });
     }
   });
@@ -1980,10 +2012,13 @@ export function registerRoutes(app: Express): Server {
         ...overview,
       });
     } catch (error) {
-      console.error("Error building operations overview:", error);
+      operationalLogger.error("operations.overview_load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load operations overview",
       });
     }
   });
@@ -2063,10 +2098,13 @@ export function registerRoutes(app: Express): Server {
         delivery: delivery.summary,
       });
     } catch (error) {
-      console.error("Error building notifications feed:", error);
+      operationalLogger.error("operations.notifications_load_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error occurred",
+        message: "Failed to load notifications",
       });
     }
   });

@@ -12,4 +12,8 @@ test("routes expose authenticated risk follow-up review read and write endpoints
   assert.match(routesSource, /riskFollowUpReviewStore\.listReviews/);
   assert.match(routesSource, /riskFollowUpReviewStore\.saveReviews/);
   assert.match(routesSource, /Account not found:/);
+  assert.match(routesSource, /operationalLogger\.error\("operations\.risk_follow_up_reviews_load_failed"/);
+  assert.match(routesSource, /operationalLogger\.error\("operations\.risk_follow_up_reviews_save_failed"/);
+  assert.match(routesSource, /message: "Failed to load risk follow-up reviews"/);
+  assert.match(routesSource, /message: "Failed to save risk follow-up reviews"/);
 });

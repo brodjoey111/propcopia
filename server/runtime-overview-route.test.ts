@@ -21,4 +21,16 @@ test("routes expose the authenticated runtime overview endpoints", () => {
   assert.match(routesSource, /filterPositionSyncOverviewByGroupId/);
   assert.match(routesSource, /getOrCreateRuntimeSnapshot/);
   assert.match(routesSource, /clearRuntimeSnapshotCache/);
+  assert.match(routesSource, /operationalLogger\.error\("operations\.dashboard_overview_load_failed"/);
+  assert.match(routesSource, /operationalLogger\.error\("operations\.dashboard_overview_recheck_failed"/);
+  assert.match(routesSource, /operationalLogger\.error\("operations\.execution_follow_up_reviews_load_failed"/);
+  assert.match(routesSource, /operationalLogger\.error\("operations\.execution_follow_up_reviews_save_failed"/);
+  assert.match(routesSource, /operationalLogger\.error\("operations\.dashboard_recovery_recheck_failed"/);
+  assert.match(routesSource, /operationalLogger\.error\("operations\.dashboard_recovery_review_failed"/);
+  assert.match(routesSource, /message: "Failed to load dashboard overview"/);
+  assert.match(routesSource, /message: "Failed to recheck dashboard overview"/);
+  assert.match(routesSource, /message: "Failed to load execution follow-up reviews"/);
+  assert.match(routesSource, /message: "Failed to save execution follow-up reviews"/);
+  assert.match(routesSource, /message: "Failed to recheck dashboard recovery item"/);
+  assert.match(routesSource, /message: "Failed to review dashboard recovery item"/);
 });

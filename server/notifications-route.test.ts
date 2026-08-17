@@ -23,4 +23,6 @@ test("routes expose the authenticated notifications endpoint", () => {
   assert.match(routesSource, /notifyConnection: user\.notifyConnection \?\? true/);
   assert.match(routesSource, /unreadEstimate: delivery\.notifications\.length/);
   assert.match(routesSource, /delivery: delivery\.summary/);
+  assert.match(routesSource, /operationalLogger\.error\("operations\.notifications_load_failed"/);
+  assert.match(routesSource, /message: "Failed to load notifications"/);
 });
