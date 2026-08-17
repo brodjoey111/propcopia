@@ -125,6 +125,59 @@ export interface CopyGroupActivityTimelineItem {
   tone: "ok" | "warn" | "danger" | "muted";
 }
 
+export interface CopyGroupObservability {
+  groupId: string;
+  recentActivity: CopyGroupActivity[];
+  totalEvents: number;
+  infoEventCount: number;
+  warningEventCount: number;
+  errorEventCount: number;
+  restartRecoveryCount: number;
+  categoryCounts: {
+    lifecycle: number;
+    trade: number;
+    rule: number;
+    intent: number;
+    execution: number;
+    health: number;
+  };
+  lifecycleCounts: {
+    started: number;
+    paused: number;
+    resumed: number;
+    stopped: number;
+    emergencyStopped: number;
+  };
+  lastEventAt?: string;
+  lastLifecycleAt?: string;
+  lastLifecycleMessage?: string;
+  lastErrorAt?: string;
+  lastErrorMessage?: string;
+  lastRestartRecoveryAt?: string;
+  lastRestartRecoveryMessage?: string;
+}
+
+export interface CopyGroupHistorySummary {
+  lifecycleHeadline: string;
+  lifecycleDetail: string;
+  severityLabel: string;
+  severityTone: "ok" | "warn" | "danger" | "muted";
+  signalFreshnessLabel: string;
+  signalFreshnessDetail: string;
+  signalFreshnessTone: "ok" | "warn" | "danger" | "muted";
+  recoveryPriorityLabel: string;
+  recoveryPriorityDetail: string;
+  recoveryPriorityTone: "ok" | "warn" | "danger" | "muted";
+  restartSignalLabel: string;
+  restartSignalDetail: string;
+  restartSignalTone: "ok" | "warn" | "danger" | "muted";
+  categoryBadges: Array<{
+    label: string;
+    value: number;
+    tone: "ok" | "warn" | "danger" | "muted";
+  }>;
+}
+
 export interface CopyGroupOverview {
   totalGroups: number;
   runningGroups: number;
@@ -161,8 +214,18 @@ export interface CopyGroupHealthWatchlistEntry {
   followerReadinessLabel: string;
   concernLabel: string;
   detail: string;
+  signalFreshnessLabel: string;
+  signalFreshnessDetail: string;
+  signalFreshnessTone: "ok" | "warn" | "danger" | "muted";
+  routingGateLabel: string;
+  routingGateDetail: string;
+  routingGateTone: "ok" | "warn" | "danger" | "muted";
+  recoveryQueueLabel: string;
+  recoveryQueueDetail: string;
   latestRecoveryActionLabel?: string;
   latestRecoveryActionAt?: string;
+  latestRestartRecoveryLabel?: string;
+  latestRestartRecoveryAt?: string;
   lastStableSignalLabel?: string;
   timeInConcernStateLabel?: string;
 }
@@ -188,6 +251,16 @@ export interface CopyGroupRuntimeSummary {
   detail: string;
   tone: "ok" | "warn" | "danger" | "muted";
   updatedLabel?: string;
+}
+
+export interface CopyGroupRestartRecoveryItem {
+  groupId: string;
+  groupName: string;
+  label: string;
+  detail: string;
+  tone: "ok" | "warn";
+  updatedLabel?: string;
+  capturedAt?: string;
 }
 
 function formatRuntimeUpdatedLabel(timestamp?: string): string | undefined {
@@ -466,13 +539,46 @@ export function buildCopyGroupHealthWatchlist(
       const latestRecoveryActionTime = latestRecoveryAction
         ? formatCompactTimestamp(latestRecoveryAction.timestamp)
         : null;
+      const latestRestartRecovery = activity.find(
+        (entry) =>
+          entry.category === "LIFECYCLE" &&
+          isRestartRecoveryMessage(entry.message),
+      );
+      const latestRestartRecoveryTime = latestRestartRecovery
+        ? formatCompactTimestamp(latestRestartRecovery.timestamp)
+        : null;
       const lastStableSignalTime = lastStableSignalTimestamp
         ? formatCompactTimestamp(lastStableSignalTimestamp)
         : null;
+      const latestSignalAt =
+        activity[0]?.timestamp ??
+        group.statistics.lastUpdatedAt ??
+        group.health.checkedAt ??
+        group.runtime.lastExecutionAt ??
+        latestRecoveryAction?.timestamp;
+      const signalFreshness = buildCopyGroupSignalFreshness({
+        latestSignalAt,
+        now,
+        allowQuiet:
+          group.runtime.status === "PAUSED" || group.runtime.status === "STOPPED",
+      });
+      const routingGate = buildCopyGroupRoutingGate({
+        status: group.runtime.status,
+        healthStatus: group.health.status,
+        masterConnected: group.runtime.masterConnected,
+        connectedFollowerCount: group.runtime.connectedFollowerCount,
+        totalFollowerCount: group.runtime.totalFollowerCount,
+        latestRestartRecoveryMessage: latestRestartRecovery?.message,
+      });
       const latestRecoveryActionLabel = latestRecoveryAction
         ? latestRecoveryActionTime
           ? `${latestRecoveryAction.message} ${latestRecoveryActionTime}`
           : latestRecoveryAction.message
+        : undefined;
+      const latestRestartRecoveryLabel = latestRestartRecovery
+        ? latestRestartRecoveryTime
+          ? `${latestRestartRecovery.message} ${latestRestartRecoveryTime}`
+          : latestRestartRecovery.message
         : undefined;
       const lastStableSignalLabel = lastStableSignalTime
         ? group.health.status === "HEALTHY"
@@ -507,8 +613,21 @@ export function buildCopyGroupHealthWatchlist(
             (group.runtime.status === "EMERGENCY_STOPPED"
               ? "Emergency stop is active for this group."
               : "A runtime or health error needs operator review."),
+          signalFreshnessLabel: signalFreshness.label,
+          signalFreshnessDetail: signalFreshness.detail,
+          signalFreshnessTone: signalFreshness.tone,
+          routingGateLabel: routingGate.label,
+          routingGateDetail: routingGate.detail,
+          routingGateTone: routingGate.tone,
+          recoveryQueueLabel: "Recover now",
+          recoveryQueueDetail:
+            group.runtime.status === "EMERGENCY_STOPPED"
+              ? "Review the recovery trail and clear the stop only when the group is safe to stage again."
+              : "Review the runtime blocker before the next copy session.",
           latestRecoveryActionLabel: latestRecoveryActionLabel ?? undefined,
           latestRecoveryActionAt: latestRecoveryAction?.timestamp,
+          latestRestartRecoveryLabel: latestRestartRecoveryLabel ?? undefined,
+          latestRestartRecoveryAt: latestRestartRecovery?.timestamp,
           lastStableSignalLabel: lastStableSignalLabel ?? undefined,
           timeInConcernStateLabel: timeInConcernStateLabel ?? undefined,
         });
@@ -529,8 +648,21 @@ export function buildCopyGroupHealthWatchlist(
             (disconnectedFollowers > 0
               ? `${disconnectedFollowers} follower${disconnectedFollowers === 1 ? "" : "s"} not ready.`
               : "Follower readiness needs monitoring."),
+          signalFreshnessLabel: signalFreshness.label,
+          signalFreshnessDetail: signalFreshness.detail,
+          signalFreshnessTone: signalFreshness.tone,
+          routingGateLabel: routingGate.label,
+          routingGateDetail: routingGate.detail,
+          routingGateTone: routingGate.tone,
+          recoveryQueueLabel: "Stabilize soon",
+          recoveryQueueDetail:
+            disconnectedFollowers > 0
+              ? "Work follower readiness drift before it turns into a full routing interruption."
+              : "Monitor the degraded state and confirm the group is stable before the next copy session.",
           latestRecoveryActionLabel: latestRecoveryActionLabel ?? undefined,
           latestRecoveryActionAt: latestRecoveryAction?.timestamp,
+          latestRestartRecoveryLabel: latestRestartRecoveryLabel ?? undefined,
+          latestRestartRecoveryAt: latestRestartRecovery?.timestamp,
           lastStableSignalLabel: lastStableSignalLabel ?? undefined,
           timeInConcernStateLabel: timeInConcernStateLabel ?? undefined,
         });
@@ -551,8 +683,22 @@ export function buildCopyGroupHealthWatchlist(
             (group.runtime.status === "PAUSED"
               ? "Copying is paused for this group."
               : "This group is not currently running."),
+          signalFreshnessLabel: signalFreshness.label,
+          signalFreshnessDetail: signalFreshness.detail,
+          signalFreshnessTone: signalFreshness.tone,
+          routingGateLabel: routingGate.label,
+          routingGateDetail: routingGate.detail,
+          routingGateTone: routingGate.tone,
+          recoveryQueueLabel:
+            group.runtime.status === "PAUSED" ? "Resume check" : "Stage before use",
+          recoveryQueueDetail:
+            group.runtime.status === "PAUSED"
+              ? "Confirm readiness, then resume when the group is safe to route again."
+              : "This group is offline until you intentionally stage it again.",
           latestRecoveryActionLabel: latestRecoveryActionLabel ?? undefined,
           latestRecoveryActionAt: latestRecoveryAction?.timestamp,
+          latestRestartRecoveryLabel: latestRestartRecoveryLabel ?? undefined,
+          latestRestartRecoveryAt: latestRestartRecovery?.timestamp,
           lastStableSignalLabel: lastStableSignalLabel ?? undefined,
           timeInConcernStateLabel: timeInConcernStateLabel ?? undefined,
         });
@@ -862,6 +1008,67 @@ export function describeCopyGroupRuntimeSummary(input: {
   };
 }
 
+export function buildCopyGroupRestartRecoveryItems(input: {
+  groups: CopyGroup[];
+  runtimeSummariesByGroupId?: Record<string, CopyGroupRuntimeSummary | undefined>;
+  activityByGroupId?: Record<string, CopyGroupActivity[]>;
+  limit?: number;
+}): CopyGroupRestartRecoveryItem[] {
+  const limit = Number.isFinite(input.limit)
+    ? Math.max(1, Math.floor(input.limit ?? 3))
+    : 3;
+  const items: CopyGroupRestartRecoveryItem[] = [];
+
+  for (const group of input.groups) {
+    const runtimeSummary = input.runtimeSummariesByGroupId?.[group.groupId];
+    const latestRestartRecovery = (input.activityByGroupId?.[group.groupId] ?? []).find(
+      (entry) => entry.category === "LIFECYCLE" && isRestartRecoveryMessage(entry.message),
+    );
+    const restoredOffline = runtimeSummary?.label === "Restored offline";
+
+    if (!restoredOffline && !latestRestartRecovery) {
+      continue;
+    }
+
+    const capturedAt =
+      latestRestartRecovery?.timestamp ??
+      group.runtime.stoppedAt ??
+      group.runtime.pausedAt;
+    const capturedLabel = capturedAt ? formatCompactTimestamp(capturedAt) : null;
+
+    items.push({
+      groupId: group.groupId,
+      groupName: group.name,
+      label: restoredOffline ? "Restored offline" : "Restart recovery captured",
+      detail:
+        latestRestartRecovery?.message ??
+        runtimeSummary?.detail ??
+        "This group was restored into a safe offline state after reload.",
+      tone: restoredOffline ? "ok" : "warn",
+      updatedLabel: runtimeSummary?.updatedLabel ?? capturedLabel ?? undefined,
+      capturedAt: capturedAt ?? undefined,
+    });
+  }
+
+  return items
+    .sort((left, right) => {
+      if (left.capturedAt && right.capturedAt) {
+        return right.capturedAt.localeCompare(left.capturedAt);
+      }
+
+      if (right.capturedAt) {
+        return 1;
+      }
+
+      if (left.capturedAt) {
+        return -1;
+      }
+
+      return left.groupName.localeCompare(right.groupName);
+    })
+    .slice(0, limit);
+}
+
 export function buildCopyGroupActivityFeed(
   groups: CopyGroup[],
   activityByGroupId: Record<string, CopyGroupActivity[]>,
@@ -906,6 +1113,431 @@ export function buildCopyGroupActivityTimeline(
       category: entry.category,
       tone: toActivityTone(entry.severity, entry.category),
     }));
+}
+
+function isRestartRecoveryMessage(message: string): boolean {
+  return (
+    message.startsWith("Recovered copy group ") ||
+    message.startsWith("Restored paused copy group ")
+  );
+}
+
+function formatElapsedDuration(minutes: number): string {
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  if (hours < 24) {
+    return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+  }
+
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+
+  return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+}
+
+function buildCopyGroupSignalFreshness(input: {
+  latestSignalAt?: string;
+  now?: string;
+  allowQuiet: boolean;
+}): {
+  label: string;
+  detail: string;
+  tone: "ok" | "warn" | "danger" | "muted";
+} {
+  if (!input.latestSignalAt) {
+    return {
+      label: "No signal timestamp",
+      detail: "This group does not yet have a recent runtime signal timestamp to compare.",
+      tone: "muted",
+    };
+  }
+
+  const nowDate = new Date(input.now ?? new Date().toISOString());
+  const lastSignalDate = new Date(input.latestSignalAt);
+
+  if (Number.isNaN(nowDate.getTime()) || Number.isNaN(lastSignalDate.getTime())) {
+    return {
+      label: "Signal timing unavailable",
+      detail: "The latest runtime signal timestamp could not be read.",
+      tone: "muted",
+    };
+  }
+
+  const ageMinutes = Math.max(
+    Math.floor((nowDate.getTime() - lastSignalDate.getTime()) / 60_000),
+    0,
+  );
+  const ageLabel = formatElapsedDuration(ageMinutes);
+  const timestampLabel = formatActivityTimestampLabel(input.latestSignalAt);
+
+  if (input.allowQuiet) {
+    return {
+      label: `Quiet ${ageLabel}`,
+      detail: `Latest signal logged ${timestampLabel}. Quiet history can be normal while this group remains offline.`,
+      tone: "muted",
+    };
+  }
+
+  if (ageMinutes <= 15) {
+    return {
+      label: `Fresh ${ageLabel} ago`,
+      detail: `Latest signal logged ${timestampLabel}.`,
+      tone: "ok",
+    };
+  }
+
+  if (ageMinutes <= 60) {
+    return {
+      label: `Quiet ${ageLabel}`,
+      detail: `Latest signal logged ${timestampLabel}. Monitor the next routing window before escalating this group.`,
+      tone: "muted",
+    };
+  }
+
+  return {
+    label: `Stale ${ageLabel}`,
+    detail: `Latest signal logged ${timestampLabel}. Recheck the activity feed if this group should still be active.`,
+    tone: "warn",
+  };
+}
+
+function buildCopyGroupRoutingGate(input: {
+  status: CopyGroupStatus;
+  healthStatus: CopyGroupHealthStatus;
+  masterConnected: boolean;
+  connectedFollowerCount: number;
+  totalFollowerCount: number;
+  latestRestartRecoveryMessage?: string;
+}): {
+  label: string;
+  detail: string;
+  tone: "ok" | "warn" | "danger" | "muted";
+} {
+  const disconnectedFollowers = Math.max(
+    input.totalFollowerCount - input.connectedFollowerCount,
+    0,
+  );
+  const label =
+    input.status === "PAUSED"
+      ? "Resume gate"
+      : input.status === "STOPPED"
+        ? "Stage gate"
+        : "Routing gate";
+  const actionPhrase =
+    input.status === "PAUSED"
+      ? "resume this group"
+      : input.status === "STOPPED"
+        ? "stage this group again"
+        : "route this group again";
+
+  if (input.status === "EMERGENCY_STOPPED" || input.healthStatus === "UNHEALTHY") {
+    return {
+      label: "Recovery gate",
+      detail: "Clear the active runtime blocker before you reuse this copy group.",
+      tone: "danger",
+    };
+  }
+
+  if (!input.masterConnected) {
+    return {
+      label,
+      detail: `Reconnect the master account before you ${actionPhrase}.`,
+      tone: "danger",
+    };
+  }
+
+  if (input.totalFollowerCount === 0) {
+    return {
+      label,
+      detail: "Assign at least one follower account before routing this copy group again.",
+      tone: "warn",
+    };
+  }
+
+  if (disconnectedFollowers > 0) {
+    return {
+      label,
+      detail: `Reconnect ${disconnectedFollowers} follower${disconnectedFollowers === 1 ? "" : "s"} before you ${actionPhrase}.`,
+      tone: "warn",
+    };
+  }
+
+  if (
+    input.latestRestartRecoveryMessage &&
+    (input.status === "PAUSED" || input.status === "STOPPED")
+  ) {
+    return {
+      label,
+      detail: "Review the reload recovery trail, then route the group only when the next session setup looks safe.",
+      tone: "warn",
+    };
+  }
+
+  if (input.healthStatus === "DEGRADED") {
+    return {
+      label: input.status === "RUNNING" ? "Routing gate" : label,
+      detail: "Confirm the degraded signal is stable before the next routing window.",
+      tone: "warn",
+    };
+  }
+
+  if (input.status === "PAUSED") {
+    return {
+      label,
+      detail: "Master and followers look ready. Resume when the next routing window opens.",
+      tone: "ok",
+    };
+  }
+
+  if (input.status === "STOPPED") {
+    return {
+      label,
+      detail: "Master and followers look ready. Stage this group when you are ready to route again.",
+      tone: "ok",
+    };
+  }
+
+  return {
+    label: "Routing gate",
+    detail: "Keep monitoring the live signal mix before the next routing window.",
+    tone: "muted",
+  };
+}
+
+export function buildCopyGroupHistorySummary(
+  activity: CopyGroupActivity[],
+  observability?: CopyGroupObservability | null,
+  options: {
+    now?: string;
+  } = {},
+): CopyGroupHistorySummary {
+  const source =
+    observability ??
+    ({
+      groupId: activity[0]?.groupId ?? "group",
+      recentActivity: activity,
+      totalEvents: activity.length,
+      infoEventCount: activity.filter((entry) => entry.severity === "INFO").length,
+      warningEventCount: activity.filter((entry) => entry.severity === "WARN").length,
+      errorEventCount: activity.filter((entry) => entry.severity === "ERROR").length,
+      restartRecoveryCount: activity.filter(
+        (entry) => entry.category === "LIFECYCLE" && isRestartRecoveryMessage(entry.message),
+      ).length,
+      categoryCounts: {
+        lifecycle: activity.filter((entry) => entry.category === "LIFECYCLE").length,
+        trade: activity.filter((entry) => entry.category === "TRADE").length,
+        rule: activity.filter((entry) => entry.category === "RULE").length,
+        intent: activity.filter((entry) => entry.category === "INTENT").length,
+        execution: activity.filter((entry) => entry.category === "EXECUTION").length,
+        health: activity.filter((entry) => entry.category === "HEALTH").length,
+      },
+      lifecycleCounts: {
+        started: activity.filter((entry) => / started\./i.test(entry.message)).length,
+        paused: activity.filter((entry) => / paused\./i.test(entry.message)).length,
+        resumed: activity.filter((entry) => / resumed\./i.test(entry.message)).length,
+        stopped: activity.filter((entry) => / stopped\./i.test(entry.message)).length,
+        emergencyStopped: activity.filter((entry) => /emergency stop/i.test(entry.message)).length,
+      },
+      lastEventAt: activity[0]?.timestamp,
+      lastLifecycleAt: activity.find((entry) => entry.category === "LIFECYCLE")?.timestamp,
+      lastLifecycleMessage: activity.find((entry) => entry.category === "LIFECYCLE")?.message,
+      lastErrorAt: activity.find((entry) => entry.severity === "ERROR")?.timestamp,
+      lastErrorMessage: activity.find((entry) => entry.severity === "ERROR")?.message,
+      lastRestartRecoveryAt: activity.find(
+        (entry) => entry.category === "LIFECYCLE" && isRestartRecoveryMessage(entry.message),
+      )?.timestamp,
+      lastRestartRecoveryMessage: activity.find(
+        (entry) => entry.category === "LIFECYCLE" && isRestartRecoveryMessage(entry.message),
+      )?.message,
+    } satisfies CopyGroupObservability);
+
+  const lifecycleParts: string[] = [];
+  if (source.lifecycleCounts.started > 0) {
+    lifecycleParts.push(`${source.lifecycleCounts.started} start`);
+  }
+  if (source.lifecycleCounts.paused > 0) {
+    lifecycleParts.push(`${source.lifecycleCounts.paused} pause`);
+  }
+  if (source.lifecycleCounts.resumed > 0) {
+    lifecycleParts.push(`${source.lifecycleCounts.resumed} resume`);
+  }
+  if (source.lifecycleCounts.emergencyStopped > 0) {
+    lifecycleParts.push(`${source.lifecycleCounts.emergencyStopped} emergency stop`);
+  }
+  if (source.lifecycleCounts.stopped > 0) {
+    lifecycleParts.push(`${source.lifecycleCounts.stopped} stop`);
+  }
+
+  const lifecycleHeadline =
+    lifecycleParts.length > 0
+      ? `${lifecycleParts.join(" • ")}`
+      : source.lastLifecycleMessage ?? "No lifecycle actions captured yet.";
+  const lifecycleDetail = source.lastLifecycleMessage
+    ? source.lastLifecycleAt
+      ? `${source.lastLifecycleMessage} ${formatActivityTimestampLabel(source.lastLifecycleAt)}`
+      : source.lastLifecycleMessage
+    : "The raw history below still captures line-by-line runtime updates.";
+
+  const severityTone =
+    source.errorEventCount > 0
+      ? "danger"
+      : source.warningEventCount > 0
+        ? "warn"
+        : source.infoEventCount > 0
+          ? "ok"
+          : "muted";
+  const severityLabel =
+    source.errorEventCount > 0
+      ? `${source.errorEventCount} error${source.errorEventCount === 1 ? "" : "s"} logged`
+      : source.warningEventCount > 0
+        ? `${source.warningEventCount} warning${source.warningEventCount === 1 ? "" : "s"} on record`
+        : source.totalEvents > 0
+          ? `${source.totalEvents} update${source.totalEvents === 1 ? "" : "s"} captured`
+          : "No recent updates";
+  const nowDate = new Date(options.now ?? new Date().toISOString());
+  const signalFreshness =
+    source.lastEventAt && !Number.isNaN(nowDate.getTime())
+      ? (() => {
+          const lastEventDate = new Date(source.lastEventAt);
+          if (Number.isNaN(lastEventDate.getTime())) {
+            return {
+              label: "Signal timing unavailable",
+              detail: "The latest runtime event does not include a readable timestamp yet.",
+              tone: "muted" as const,
+            };
+          }
+
+          const ageMinutes = Math.max(
+            Math.floor((nowDate.getTime() - lastEventDate.getTime()) / 60_000),
+            0,
+          );
+          const ageLabel = formatElapsedDuration(ageMinutes);
+          const timestampLabel = formatActivityTimestampLabel(source.lastEventAt);
+
+          if (ageMinutes <= 15) {
+            return {
+              label: `Fresh ${ageLabel} ago`,
+              detail: `Latest signal logged ${timestampLabel}.`,
+              tone: "ok" as const,
+            };
+          }
+
+          if (ageMinutes <= 60) {
+            return {
+              label: `Quiet ${ageLabel}`,
+              detail: `Latest signal logged ${timestampLabel}. Quiet history can be normal for paused or idle groups.`,
+              tone: "muted" as const,
+            };
+          }
+
+          return {
+            label: `Stale ${ageLabel}`,
+            detail: `Latest signal logged ${timestampLabel}. Recheck the activity feed if this group should still be active.`,
+            tone: "warn" as const,
+          };
+        })()
+      : {
+          label: "No signal timestamp",
+          detail: "This history window does not yet have a runtime event timestamp to compare.",
+          tone: "muted" as const,
+        };
+  const recoveryPriority =
+    source.errorEventCount > 0 || source.lifecycleCounts.emergencyStopped > 0
+      ? {
+          label: "Review now",
+          detail: source.lastErrorMessage
+            ? `Most recent blocker: ${source.lastErrorMessage}`
+            : "A runtime or lifecycle blocker needs operator review before restart.",
+          tone: "danger" as const,
+        }
+      : source.warningEventCount > 0 || source.lifecycleCounts.paused > 0
+        ? {
+            label: "Review soon",
+            detail: source.lastLifecycleMessage
+              ? `Latest runtime change: ${source.lastLifecycleMessage}`
+              : "Warnings or paused state should be checked before the next copy session.",
+            tone: "warn" as const,
+          }
+        : source.totalEvents > 0
+          ? {
+              label: "Stable",
+              detail: source.lastLifecycleMessage
+                ? `Latest stable signal: ${source.lastLifecycleMessage}`
+                : "Recent history only shows informational updates.",
+              tone: "ok" as const,
+            }
+          : {
+              label: "No recent signal",
+              detail: "The recent history window does not yet have enough runtime activity to rank recovery urgency.",
+              tone: "muted" as const,
+            };
+  const restartSignal =
+    source.restartRecoveryCount > 0
+      ? {
+          label:
+            source.restartRecoveryCount === 1
+              ? "1 restart recovery captured"
+              : `${source.restartRecoveryCount} restart recoveries captured`,
+          detail: source.lastRestartRecoveryMessage
+            ? source.lastRestartRecoveryAt
+              ? `${source.lastRestartRecoveryMessage} ${formatActivityTimestampLabel(source.lastRestartRecoveryAt)}`
+              : source.lastRestartRecoveryMessage
+            : "A restore or recovery event was captured after reload.",
+          tone: "ok" as const,
+        }
+      : {
+          label: "No restart recovery captured",
+          detail: "This history window has not yet recorded a restore or recovery event after reload.",
+          tone: "muted" as const,
+        };
+
+  return {
+    lifecycleHeadline,
+    lifecycleDetail,
+    severityLabel,
+    severityTone,
+    signalFreshnessLabel: signalFreshness.label,
+    signalFreshnessDetail: signalFreshness.detail,
+    signalFreshnessTone: signalFreshness.tone,
+    recoveryPriorityLabel: recoveryPriority.label,
+    recoveryPriorityDetail: recoveryPriority.detail,
+    recoveryPriorityTone: recoveryPriority.tone,
+    restartSignalLabel: restartSignal.label,
+    restartSignalDetail: restartSignal.detail,
+    restartSignalTone: restartSignal.tone,
+    categoryBadges: [
+      {
+        label: "Lifecycle",
+        value: source.categoryCounts.lifecycle,
+        tone: "ok",
+      },
+      {
+        label: "Health",
+        value: source.categoryCounts.health,
+        tone: source.categoryCounts.health > 0 ? "warn" : "muted",
+      },
+      {
+        label: "Execution",
+        value: source.categoryCounts.execution,
+        tone: source.categoryCounts.execution > 0 ? "warn" : "muted",
+      },
+      {
+        label: "Rules",
+        value: source.categoryCounts.rule,
+        tone: source.categoryCounts.rule > 0 ? "warn" : "muted",
+      },
+      {
+        label: "Recovery",
+        value: source.restartRecoveryCount,
+        tone: source.restartRecoveryCount > 0 ? "ok" : "muted",
+      },
+    ],
+  };
 }
 
 export function clusterCopyGroupActivityFeed(

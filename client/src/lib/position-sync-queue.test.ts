@@ -3,8 +3,12 @@ import test from "node:test";
 
 import type { PositionSyncOverviewResponse } from "./runtime-overview";
 import {
+  buildPositionSyncRepairCandidateQueue,
   buildPositionSyncQueue,
+  describePositionSyncRepairStageGuidance,
+  filterPositionSyncRepairCandidateQueue,
   filterPositionSyncQueue,
+  summarizePositionSyncRepairCandidateQueue,
 } from "./position-sync-queue";
 
 const overview: PositionSyncOverviewResponse = {
@@ -16,6 +20,7 @@ const overview: PositionSyncOverviewResponse = {
     unavailableGroups: 0,
     outOfSyncFollowers: 2,
     unavailableFollowers: 0,
+    disabledFollowers: 0,
   },
   groups: [
     {
@@ -28,6 +33,7 @@ const overview: PositionSyncOverviewResponse = {
       followerCount: 2,
       outOfSyncFollowers: 2,
       unavailableFollowers: 0,
+      disabledFollowers: 0,
       followers: [
         {
           followerAccountId: "follower-1",
@@ -145,6 +151,8 @@ test("buildPositionSyncQueue matches persisted reviews to live sync plan metadat
       summary: "1 adjustment needed to align with the master.",
       adjustmentCount: 1,
       topAdjustments: ["ESU6"],
+      complexityScore: 1,
+      stageGuidance: "Follow through on the assigned sync window and mark the item completed after manual execution.",
       ageMinutes: 6,
       needsAttention: false,
       attentionLabel: undefined,
@@ -169,6 +177,8 @@ test("buildPositionSyncQueue matches persisted reviews to live sync plan metadat
       summary: "2 adjustments needed to align with the master.",
       adjustmentCount: 2,
       topAdjustments: ["NQU6", "ESU6"],
+      complexityScore: 5,
+      stageGuidance: "Simulation is done. Recheck every open and multi-step adjustment before approval.",
       ageMinutes: 10,
       needsAttention: false,
       attentionLabel: undefined,
@@ -241,4 +251,162 @@ test("buildPositionSyncQueue flags stale approved and handed-off items that need
   assert.equal(queue[0]?.attentionLabel, "Handoff waiting for completion");
   assert.equal(queue[1]?.needsAttention, true);
   assert.equal(queue[1]?.attentionLabel, "Approval waiting for handoff");
+});
+
+test("buildPositionSyncRepairCandidateQueue stages recommendation-first sync work", () => {
+  const queue = buildPositionSyncRepairCandidateQueue(overview, [
+    {
+      groupId: "group-1",
+      followerAccountId: "follower-2",
+      status: "simulated",
+      simulatedAt: "2026-08-11T18:05:00.000Z",
+    },
+  ], new Date("2026-08-11T18:20:00.000Z"));
+
+  assert.deepEqual(queue, [
+    {
+      key: "group-1:follower-1",
+      groupId: "group-1",
+      groupName: "Index Leaders",
+      followerAccountId: "follower-1",
+      followerName: "Follower One",
+      adjustmentCount: 1,
+      recommendation: "auto_ready",
+      recommendationLabel: "Auto-ready next",
+      recommendationReason: "Low-complexity trim or sizing change.",
+      complexity: "low",
+      complexityLabel: "Low complexity",
+      complexityScore: 1,
+      workflowStatus: "not_started",
+      workflowLabel: "Not started",
+      stageGuidance: "Start with a quick review, then move into simulation if the current balances still line up.",
+      workflowTimestamp: undefined,
+      workflowTimestampLabel: "Not started yet",
+      ageMinutes: 0,
+      needsAttention: false,
+      attentionLabel: undefined,
+      operatorName: undefined,
+      operatorHistory: undefined,
+      stageHistory: [],
+      topAdjustments: ["ESU6"],
+    },
+    {
+      key: "group-1:follower-2",
+      groupId: "group-1",
+      groupName: "Index Leaders",
+      followerAccountId: "follower-2",
+      followerName: "Follower Two",
+      adjustmentCount: 2,
+      recommendation: "manual_review",
+      recommendationLabel: "Manual review first",
+      recommendationReason: "Includes a fresh open from flat.",
+      complexity: "medium",
+      complexityLabel: "Medium complexity",
+      complexityScore: 5,
+      workflowStatus: "simulated",
+      workflowLabel: "Simulated",
+      stageGuidance: "Simulation is done. Recheck every open and multi-step adjustment before approval.",
+      workflowTimestamp: "2026-08-11T18:05:00.000Z",
+      workflowTimestampLabel: "Simulated",
+      ageMinutes: 15,
+      needsAttention: false,
+      attentionLabel: undefined,
+      operatorName: undefined,
+      operatorHistory: undefined,
+      stageHistory: [
+        {
+          label: "Simulated",
+          timestamp: "2026-08-11T18:05:00.000Z",
+        },
+      ],
+      topAdjustments: ["NQU6", "ESU6"],
+    },
+  ]);
+});
+
+test("filterPositionSyncRepairCandidateQueue narrows recommendation board entries", () => {
+  const queue = buildPositionSyncRepairCandidateQueue(overview, [
+    {
+      groupId: "group-1",
+      followerAccountId: "follower-1",
+      status: "reviewed",
+      reviewedAt: "2026-08-11T18:04:00.000Z",
+    },
+    {
+      groupId: "group-1",
+      followerAccountId: "follower-2",
+      status: "approved",
+      approvedAt: "2026-08-11T18:07:00.000Z",
+      operatorName: "joseph",
+    },
+  ]);
+
+  assert.equal(filterPositionSyncRepairCandidateQueue(queue, "auto_ready", "").length, 1);
+  assert.equal(filterPositionSyncRepairCandidateQueue(queue, "ready_to_simulate", "").length, 1);
+  assert.equal(filterPositionSyncRepairCandidateQueue(queue, "manual_review", "").length, 1);
+  assert.equal(filterPositionSyncRepairCandidateQueue(queue, "not_started", "").length, 0);
+  assert.equal(filterPositionSyncRepairCandidateQueue(queue, "in_progress", "").length, 2);
+  assert.equal(filterPositionSyncRepairCandidateQueue(queue, "all", "manual review").length, 1);
+  assert.equal(filterPositionSyncRepairCandidateQueue(queue, "all", "ESU6").length, 2);
+});
+
+test("describePositionSyncRepairStageGuidance adapts the next step by workflow stage and complexity", () => {
+  assert.equal(
+    describePositionSyncRepairStageGuidance({
+      workflowStatus: "reviewed",
+      complexity: "low",
+    }),
+    "Reviewed and ready for a quick simulation pass.",
+  );
+
+  assert.equal(
+    describePositionSyncRepairStageGuidance({
+      workflowStatus: "simulated",
+      complexity: "high",
+    }),
+    "Simulation is done. Walk the full reversal path once more before approval.",
+  );
+
+  assert.equal(
+    describePositionSyncRepairStageGuidance({
+      workflowStatus: "approved",
+      complexity: "medium",
+    }),
+    "Approved for handoff in the next operator sync window.",
+  );
+});
+
+test("summarizePositionSyncRepairCandidateQueue highlights stuck and unowned staged work", () => {
+  const queue = buildPositionSyncRepairCandidateQueue(overview, [
+    {
+      groupId: "group-1",
+      followerAccountId: "follower-1",
+      status: "reviewed",
+      reviewedAt: "2026-08-11T18:00:00.000Z",
+    },
+    {
+      groupId: "group-1",
+      followerAccountId: "follower-2",
+      status: "approved",
+      approvedAt: "2026-08-11T18:01:00.000Z",
+      operatorName: "joseph",
+    },
+  ], new Date("2026-08-11T18:40:00.000Z"));
+
+  assert.deepEqual(summarizePositionSyncRepairCandidateQueue(queue), {
+    total: 2,
+    autoReady: 1,
+    readyToSimulate: 1,
+    manualReview: 1,
+    lowComplexity: 1,
+    mediumComplexity: 1,
+    highComplexity: 0,
+    totalComplexityScore: 6,
+    notStarted: 0,
+    inProgress: 2,
+    needsAttention: 2,
+    unowned: 1,
+  });
+  assert.equal(queue[0]?.attentionLabel, "Reviewed candidate waiting for simulation");
+  assert.equal(queue[1]?.attentionLabel, "Approved candidate waiting for queue follow-through");
 });

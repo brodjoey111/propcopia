@@ -7,6 +7,7 @@ test('routes expose the authenticated trade history endpoint', () => {
 
   assert.match(routesSource, /app\.get\("\/api\/trades\/history"/);
   assert.match(routesSource, /tradeHistoryStore\.listRecent/);
+  assert.match(routesSource, /executionFollowUpReviewStore\.listReviews/);
   assert.match(routesSource, /req\.session\?\.userId/);
 });
 

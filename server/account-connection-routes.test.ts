@@ -15,6 +15,10 @@ test('connect route refreshes saved Rithmic identity after successful authentica
     routesSource,
     /const updated = await updateAccountConnectionState\(\{\s*accountId: id,\s*userId: req\.session\.userId,\s*isConnected: true,/,
   );
+  assert.match(
+    routesSource,
+    /rithmicReconnectValidationStore\.markValidated\(existing\.id,\s*\{\s*validatedAt: new Date\(\)\.toISOString\(\),\s*source: "saved_connect",\s*\}\);/,
+  );
 });
 
 test('disconnect route tears down any cached Rithmic session before marking the account disconnected', () => {
@@ -22,6 +26,7 @@ test('disconnect route tears down any cached Rithmic session before marking the 
   assert.match(routesSource, /const instance = rithmicInstances\.get\(existing\.rithmicUsername\);/);
   assert.match(routesSource, /await instance\.disconnect\(\);/);
   assert.match(routesSource, /rithmicInstances\.delete\(existing\.rithmicUsername\);/);
+  assert.match(routesSource, /rithmicReconnectValidationStore\.clear\(existing\.id\);/);
   assert.match(
     routesSource,
     /const updated = await updateAccountConnectionState\(\{\s*accountId: id,\s*userId: req\.session\.userId,\s*isConnected: false,/,

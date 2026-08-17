@@ -1,14 +1,27 @@
 import { useEffect, useState } from "react";
 
+import { NotificationsFollowUpPanels } from "@/components/notifications-follow-up-panels";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@/contexts/user-context";
-import { useNotifications } from "@/hooks/use-notifications";
+import { notificationsQueryKey, useNotifications } from "@/hooks/use-notifications";
+import { useFollowUpReviewActions } from "@/hooks/use-follow-up-review-actions";
+import { useFollowUpReviewData } from "@/hooks/use-follow-up-review-data";
+import { useOperatorFollowUpData } from "@/hooks/use-operator-follow-up-data";
+import { usePositionSyncReviewData } from "@/hooks/use-position-sync-review-data";
+import { usePositionSyncWorkflowActions } from "@/hooks/use-position-sync-workflow-actions";
+import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
-  buildRiskNotificationFollowUpQueue,
+  buildExecutionFollowUpReviewPayload,
+  buildRithmicReadinessReviewPayload,
+  buildRiskFollowUpReviewPayload,
+  type ExecutionFollowUpReviewEntry,
+  type RiskFollowUpReviewEntry,
+} from "@/lib/follow-up-operator";
+import {
   clusterNotifications,
   describeExecutionAttentionNotification,
   describeNotificationMessage,
@@ -19,23 +32,17 @@ import {
   type ClusteredNotificationItem,
   type NotificationFilter,
 } from "@/lib/notifications";
+import {
+  summarizePositionSyncRepairCandidateQueue,
+} from "@/lib/position-sync-queue";
+import {
+  type DashboardRuntimeOverviewResponse,
+} from "@/lib/runtime-overview";
+import {
+  buildPositionSyncWorkflowUpdate,
+} from "@/lib/position-sync-workflow";
 
 const RISK_FOLLOW_UP_REVIEWED_STORAGE_KEY = "propcopia.notifications.riskFollowUpReviewed";
-
-interface RiskFollowUpOperatorAssignment {
-  operatorName: string;
-  assignedAt: string;
-  reason?: string;
-}
-
-interface RiskFollowUpReviewEntry {
-  accountId: string;
-  status: "pending" | "reviewed";
-  note?: string;
-  operatorName?: string;
-  operatorHistory?: RiskFollowUpOperatorAssignment[];
-  reviewedAt?: string;
-}
 
 function formatTimestamp(timestamp: string): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -59,6 +66,10 @@ function getToneStyles(severity: "info" | "warn" | "error") {
 }
 
 function getNotificationCardStyles(notification: ClusteredNotificationItem) {
+  if (notification.reviewStatus === "reviewed" && notification.category !== "trade") {
+    return "border-emerald-400/12 bg-emerald-400/6 text-emerald-50";
+  }
+
   if (
     notification.category === "trade" &&
     notification.tradeSummary?.reviewStatus === "reviewed"
@@ -102,33 +113,8 @@ function parseRiskFollowUpReviewsJson(value?: string | null): Record<string, str
   }
 }
 
-function appendRiskFollowUpOperatorAssignment(
-  history: RiskFollowUpOperatorAssignment[] | undefined,
-  operatorName: string | undefined,
-  assignedAt: string,
-  reason?: string,
-): RiskFollowUpOperatorAssignment[] | undefined {
-  if (!operatorName) {
-    return history;
-  }
-
-  const nextHistory = history ? [...history] : [];
-  const previousAssignment = nextHistory[nextHistory.length - 1];
-
-  if (previousAssignment?.operatorName === operatorName) {
-    return nextHistory;
-  }
-
-  nextHistory.push({
-    operatorName,
-    assignedAt,
-    reason,
-  });
-
-  return nextHistory;
-}
-
 export default function Notifications() {
+  const { toast } = useToast();
   const { user } = useUser();
   const { data, isLoading, error } = useNotifications();
   const [filter, setFilter] = useState<NotificationFilter>("all");
@@ -138,16 +124,23 @@ export default function Notifications() {
   const [reviewedRiskFollowUpItems, setReviewedRiskFollowUpItems] = useState<Record<string, string>>(
     loadReviewedRiskFollowUpItems,
   );
+  const [executionFollowUpNotes, setExecutionFollowUpNotes] = useState<Record<string, string>>({});
+  const [rithmicReadinessNotes, setRithmicReadinessNotes] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setShowReviewed(user?.showReviewedNotifications ?? true);
   }, [user?.showReviewedNotifications]);
 
-  const { data: riskFollowUpReviewData } = useQuery<{
-    success: boolean;
-    reviews: RiskFollowUpReviewEntry[];
-  } | null>({
-    queryKey: user?.id ? ["/api/risk-follow-up/reviews", user.id] : ["/api/risk-follow-up/reviews", "anonymous"],
+  const {
+    riskFollowUpReviewData,
+    executionFollowUpReviewData,
+    rithmicReadinessReviewData,
+    riskReviewsByAccountId,
+    executionReviewsByHistoryId,
+    rithmicReadinessReviewsByStoryKey,
+  } = useFollowUpReviewData(user?.id);
+  const { data: dashboardRuntimeOverviewData } = useQuery<DashboardRuntimeOverviewResponse | null>({
+    queryKey: user?.id ? ["/api/runtime/dashboard-overview", user.id] : ["/api/runtime/dashboard-overview", "anonymous"],
     queryFn: async ({ queryKey }) => {
       const response = await fetch(queryKey[0] as string, {
         credentials: "include",
@@ -158,14 +151,21 @@ export default function Notifications() {
       }
 
       if (!response.ok) {
-        throw new Error("Failed to load risk follow-up reviews");
+        throw new Error("Failed to load dashboard runtime overview");
       }
 
       return response.json();
     },
     enabled: !!user?.id,
   });
-
+  const {
+    positionSyncWorkflowData,
+    positionSyncWorkflowState,
+    positionSyncRepairCandidates,
+  } = usePositionSyncReviewData({
+    userId: user?.id,
+    enabled: !!user?.id,
+  });
   useEffect(() => {
     if (user?.id) {
       const reviews = Object.fromEntries(
@@ -193,24 +193,6 @@ export default function Notifications() {
     );
   }, [reviewedRiskFollowUpItems]);
 
-  const saveRiskFollowUpReviewsMutation = useMutation({
-    mutationFn: async (reviews: RiskFollowUpReviewEntry[]) => {
-      const response = await apiRequest("POST", "/api/risk-follow-up/reviews", {
-        reviews,
-      });
-      return response.json() as Promise<{
-        success: boolean;
-        reviews: RiskFollowUpReviewEntry[];
-      }>;
-    },
-    onSuccess: (result) => {
-      queryClient.setQueryData(
-        user?.id ? ["/api/risk-follow-up/reviews", user.id] : ["/api/risk-follow-up/reviews", "anonymous"],
-        result,
-      );
-    },
-  });
-
   const saveRiskFollowUpPreferencesMutation = useMutation({
     mutationFn: async (settings: {
       riskFollowUpReviewsJson?: string | null;
@@ -225,17 +207,55 @@ export default function Notifications() {
       queryClient.setQueryData(["/api/auth/me"], result);
     },
   });
+  const {
+    saveRiskFollowUpReviewsMutation,
+    saveExecutionFollowUpReviewsMutation,
+    saveRithmicReadinessReviewsMutation,
+    recheckExecutionFollowUpItemMutation: recheckExecutionRecoveryItemMutation,
+    recheckRithmicReadinessMutation,
+  } = useFollowUpReviewActions({
+    userId: user?.id,
+  });
+  const { savePositionSyncWorkflowMutation } = usePositionSyncWorkflowActions({
+    userId: user?.id,
+  });
 
   const notifications = filterReviewedNotifications(data?.notifications ?? [], showReviewed);
   const summary = summarizeNotifications(notifications);
   const clusteredNotifications = clusterNotifications(notifications);
-  const allRiskFollowUpItems = buildRiskNotificationFollowUpQueue(data?.notifications ?? []);
-  const riskFollowUpItems = allRiskFollowUpItems
-    .filter((item) => showReviewed || !reviewedRiskFollowUpItems[item.id])
-    .slice(0, 4);
-  const reviewedRiskFollowUpCount = allRiskFollowUpItems.filter(
+  const {
+    allRiskNotificationItems,
+    visibleRiskNotificationItems,
+    executionFollowUpSummary,
+    visibleExecutionFollowUpItems,
+  } = useOperatorFollowUpData({
+    notifications: data?.notifications ?? [],
+    showReviewed,
+    reviewedRiskFollowUpItems,
+    executionRecovery: dashboardRuntimeOverviewData?.tradeAnalytics.executionRecovery,
+    riskReviews: riskFollowUpReviewData?.reviews ?? [],
+    executionReviews: executionFollowUpReviewData?.reviews ?? [],
+  });
+  const riskFollowUpItems = visibleRiskNotificationItems.slice(0, 4);
+  const executionFollowUpItems = visibleExecutionFollowUpItems.slice(0, 4);
+  const reviewedRiskFollowUpCount = allRiskNotificationItems.filter(
     (item) => !!reviewedRiskFollowUpItems[item.id],
   ).length;
+  const reviewedExecutionFollowUpCount = executionFollowUpSummary.reviewedCount;
+  const positionSyncRepairSummary = summarizePositionSyncRepairCandidateQueue(
+    positionSyncRepairCandidates,
+  );
+  const syncRepairFollowUpItems = positionSyncRepairCandidates
+    .filter(
+      (item) =>
+        item.needsAttention ||
+        (
+          item.workflowStatus !== "not_started" &&
+          item.workflowStatus !== "completed_manually" &&
+          !item.operatorName
+        ),
+    )
+    .slice(0, 4);
   const filteredNotifications = filterNotifications(
     clusteredNotifications,
     filter,
@@ -253,21 +273,17 @@ export default function Notifications() {
   const handleMarkRiskFollowUpReviewed = (id: string) => {
     const now = new Date().toISOString();
     if (user?.id) {
-      const currentReview = (riskFollowUpReviewData?.reviews ?? []).find((review) => review.accountId === id);
+      const currentReview = riskReviewsByAccountId.get(id);
       saveRiskFollowUpReviewsMutation.mutate([
-        {
+        buildRiskFollowUpReviewPayload({
           accountId: id,
-          status: "reviewed",
-          note: riskFollowUpNotes[id]?.trim() || currentReview?.note,
+          currentReview,
           operatorName: user.username,
-          operatorHistory: appendRiskFollowUpOperatorAssignment(
-            currentReview?.operatorHistory,
-            user.username,
-            now,
-            "Reviewed risk follow-up item",
-          ),
+          note: riskFollowUpNotes[id]?.trim() || currentReview?.note,
+          status: "reviewed",
+          assignmentReason: "Reviewed risk follow-up item",
           reviewedAt: now,
-        },
+        }),
       ]);
       return;
     }
@@ -280,20 +296,17 @@ export default function Notifications() {
   const handleReopenRiskFollowUpItem = (id: string) => {
     if (user?.id) {
       const now = new Date().toISOString();
-      const currentReview = (riskFollowUpReviewData?.reviews ?? []).find((review) => review.accountId === id);
+      const currentReview = riskReviewsByAccountId.get(id);
       saveRiskFollowUpReviewsMutation.mutate([
-        {
+        buildRiskFollowUpReviewPayload({
           accountId: id,
-          status: "pending",
-          note: riskFollowUpNotes[id]?.trim() || currentReview?.note,
+          currentReview,
           operatorName: currentReview?.operatorName ?? user.username,
-          operatorHistory: appendRiskFollowUpOperatorAssignment(
-            currentReview?.operatorHistory,
-            user.username,
-            now,
-            "Reopened risk follow-up item",
-          ),
-        },
+          note: riskFollowUpNotes[id]?.trim() || currentReview?.note,
+          status: "pending",
+          assignmentReason: "Reopened risk follow-up item",
+          reviewedAt: now,
+        }),
       ]);
       return;
     }
@@ -304,6 +317,254 @@ export default function Notifications() {
       return next;
     });
   };
+  const handleExecutionRecoveryRecheck = async (historyId: string) => {
+    await recheckExecutionRecoveryItemMutation.mutateAsync(historyId);
+  };
+  const handleExecutionRecoveryReview = async (historyId: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const currentReview = executionReviewsByHistoryId.get(historyId);
+    const note = executionFollowUpNotes[historyId]?.trim();
+    const now = new Date().toISOString();
+    await saveExecutionFollowUpReviewsMutation.mutateAsync([
+      buildExecutionFollowUpReviewPayload({
+        historyId,
+        currentReview,
+        operatorName: currentReview?.operatorName ?? user.username,
+        note: note && note.length > 0 ? note : currentReview?.note,
+        status: "reviewed",
+        assignmentReason: "Reviewed execution follow-up item",
+        reviewedAt: now,
+      }),
+    ]);
+    setExecutionFollowUpNotes((current) => {
+      const next = { ...current };
+      delete next[historyId];
+      return next;
+    });
+  };
+
+  const handleTakeExecutionOwnership = (historyId: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const currentReview = executionReviewsByHistoryId.get(historyId);
+    const now = new Date().toISOString();
+    saveExecutionFollowUpReviewsMutation.mutate([
+      buildExecutionFollowUpReviewPayload({
+        historyId,
+        currentReview,
+        operatorName: user.username,
+        note: executionFollowUpNotes[historyId]?.trim() || currentReview?.note,
+        status: currentReview?.status ?? "pending",
+        assignmentReason: currentReview?.operatorName
+          ? "Reassigned execution follow-up ownership"
+          : "Claimed execution follow-up",
+        reviewedAt: now,
+      }),
+    ]);
+  };
+
+  const handleSaveExecutionFollowUpNote = (historyId: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const currentReview = executionReviewsByHistoryId.get(historyId);
+    saveExecutionFollowUpReviewsMutation.mutate([
+      buildExecutionFollowUpReviewPayload({
+        historyId,
+        currentReview,
+        operatorName: currentReview?.operatorName ?? user.username,
+        note: executionFollowUpNotes[historyId]?.trim() || undefined,
+        status: currentReview?.status ?? "pending",
+      }),
+    ]);
+  };
+
+  const handleReopenExecutionFollowUpItem = (historyId: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const currentReview = (executionFollowUpReviewData?.reviews ?? []).find(
+      (entry) => entry.historyId === historyId,
+    );
+    const now = new Date().toISOString();
+    saveExecutionFollowUpReviewsMutation.mutate([
+      buildExecutionFollowUpReviewPayload({
+        historyId,
+        currentReview,
+        operatorName: currentReview?.operatorName ?? user.username,
+        note: executionFollowUpNotes[historyId]?.trim() || currentReview?.note,
+        status: "pending",
+        assignmentReason: "Reopened execution follow-up item",
+        reviewedAt: now,
+      }),
+    ]);
+  };
+  const handleSaveRithmicReadinessNote = (storyKey: string, accountId: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const currentReview = rithmicReadinessReviewsByStoryKey.get(storyKey);
+    saveRithmicReadinessReviewsMutation.mutate([
+      buildRithmicReadinessReviewPayload({
+        storyKey,
+        accountId,
+        currentReview,
+        operatorName: currentReview?.operatorName ?? user.username,
+        note: rithmicReadinessNotes[storyKey]?.trim() || undefined,
+        status: currentReview?.status ?? "pending",
+      }),
+    ]);
+  };
+  const handleMarkRithmicReadinessReviewed = (storyKey: string, accountId: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const currentReview = rithmicReadinessReviewsByStoryKey.get(storyKey);
+    const now = new Date().toISOString();
+    saveRithmicReadinessReviewsMutation.mutate([
+      buildRithmicReadinessReviewPayload({
+        storyKey,
+        accountId,
+        currentReview,
+        operatorName: currentReview?.operatorName ?? user.username,
+        note: rithmicReadinessNotes[storyKey]?.trim() || currentReview?.note,
+        status: "reviewed",
+        assignmentReason: "Reviewed Rithmic readiness alert",
+        reviewedAt: now,
+      }),
+    ]);
+  };
+  const handleReopenRithmicReadinessAlert = (storyKey: string, accountId: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const currentReview = rithmicReadinessReviewsByStoryKey.get(storyKey);
+    const now = new Date().toISOString();
+    saveRithmicReadinessReviewsMutation.mutate([
+      buildRithmicReadinessReviewPayload({
+        storyKey,
+        accountId,
+        currentReview,
+        operatorName: currentReview?.operatorName ?? user.username,
+        note: rithmicReadinessNotes[storyKey]?.trim() || currentReview?.note,
+        status: "pending",
+        assignmentReason: "Reopened Rithmic readiness alert",
+        reviewedAt: now,
+      }),
+    ]);
+  };
+  const handleRithmicReadinessRecheck = async (accountId: string) => {
+    if (!user?.id || !accountId) {
+      return;
+    }
+
+    try {
+      const result = await recheckRithmicReadinessMutation.mutateAsync(accountId);
+      toast({
+        title: "Rithmic Readiness Rechecked",
+        description: result.readiness.ready
+          ? `${result.readiness.accountName} is ready after the latest saved-account check.`
+          : `${result.readiness.accountName} refreshed. ${result.readiness.blockers[0] ?? "Reconnect proof still needs follow-up."}`,
+      });
+    } catch (error) {
+      toast({
+        title: "Rithmic Re-check Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+  const handleTakeSyncRepairOwnership = (key: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const [groupId, followerAccountId] = key.split(":");
+    const currentReview = positionSyncWorkflowState[key];
+    const now = new Date().toISOString();
+
+    savePositionSyncWorkflowMutation.mutate([
+      buildPositionSyncWorkflowUpdate({
+        groupId,
+        followerAccountId,
+        currentEntry: currentReview,
+        nextStatus: currentReview?.status ?? "reviewed",
+        timestamp: now,
+        note: currentReview?.note,
+        operatorName: user.username,
+        assignmentReason: currentReview?.operatorName
+          ? "Reassigned staged sync ownership"
+          : "Claimed staged sync ownership",
+        appendOperatorAssignment: true,
+      }),
+    ]);
+  };
+
+  const handleAdvanceSyncRepairCandidate = (key: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const [groupId, followerAccountId] = key.split(":");
+    const currentReview = positionSyncWorkflowState[key];
+    const currentItem = syncRepairFollowUpItems.find((item) => item.key === key);
+    const now = new Date().toISOString();
+
+    if (!currentItem) {
+      return;
+    }
+
+    if (currentItem.workflowStatus === "not_started") {
+      savePositionSyncWorkflowMutation.mutate([
+        buildPositionSyncWorkflowUpdate({
+          groupId,
+          followerAccountId,
+          currentEntry: currentReview,
+          nextStatus: "reviewed",
+          timestamp: now,
+          note: currentReview?.note,
+        }),
+      ]);
+      return;
+    }
+
+    if (currentItem.workflowStatus === "reviewed") {
+      savePositionSyncWorkflowMutation.mutate([
+        buildPositionSyncWorkflowUpdate({
+          groupId,
+          followerAccountId,
+          currentEntry: currentReview,
+          nextStatus: "simulated",
+          timestamp: now,
+          note: currentReview?.note,
+        }),
+      ]);
+      return;
+    }
+
+    if (currentItem.workflowStatus === "simulated") {
+      savePositionSyncWorkflowMutation.mutate([
+        buildPositionSyncWorkflowUpdate({
+          groupId,
+          followerAccountId,
+          currentEntry: currentReview,
+          nextStatus: "approved",
+          timestamp: now,
+          note: currentReview?.note,
+        }),
+      ]);
+    }
+  };
 
   const handleTakeOwnership = (id: string) => {
     if (!user?.id) {
@@ -311,23 +572,19 @@ export default function Notifications() {
     }
 
     const now = new Date().toISOString();
-    const currentReview = (riskFollowUpReviewData?.reviews ?? []).find((review) => review.accountId === id);
+    const currentReview = riskReviewsByAccountId.get(id);
     saveRiskFollowUpReviewsMutation.mutate([
-      {
+      buildRiskFollowUpReviewPayload({
         accountId: id,
-        status: currentReview?.status ?? "pending",
-        note: riskFollowUpNotes[id]?.trim() || currentReview?.note,
+        currentReview,
         operatorName: user.username,
-        operatorHistory: appendRiskFollowUpOperatorAssignment(
-          currentReview?.operatorHistory,
-          user.username,
-          now,
-          currentReview?.operatorName
-            ? "Reassigned risk follow-up ownership"
-            : "Claimed unassigned risk follow-up",
-        ),
-        reviewedAt: currentReview?.reviewedAt,
-      },
+        note: riskFollowUpNotes[id]?.trim() || currentReview?.note,
+        status: currentReview?.status ?? "pending",
+        assignmentReason: currentReview?.operatorName
+          ? "Reassigned risk follow-up ownership"
+          : "Claimed unassigned risk follow-up",
+        reviewedAt: now,
+      }),
     ]);
   };
 
@@ -336,16 +593,15 @@ export default function Notifications() {
       return;
     }
 
-    const currentReview = (riskFollowUpReviewData?.reviews ?? []).find((review) => review.accountId === id);
+    const currentReview = riskReviewsByAccountId.get(id);
     saveRiskFollowUpReviewsMutation.mutate([
-      {
+      buildRiskFollowUpReviewPayload({
         accountId: id,
-        status: currentReview?.status ?? "pending",
-        note: riskFollowUpNotes[id]?.trim() || undefined,
+        currentReview,
         operatorName: currentReview?.operatorName ?? user.username,
-        operatorHistory: currentReview?.operatorHistory,
-        reviewedAt: currentReview?.reviewedAt,
-      },
+        note: riskFollowUpNotes[id]?.trim() || undefined,
+        status: currentReview?.status ?? "pending",
+      }),
     ]);
   };
 
@@ -437,129 +693,47 @@ export default function Notifications() {
         </div>
       </Card>
 
-      {riskFollowUpItems.length > 0 && (
-        <Card className="border-white/10 bg-white/[0.03] p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">Risk Follow-Up</p>
-              <h2 className="mt-2 text-xl font-semibold text-white">Manual risk review queue</h2>
-              <p className="mt-1 text-sm text-zinc-400">
-                Prioritized risk items that should be reviewed before the next copy session starts.
-              </p>
-            </div>
-            {reviewedRiskFollowUpCount > 0 && (
-              <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-zinc-300">
-                {reviewedRiskFollowUpCount} reviewed
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 space-y-3">
-            {riskFollowUpItems.map((item) => (
-              <div
-                key={item.id}
-                className={`rounded-2xl border p-4 ${
-                  item.severity === "error"
-                    ? "border-rose-400/20 bg-rose-400/10"
-                    : item.severity === "warn"
-                      ? "border-amber-400/20 bg-amber-400/10"
-                      : "border-cyan-400/20 bg-cyan-400/10"
-                }`}
-              >
-                {(() => {
-                  const review = (riskFollowUpReviewData?.reviews ?? []).find((entry) => entry.accountId === item.id);
-                  const noteValue = riskFollowUpNotes[item.id] ?? review?.note ?? "";
-                  const reassignmentCount = review?.operatorHistory?.length ?? 0;
-                  return (
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white">{item.title}</p>
-                    <p className="mt-2 text-sm text-white/80">{item.detail}</p>
-                    <p className="mt-2 text-xs text-zinc-300">{item.actionLabel}</p>
-                    {review?.operatorName && (
-                      <p className="mt-2 text-xs text-cyan-200">
-                        Owner: {review.operatorName}
-                      </p>
-                    )}
-                    {reassignmentCount > 0 && (
-                      <p className="mt-1 text-xs text-zinc-400">
-                        Ownership changes: {reassignmentCount}
-                      </p>
-                    )}
-                    {reviewedRiskFollowUpItems[item.id] && (
-                      <p className="mt-2 text-xs text-emerald-200">
-                        Reviewed at {formatTimestamp(reviewedRiskFollowUpItems[item.id])}
-                      </p>
-                    )}
-                    <Input
-                      value={noteValue}
-                      onChange={(event) =>
-                        setRiskFollowUpNotes((current) => ({
-                          ...current,
-                          [item.id]: event.target.value,
-                        }))
-                      }
-                      placeholder="Shared operator note"
-                      className="mt-3 border-white/10 bg-black/10 text-white placeholder:text-zinc-500"
-                    />
-                    {review?.note && !riskFollowUpNotes[item.id] && (
-                      <p className="mt-2 text-xs text-zinc-400">Saved note: {review.note}</p>
-                    )}
-                  </div>
-                  <div className="flex flex-col items-start gap-2 md:items-end">
-                    <p className="text-xs uppercase tracking-[0.16em] text-white/60">
-                      {formatTimestamp(item.timestamp)}
-                    </p>
-                    <div className="flex flex-wrap gap-2 md:justify-end">
-                      {user?.id && (
-                        <>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="border-white/10 bg-white/[0.03] text-zinc-300"
-                            onClick={() => handleTakeOwnership(item.id)}
-                          >
-                            {review?.operatorName === user.username ? "Refresh owner" : "Take ownership"}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="border-cyan-400/20 bg-cyan-400/10 text-cyan-200"
-                            onClick={() => handleSaveRiskFollowUpNote(item.id)}
-                          >
-                            Save note
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={reviewedRiskFollowUpItems[item.id] ? "outline" : "default"}
-                      className={
-                        reviewedRiskFollowUpItems[item.id]
-                          ? "border-white/10 bg-white/[0.03] text-zinc-300"
-                          : "border-emerald-400/20 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20"
-                      }
-                      onClick={() =>
-                        reviewedRiskFollowUpItems[item.id]
-                          ? handleReopenRiskFollowUpItem(item.id)
-                          : handleMarkRiskFollowUpReviewed(item.id)
-                      }
-                    >
-                      {reviewedRiskFollowUpItems[item.id] ? "Reopen" : "Mark reviewed"}
-                    </Button>
-                  </div>
-                </div>
-                  );
-                })()}
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+      <NotificationsFollowUpPanels
+        userName={user?.username}
+        syncRepairFollowUpItems={syncRepairFollowUpItems}
+        positionSyncRepairSummary={positionSyncRepairSummary}
+        riskFollowUpItems={riskFollowUpItems}
+        reviewedRiskFollowUpItems={reviewedRiskFollowUpItems}
+        reviewedRiskFollowUpCount={reviewedRiskFollowUpCount}
+        riskFollowUpNotes={riskFollowUpNotes}
+        riskReviewsByAccountId={riskReviewsByAccountId}
+        executionFollowUpItems={executionFollowUpItems}
+        reviewedExecutionFollowUpCount={reviewedExecutionFollowUpCount}
+        executionFollowUpNotes={executionFollowUpNotes}
+        formatTimestamp={formatTimestamp}
+        onRiskNoteChange={(id, value) =>
+          setRiskFollowUpNotes((current) => ({
+            ...current,
+            [id]: value,
+          }))
+        }
+        onTakeRiskOwnership={handleTakeOwnership}
+        onSaveRiskNote={handleSaveRiskFollowUpNote}
+        onToggleRiskReviewed={(id, reviewed) =>
+          reviewed ? handleReopenRiskFollowUpItem(id) : handleMarkRiskFollowUpReviewed(id)
+        }
+        onTakeExecutionOwnership={handleTakeExecutionOwnership}
+        onSaveExecutionNote={handleSaveExecutionFollowUpNote}
+        onRecheckExecution={(historyId) => void handleExecutionRecoveryRecheck(historyId)}
+        onToggleExecutionReviewed={(historyId, reviewed) =>
+          reviewed
+            ? handleReopenExecutionFollowUpItem(historyId)
+            : void handleExecutionRecoveryReview(historyId)
+        }
+        onExecutionNoteChange={(historyId, value) =>
+          setExecutionFollowUpNotes((current) => ({
+            ...current,
+            [historyId]: value,
+          }))
+        }
+        onTakeSyncRepairOwnership={handleTakeSyncRepairOwnership}
+        onAdvanceSyncRepairCandidate={handleAdvanceSyncRepairCandidate}
+      />
 
       <div className="space-y-3">
         {isLoading ? (
@@ -576,6 +750,100 @@ export default function Notifications() {
               key={notification.id}
               className={`border p-5 ${getNotificationCardStyles(notification)}`}
             >
+              {notification.storyKey?.startsWith("rithmic-readiness:") ? (
+                (() => {
+                  const review = rithmicReadinessReviewsByStoryKey.get(notification.storyKey!);
+                  const noteValue = rithmicReadinessNotes[notification.storyKey!] ?? review?.note ?? "";
+                  const isReviewed = notification.reviewStatus === "reviewed";
+
+                  return (
+                    <div className="mb-4 rounded-2xl border border-white/10 bg-black/10 p-4">
+                      <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">
+                        Rithmic Readiness Follow-Up
+                      </p>
+                      {review?.operatorName ? (
+                        <p className="mt-2 text-xs text-cyan-200">Owner: {review.operatorName}</p>
+                      ) : null}
+                      {notification.reviewedAt ? (
+                        <p className="mt-1 text-xs text-emerald-200">
+                          Reviewed at {formatTimestamp(notification.reviewedAt)}
+                        </p>
+                      ) : null}
+                      <Input
+                        value={noteValue}
+                        onChange={(event) =>
+                          setRithmicReadinessNotes((current) => ({
+                            ...current,
+                            [notification.storyKey!]: event.target.value,
+                          }))
+                        }
+                        placeholder="Shared reconnect review note"
+                        className="mt-3 border-white/10 bg-black/10 text-white placeholder:text-zinc-500"
+                      />
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {user?.id ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="border-cyan-400/20 bg-cyan-400/10 text-cyan-200"
+                              onClick={() =>
+                                handleSaveRithmicReadinessNote(
+                                  notification.storyKey!,
+                                  notification.accountId ?? "",
+                                )
+                              }
+                            >
+                              Save note
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="border-sky-400/20 bg-sky-400/10 text-sky-100"
+                              onClick={() =>
+                                void handleRithmicReadinessRecheck(notification.accountId ?? "")
+                              }
+                              disabled={
+                                recheckRithmicReadinessMutation.isPending || !notification.accountId
+                              }
+                            >
+                              {recheckRithmicReadinessMutation.isPending &&
+                              recheckRithmicReadinessMutation.variables === notification.accountId
+                                ? "Re-checking..."
+                                : "Re-check readiness"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={isReviewed ? "outline" : "default"}
+                              className={
+                                isReviewed
+                                  ? "border-white/10 bg-white/[0.03] text-zinc-300"
+                                  : "border-emerald-400/20 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20"
+                              }
+                              onClick={() =>
+                                isReviewed
+                                  ? handleReopenRithmicReadinessAlert(
+                                      notification.storyKey!,
+                                      notification.accountId ?? "",
+                                    )
+                                  : handleMarkRithmicReadinessReviewed(
+                                      notification.storyKey!,
+                                      notification.accountId ?? "",
+                                    )
+                              }
+                            >
+                              {isReviewed ? "Reopen" : "Mark reviewed"}
+                            </Button>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : null}
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
@@ -602,9 +870,22 @@ export default function Notifications() {
                   </div>
                   <h2 className="text-lg font-semibold text-white">{notification.title}</h2>
                   <p className="text-sm text-white/80">{describeNotificationMessage(notification)}</p>
+                  {notification.category === "copy_group" && notification.restartRecoveryMessage ? (
+                    <p className="text-xs text-cyan-200">
+                      Restart recovery: {notification.restartRecoveryMessage}
+                      {notification.restartRecoveryAt
+                        ? ` (${formatTimestamp(notification.restartRecoveryAt)})`
+                        : ""}
+                    </p>
+                  ) : null}
                   {"relatedCount" in notification && notification.relatedCount > 0 ? (
                     <p className="text-xs text-zinc-300">
                       +{notification.relatedCount} related update{notification.relatedCount === 1 ? "" : "s"} grouped into this alert
+                    </p>
+                  ) : null}
+                  {notification.reviewStatus === "reviewed" && notification.reviewNote ? (
+                    <p className="text-xs text-emerald-200">
+                      Reviewed note: {notification.reviewNote}
                     </p>
                   ) : null}
                   {notification.tradeSummary?.reviewStatus === "reviewed" &&

@@ -27,6 +27,14 @@ export interface PositionSyncFollowerReviewView {
   status: PositionSyncGroupOverviewItem["followers"][number]["status"];
   summary: string;
   adjustmentCount: number;
+  repairRecommendation?: {
+    label: string;
+    tone: "ok" | "warn";
+    reason: string;
+    complexity: PositionSyncRepairComplexity;
+    complexityLabel: string;
+    complexityScore: number;
+  };
   adjustments: PositionSyncAdjustmentView[];
 }
 
@@ -37,6 +45,53 @@ export interface PositionSyncGroupReviewView {
   summary: string;
   masterAccountName: string;
   followers: PositionSyncFollowerReviewView[];
+}
+
+export interface PositionSyncRepairRecommendationView {
+  groupId: string;
+  groupName: string;
+  followerAccountId: string;
+  followerName: string;
+  adjustmentCount: number;
+  recommendation: "auto_ready" | "manual_review";
+  reason: string;
+  complexity: PositionSyncRepairComplexity;
+  complexityLabel: string;
+  complexityScore: number;
+}
+
+export type PositionSyncRepairComplexity = "low" | "medium" | "high";
+
+export interface PositionSyncRepairProfile {
+  recommendation: "auto_ready" | "manual_review";
+  reason: string;
+  complexity: PositionSyncRepairComplexity;
+  complexityLabel: string;
+  complexityScore: number;
+}
+
+export function describePositionSyncSimulationGuidance(
+  complexity: PositionSyncRepairComplexity,
+): string {
+  if (complexity === "high") {
+    return "Simulate symbol-by-symbol and confirm the reversal path before handoff.";
+  }
+
+  if (complexity === "medium") {
+    return "Simulate the full repair plan and verify each open or multi-step adjustment.";
+  }
+
+  return "Good candidate for a quick simulation pass before staging.";
+}
+
+export interface PositionSyncRepairSummaryView {
+  totalCandidates: number;
+  autoReadyCount: number;
+  manualReviewCount: number;
+  waitingCount: number;
+  headline: string;
+  detail: string;
+  tone: "ok" | "warn" | "danger" | "muted";
 }
 
 export function describePositionSyncOverview(
@@ -63,6 +118,14 @@ export function describePositionSyncOverview(
       headline: `${overview.summary.unavailableGroups} group${overview.summary.unavailableGroups === 1 ? "" : "s"} waiting on live positions`,
       detail: `${overview.summary.unavailableFollowers} follower${overview.summary.unavailableFollowers === 1 ? "" : "s"} still need position snapshots.`,
       tone: "warn",
+    };
+  }
+
+  if (overview.summary.disabledFollowers > 0) {
+    return {
+      headline: `${overview.summary.disabledFollowers} follower${overview.summary.disabledFollowers === 1 ? "" : "s"} currently excluded from sync`,
+      detail: `${overview.summary.inSyncGroups} group${overview.summary.inSyncGroups === 1 ? " is" : "s are"} otherwise aligned with their masters.`,
+      tone: "muted",
     };
   }
 
@@ -103,10 +166,211 @@ export function buildPositionSyncSummaryCards(
     },
     {
       label: "Waiting",
-      value: String(overview.summary.unavailableFollowers),
-      tone: overview.summary.unavailableFollowers > 0 ? "warn" : "ok",
+      value:
+        overview.summary.disabledFollowers > 0
+          ? String(overview.summary.disabledFollowers)
+          : String(overview.summary.unavailableFollowers),
+      tone:
+        overview.summary.unavailableFollowers > 0
+          ? "warn"
+          : overview.summary.disabledFollowers > 0
+            ? "muted"
+            : "ok",
     },
   ];
+}
+
+export function buildPositionSyncRepairRecommendations(
+  groups: PositionSyncGroupOverviewItem[],
+): PositionSyncRepairRecommendationView[] {
+  return sortPositionSyncGroups(groups).flatMap((group) =>
+    group.followers.flatMap((follower) => {
+      if (follower.status !== "OUT_OF_SYNC" || follower.adjustmentCount === 0) {
+        return [];
+      }
+      const repairProfile = buildPositionSyncRepairProfile({
+        adjustmentCount: follower.adjustmentCount,
+        adjustments: follower.adjustments,
+      });
+
+      return [{
+        groupId: group.groupId,
+        groupName: group.groupName,
+        followerAccountId: follower.followerAccountId,
+        followerName: follower.followerName,
+        adjustmentCount: follower.adjustmentCount,
+        recommendation: repairProfile.recommendation,
+        reason: repairProfile.reason,
+        complexity: repairProfile.complexity,
+        complexityLabel: repairProfile.complexityLabel,
+        complexityScore: repairProfile.complexityScore,
+      }];
+    }),
+  );
+}
+
+function getRepairRecommendationView(input: {
+  status: PositionSyncGroupOverviewItem["followers"][number]["status"];
+  adjustmentCount: number;
+  adjustments: PositionSyncGroupOverviewItem["followers"][number]["adjustments"];
+}): PositionSyncFollowerReviewView["repairRecommendation"] {
+  if (input.status !== "OUT_OF_SYNC" || input.adjustmentCount === 0) {
+    return undefined;
+  }
+  const repairProfile = buildPositionSyncRepairProfile(input);
+
+  return {
+    label: repairProfile.recommendation === "auto_ready" ? "Auto-ready next" : "Manual review first",
+    tone: repairProfile.recommendation === "auto_ready" ? "ok" : "warn",
+    reason: repairProfile.reason,
+    complexity: repairProfile.complexity,
+    complexityLabel: repairProfile.complexityLabel,
+    complexityScore: repairProfile.complexityScore,
+  };
+}
+
+export function buildPositionSyncRepairProfile(input: {
+  adjustmentCount: number;
+  adjustments: PositionSyncGroupOverviewItem["followers"][number]["adjustments"];
+}): PositionSyncRepairProfile {
+  const symbolCount = new Set(input.adjustments.map((adjustment) => adjustment.symbol)).size;
+  const hasReverse = input.adjustments.some((adjustment) => adjustment.reason === "REVERSE");
+  const hasOpen = input.adjustments.some((adjustment) => adjustment.reason === "OPEN");
+  const hasFlatten = input.adjustments.some((adjustment) => adjustment.reason === "FLATTEN_EXTRA");
+  const hasLargeDelta = input.adjustments.some((adjustment) => Math.abs(adjustment.deltaQuantity) >= 3);
+
+  let complexityScore = input.adjustmentCount;
+  if (hasReverse) {
+    complexityScore += 3;
+  }
+  if (hasOpen) {
+    complexityScore += 2;
+  }
+  if (hasFlatten) {
+    complexityScore += 1;
+  }
+  if (symbolCount >= 2) {
+    complexityScore += 1;
+  }
+  if (hasLargeDelta) {
+    complexityScore += 1;
+  }
+
+  const complexity: PositionSyncRepairComplexity =
+    hasReverse || complexityScore >= 6
+      ? "high"
+      : hasOpen || complexityScore >= 4
+        ? "medium"
+        : "low";
+
+  return {
+    recommendation: complexity === "low" ? "auto_ready" : "manual_review",
+    reason:
+      hasReverse
+        ? "Contains a direction reversal."
+        : hasOpen
+          ? "Includes a fresh open from flat."
+          : symbolCount >= 2
+            ? "Touches multiple symbols in one repair pass."
+            : hasFlatten
+              ? "Includes extra follower exposure that needs flattening."
+              : input.adjustmentCount >= 3 || hasLargeDelta
+                ? "Touches several planned size changes."
+                : "Low-complexity trim or sizing change.",
+    complexity,
+    complexityLabel:
+      complexity === "high"
+        ? "High complexity"
+        : complexity === "medium"
+          ? "Medium complexity"
+          : "Low complexity",
+    complexityScore,
+  };
+}
+
+export function summarizePositionSyncRepairOpportunities(
+  overview: PositionSyncOverviewResponse | null | undefined,
+): PositionSyncRepairSummaryView {
+  if (!overview || overview.summary.totalGroups === 0) {
+    return {
+      totalCandidates: 0,
+      autoReadyCount: 0,
+      manualReviewCount: 0,
+      waitingCount: 0,
+      headline: "No repair plan yet",
+      detail: "Repair recommendations appear after copy groups and live position snapshots are available.",
+      tone: "muted",
+    };
+  }
+
+  const recommendations = buildPositionSyncRepairRecommendations(overview.groups);
+  const autoReadyCount = recommendations.filter(
+    (item) => item.recommendation === "auto_ready",
+  ).length;
+  const manualReviewCount = recommendations.length - autoReadyCount;
+  const waitingCount = overview.summary.unavailableFollowers;
+
+  if (manualReviewCount > 0) {
+    return {
+      totalCandidates: recommendations.length,
+      autoReadyCount,
+      manualReviewCount,
+      waitingCount,
+      headline: `${manualReviewCount} sync item${manualReviewCount === 1 ? "" : "s"} still need manual review`,
+      detail: `${autoReadyCount} low-complexity repair candidate${autoReadyCount === 1 ? "" : "s"} can be staged next without changing broker automation.`,
+      tone: "danger",
+    };
+  }
+
+  if (autoReadyCount > 0) {
+    return {
+      totalCandidates: recommendations.length,
+      autoReadyCount,
+      manualReviewCount: 0,
+      waitingCount,
+      headline: `${autoReadyCount} low-complexity repair candidate${autoReadyCount === 1 ? "" : "s"} ready to stage`,
+      detail: waitingCount > 0
+        ? `${waitingCount} follower${waitingCount === 1 ? "" : "s"} are still waiting on live positions.`
+        : overview.summary.disabledFollowers > 0
+          ? `${overview.summary.disabledFollowers} follower${overview.summary.disabledFollowers === 1 ? "" : "s"} are intentionally disabled from sync.`
+        : "All remaining out-of-sync followers fit a low-complexity repair profile.",
+      tone: "warn",
+    };
+  }
+
+  if (waitingCount > 0) {
+    return {
+      totalCandidates: 0,
+      autoReadyCount: 0,
+      manualReviewCount: 0,
+      waitingCount,
+      headline: `${waitingCount} follower${waitingCount === 1 ? "" : "s"} still waiting on live positions`,
+      detail: "Repair recommendations will fill in after the next live snapshot.",
+      tone: "warn",
+    };
+  }
+
+  if (overview.summary.disabledFollowers > 0) {
+    return {
+      totalCandidates: 0,
+      autoReadyCount: 0,
+      manualReviewCount: 0,
+      waitingCount: 0,
+      headline: `${overview.summary.disabledFollowers} follower${overview.summary.disabledFollowers === 1 ? "" : "s"} intentionally excluded`,
+      detail: "Disabled followers are not included in sync repair recommendations.",
+      tone: "muted",
+    };
+  }
+
+  return {
+    totalCandidates: 0,
+    autoReadyCount: 0,
+    manualReviewCount: 0,
+    waitingCount: 0,
+    headline: "No repair work pending",
+    detail: "Current sync plans do not need staged repair recommendations.",
+    tone: "ok",
+  };
 }
 
 export function sortPositionSyncGroups(
@@ -185,6 +449,11 @@ export function buildPositionSyncReview(
           status: follower.status,
           summary: follower.summary,
           adjustmentCount: follower.adjustmentCount,
+          repairRecommendation: getRepairRecommendationView({
+            status: follower.status,
+            adjustmentCount: follower.adjustmentCount,
+            adjustments: follower.adjustments,
+          }),
           adjustments: follower.adjustments.map((adjustment) => ({
             symbol: adjustment.symbol,
             actionLabel: formatAdjustmentAction({

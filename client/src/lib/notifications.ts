@@ -8,6 +8,11 @@ export interface NotificationItem {
   accountId?: string;
   groupId?: string;
   storyKey?: string;
+  reviewStatus?: "pending" | "reviewed";
+  reviewNote?: string;
+  reviewedAt?: string;
+  restartRecoveryMessage?: string;
+  restartRecoveryAt?: string;
   tradeSummary?: {
     symbol: string;
     lifecycleStatus:
@@ -26,6 +31,12 @@ export interface NotificationItem {
     reviewStatus?: "pending" | "reviewed";
     reviewNote?: string;
     reviewedAt?: string;
+    operatorName?: string;
+    operatorHistory?: Array<{
+      operatorName: string;
+      assignedAt: string;
+      reason?: string;
+    }>;
   };
 }
 
@@ -76,6 +87,10 @@ export interface RiskNotificationFollowUpItem {
 export function toActivityFeedType(
   notification: NotificationItem,
 ): "trade" | "connection" | "error" | "success" {
+  if (notification.reviewStatus === "reviewed" && notification.category !== "trade") {
+    return "success";
+  }
+
   if (
     notification.category === "trade" &&
     notification.tradeSummary?.reviewStatus === "reviewed"
@@ -105,6 +120,13 @@ export function toActivityFeedType(
 export function describeExecutionAttentionNotification(
   notification: NotificationItem,
 ): ExecutionAttentionNotificationView {
+  if (notification.reviewStatus === "reviewed" && notification.category !== "trade") {
+    return {
+      state: "ok",
+      label: "Reviewed",
+    };
+  }
+
   if (notification.category === "trade" && notification.tradeSummary) {
     if (notification.tradeSummary.reviewStatus === "reviewed") {
       return {
@@ -195,6 +217,10 @@ export function describeExecutionAttentionNotification(
 }
 
 export function describeNotificationMessage(notification: NotificationItem): string {
+  if (notification.reviewStatus === "reviewed" && notification.category !== "trade") {
+    return notification.reviewNote ? `Reviewed. ${notification.reviewNote}` : "Reviewed.";
+  }
+
   if (
     notification.category === "trade" &&
     notification.tradeSummary?.reviewStatus === "reviewed"
@@ -211,6 +237,14 @@ export function describeNotificationMessage(notification: NotificationItem): str
 
 export function describeActivityNotificationMessage(notification: NotificationItem): string {
   const label = describeExecutionAttentionNotification(notification).label;
+
+  if (notification.reviewStatus === "reviewed" && notification.category !== "trade") {
+    if (notification.reviewNote) {
+      return `${label}: ${notification.title}. Review note: ${notification.reviewNote}`;
+    }
+
+    return `${label}: ${notification.title}. Reviewed.`;
+  }
 
   if (
     notification.category === "trade" &&
@@ -292,6 +326,7 @@ export function filterNotifications(
     const searchable = [
       notification.title,
       notification.message,
+      notification.restartRecoveryMessage,
       notification.category,
       notification.severity,
       notification.accountId,
@@ -367,7 +402,9 @@ export function filterReviewedNotifications(
   }
 
   return notifications.filter(
-    (notification) => notification.tradeSummary?.reviewStatus !== "reviewed",
+    (notification) =>
+      notification.tradeSummary?.reviewStatus !== "reviewed" &&
+      notification.reviewStatus !== "reviewed",
   );
 }
 

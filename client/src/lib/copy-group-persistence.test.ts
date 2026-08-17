@@ -4,6 +4,7 @@ import test from "node:test";
 import type { Account } from "@shared/schema";
 
 import {
+  buildCopyGroupRuntimeState,
   buildCopyGroupSyncPlan,
   hydrateBoardStateFromSnapshot,
   type PersistedTradingGroup,
@@ -182,6 +183,46 @@ test("buildCopyGroupSyncPlan preserves emergency-stopped board groups as emergen
   assert.equal(result.payloads[0]?.runtimeState.status, "EMERGENCY_STOPPED");
   assert.equal(result.payloads[0]?.runtimeState.isKillSwitchActive, true);
   assert.equal(result.payloads[0]?.runtimeState.totalFollowerCount, 1);
+});
+
+test("buildCopyGroupRuntimeState maps ready, paused, and emergency-stop states consistently", () => {
+  const stopped = buildCopyGroupRuntimeState({
+    id: "group-1",
+    isActive: true,
+    runtimePreference: "ready",
+    totalFollowerCount: 2,
+    nowIso: "2026-08-12T12:00:00.000Z",
+  });
+  const paused = buildCopyGroupRuntimeState({
+    id: "group-2",
+    isActive: false,
+    runtimePreference: "paused",
+    totalFollowerCount: 1,
+    nowIso: "2026-08-12T12:00:00.000Z",
+  });
+  const emergencyStopped = buildCopyGroupRuntimeState({
+    id: "group-3",
+    isActive: false,
+    runtimePreference: "emergency_stopped",
+    totalFollowerCount: 4,
+    nowIso: "2026-08-12T12:00:00.000Z",
+  });
+
+  assert.equal(stopped.status, "STOPPED");
+  assert.equal(stopped.stoppedAt, "2026-08-12T12:00:00.000Z");
+  assert.equal(stopped.totalFollowerCount, 2);
+
+  assert.equal(paused.status, "PAUSED");
+  assert.equal(paused.pausedAt, "2026-08-12T12:00:00.000Z");
+  assert.equal(paused.totalFollowerCount, 1);
+
+  assert.equal(emergencyStopped.status, "EMERGENCY_STOPPED");
+  assert.equal(
+    emergencyStopped.emergencyStoppedAt,
+    "2026-08-12T12:00:00.000Z",
+  );
+  assert.equal(emergencyStopped.isKillSwitchActive, true);
+  assert.equal(emergencyStopped.totalFollowerCount, 4);
 });
 
 test("buildCopyGroupSyncPlan skips groups without a valid master and reports stale backend groups", () => {

@@ -314,3 +314,50 @@ export const riskFollowUpReviews = pgTable("risk_follow_up_reviews", {
 
 export type RiskFollowUpReview = typeof riskFollowUpReviews.$inferSelect;
 export type InsertRiskFollowUpReview = typeof riskFollowUpReviews.$inferInsert;
+
+export const executionFollowUpReviews = pgTable("execution_follow_up_reviews", {
+  reviewKey: varchar("review_key").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  historyId: varchar("history_id").notNull(),
+  status: text("status").notNull(),
+  note: text("note"),
+  operatorName: text("operator_name"),
+  operatorHistoryJson: text("operator_history_json"),
+  reviewedAt: timestamp("reviewed_at"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ExecutionFollowUpReview = typeof executionFollowUpReviews.$inferSelect;
+export type InsertExecutionFollowUpReview = typeof executionFollowUpReviews.$inferInsert;
+
+export const copyGroupAlertReviews = pgTable("copy_group_alert_reviews", {
+  reviewKey: varchar("review_key").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  storyKey: varchar("story_key").notNull(),
+  groupId: varchar("group_id").notNull(),
+  status: text("status").notNull(),
+  note: text("note"),
+  operatorName: text("operator_name"),
+  operatorHistoryJson: text("operator_history_json"),
+  reviewedAt: timestamp("reviewed_at"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type CopyGroupAlertReview = typeof copyGroupAlertReviews.$inferSelect;
+export type InsertCopyGroupAlertReview = typeof copyGroupAlertReviews.$inferInsert;
+
+export const rithmicReadinessReviews = pgTable("rithmic_readiness_reviews", {
+  reviewKey: varchar("review_key").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  storyKey: varchar("story_key").notNull(),
+  accountId: varchar("account_id").notNull(),
+  status: text("status").notNull(),
+  note: text("note"),
+  operatorName: text("operator_name"),
+  operatorHistoryJson: text("operator_history_json"),
+  reviewedAt: timestamp("reviewed_at"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type RithmicReadinessReview = typeof rithmicReadinessReviews.$inferSelect;
+export type InsertRithmicReadinessReview = typeof rithmicReadinessReviews.$inferInsert;

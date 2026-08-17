@@ -11,6 +11,8 @@ test("routes expose the authenticated runtime overview endpoints", () => {
   assert.match(routesSource, /app\.post\("\/api\/runtime\/dashboard-overview\/recheck"/);
   assert.match(routesSource, /app\.post\("\/api\/runtime\/dashboard-overview\/recheck\/:historyId"/);
   assert.match(routesSource, /app\.post\("\/api\/runtime\/dashboard-overview\/review\/:historyId"/);
+  assert.match(routesSource, /app\.get\("\/api\/execution-follow-up\/reviews"/);
+  assert.match(routesSource, /app\.post\("\/api\/execution-follow-up\/reviews"/);
   assert.match(routesSource, /buildAccountsRuntimeOverview/);
   assert.match(routesSource, /buildDashboardRuntimeOverview/);
   assert.match(routesSource, /loadPositionSyncOverviewForUser/);

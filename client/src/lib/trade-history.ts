@@ -42,6 +42,12 @@ export interface TradeHistoryApiRecord {
   reviewStatus?: "pending" | "reviewed";
   reviewNote?: string;
   reviewedAt?: string;
+  operatorName?: string;
+  operatorHistory?: Array<{
+    operatorName: string;
+    assignedAt: string;
+    reason?: string;
+  }>;
   events?: Array<{
     type: string;
     timestamp: string;
@@ -100,6 +106,12 @@ export interface TradeHistoryRow {
     reviewStatus?: "pending" | "reviewed";
     reviewNote?: string;
     reviewedAt?: string;
+    operatorName?: string;
+    operatorHistory?: Array<{
+      operatorName: string;
+      assignedAt: string;
+      reason?: string;
+    }>;
     stageFlow: Array<{
       key: "created" | "queued" | "sent" | "acknowledged" | "partial" | "filled" | "failed";
       label: string;
@@ -269,15 +281,25 @@ function buildExecutionSummary(record: TradeHistoryApiRecord): TradeHistoryRow["
 }
 
 function pickTimestamp(record: TradeHistoryApiRecord): string {
-  return (
-    record.filledAt ??
-    record.acknowledgedAt ??
-    record.sentAt ??
-    record.failedAt ??
-    record.queuedAt ??
-    record.updatedAt ??
-    record.createdAt
-  );
+  switch (record.lifecycleStatus) {
+    case "FILLED":
+      return record.filledAt ?? record.updatedAt ?? record.acknowledgedAt ?? record.sentAt ?? record.createdAt;
+    case "PARTIALLY_FILLED":
+      return record.updatedAt ?? record.acknowledgedAt ?? record.sentAt ?? record.queuedAt ?? record.createdAt;
+    case "ACKNOWLEDGED":
+      return record.acknowledgedAt ?? record.sentAt ?? record.queuedAt ?? record.updatedAt ?? record.createdAt;
+    case "SENT":
+      return record.sentAt ?? record.queuedAt ?? record.updatedAt ?? record.createdAt;
+    case "FAILED":
+    case "CANCELLED":
+      return record.failedAt ?? record.updatedAt ?? record.sentAt ?? record.createdAt;
+    case "QUEUED":
+      return record.queuedAt ?? record.updatedAt ?? record.createdAt;
+    case "INTENT_CREATED":
+      return record.updatedAt ?? record.createdAt;
+    default:
+      return record.updatedAt ?? record.createdAt;
+  }
 }
 
 function formatDateTime(value: string): string {
@@ -469,6 +491,8 @@ export function toTradeHistoryRows(records: TradeHistoryApiRecord[]): TradeHisto
         reviewStatus: record.reviewStatus,
         reviewNote: record.reviewNote,
         reviewedAt: record.reviewedAt,
+        operatorName: record.operatorName,
+        operatorHistory: record.operatorHistory,
         stageFlow,
       },
     };

@@ -3,6 +3,8 @@ import test from "node:test";
 
 import type { Account } from "@shared/schema";
 import { buildNotifications } from "./notifications-service";
+import { RithmicReconnectValidationStore } from "./rithmic-reconnect-validation";
+import type { PersistedRithmicReadinessReview } from "./rithmic-readiness-review-store";
 import { tradeHistoryStore } from "./trade-history-store";
 
 function createAccount(overrides: Partial<Account>): Account {
@@ -149,22 +151,331 @@ test("buildNotifications merges copy-group, trade, and position alerts", async (
       },
     });
 
-    assert.equal(result.unreadEstimate, 3);
+    assert.equal(result.unreadEstimate, 4);
     assert.deepEqual(
       result.notifications.map((notification) => ({
         category: notification.category,
         severity: notification.severity,
+        title: notification.title,
       })),
       [
-        { category: "position", severity: "info" },
-        { category: "copy_group", severity: "warn" },
-        { category: "trade", severity: "error" },
+        { category: "position", severity: "info", title: "Rithmic Follower position snapshot unavailable" },
+        { category: "position", severity: "warn", title: "Rithmic Follower Rithmic readiness needs reconnect proof" },
+        { category: "copy_group", severity: "warn", title: "Primary Group needs follow-up" },
+        { category: "trade", severity: "error", title: "ES failed" },
       ],
+    );
+    assert.match(
+      result.notifications.find((notification) => notification.category === "copy_group")?.message ?? "",
+      /Active signals: 1 warning, 1 health signal\./,
     );
   } finally {
     tradeHistoryStore.stop();
     tradeHistoryStore.clear();
   }
+});
+
+test("buildNotifications includes Rithmic readiness alerts when reconnect proof is still missing", async () => {
+  const reconnectValidationStore = new RithmicReconnectValidationStore();
+
+  const result = await buildNotifications({
+    userAccounts: [
+      createAccount({
+        id: "rith-1",
+        userId: "user-1",
+        name: "Rithmic Follower",
+        platform: "Rithmic",
+        rithmicUsername: "rit-user",
+        rithmicPassword: "secret",
+        rithmicAccountId: "R-123",
+        rithmicSystemName: "Rithmic Test",
+      }),
+    ],
+    registeredGroups: [],
+    getRecentActivity: () => [],
+    positionSnapshotDependencies: {
+      tradovateInstances: new Map(),
+      tradeifyInstances: new Map(),
+    },
+    rithmicInstances: new Map([
+      [
+        "rit-user",
+        {
+          isAuthenticated: () => true,
+          getLastLoginMetadata: () => ({
+            uniqueUserId: "USER-77",
+            fcmId: "FCM-1",
+            ibId: "IB-1",
+            timestamp: "2026-08-12T18:00:00.000Z",
+            timezone: "America/New_York",
+          }),
+        },
+      ],
+    ]),
+    rithmicReconnectValidationStore: reconnectValidationStore,
+  });
+
+  const readinessNotification = result.notifications.find(
+    (notification) => notification.id === "rithmic-readiness:rith-1:reconnect",
+  );
+
+  assert.equal(readinessNotification?.category, "position");
+  assert.equal(readinessNotification?.severity, "warn");
+  assert.match(readinessNotification?.title ?? "", /needs reconnect proof/);
+  assert.match(readinessNotification?.message ?? "", /Re-check readiness/);
+});
+
+test("buildNotifications carries reviewed state for Rithmic readiness alerts", async () => {
+  const reviews: PersistedRithmicReadinessReview[] = [
+    {
+      storyKey: "rithmic-readiness:rith-1",
+      accountId: "rith-1",
+      status: "reviewed",
+      note: "Reconnect risk accepted until next restart.",
+      reviewedAt: "2026-08-12T18:10:00.000Z",
+    },
+  ];
+
+  const result = await buildNotifications({
+    userAccounts: [
+      createAccount({
+        id: "rith-1",
+        userId: "user-1",
+        name: "Rithmic Follower",
+        platform: "Rithmic",
+        rithmicUsername: "rit-user",
+        rithmicPassword: "secret",
+        rithmicAccountId: "R-123",
+      }),
+    ],
+    registeredGroups: [],
+    getRecentActivity: () => [],
+    positionSnapshotDependencies: {
+      tradovateInstances: new Map(),
+      tradeifyInstances: new Map(),
+    },
+    rithmicInstances: new Map([
+      [
+        "rit-user",
+        {
+          isAuthenticated: () => true,
+          getLastLoginMetadata: () => ({
+            uniqueUserId: "USER-77",
+            fcmId: "FCM-1",
+            ibId: "IB-1",
+            timestamp: "2026-08-12T18:00:00.000Z",
+            timezone: "America/New_York",
+          }),
+        },
+      ],
+    ]),
+    rithmicReconnectValidationStore: new RithmicReconnectValidationStore(),
+    rithmicReadinessReviews: reviews,
+  });
+
+  const readinessNotification = result.notifications.find(
+    (notification) => notification.storyKey === "rithmic-readiness:rith-1",
+  );
+
+  assert.equal(readinessNotification?.reviewStatus, "reviewed");
+  assert.equal(
+    readinessNotification?.reviewNote,
+    "Reconnect risk accepted until next restart.",
+  );
+});
+
+test("buildNotifications compresses multiple copy-group alerts into one group story", async () => {
+  const result = await buildNotifications({
+    userAccounts: [
+      createAccount({
+        id: "acct-1",
+        userId: "user-1",
+        name: "Trad Follower",
+        platform: "Tradovate",
+        tradovateUsername: "trad-user",
+        tradovateAccountId: "T-123",
+      }),
+    ],
+    registeredGroups: [
+      {
+        group: {
+          groupId: "group-1",
+          userId: "user-1",
+          name: "Primary Group",
+          masterAccountId: "master-1",
+          followerAccountIds: ["acct-1"],
+          groupSettings: { enabled: true },
+          riskSettings: { onRiskBreach: "PAUSE" },
+          executionSettings: {
+            mode: "SIMULATED",
+            maxRetries: 1,
+            retryDelayMs: 100,
+            orderTimeoutMs: 1000,
+            flattenOnEmergencyStop: false,
+          },
+          createdAt: "2026-08-04T11:00:00.000Z",
+          updatedAt: "2026-08-04T11:00:00.000Z",
+        },
+        followers: [],
+      },
+    ],
+    getRecentActivity: () => [
+      {
+        eventId: "event-2",
+        groupId: "group-1",
+        timestamp: "2026-08-04T12:05:00.000Z",
+        severity: "ERROR",
+        category: "HEALTH",
+        message: "Follower disconnected",
+      },
+      {
+        eventId: "event-1",
+        groupId: "group-1",
+        timestamp: "2026-08-04T12:03:00.000Z",
+        severity: "WARN",
+        category: "LIFECYCLE",
+        message: "Copy group Primary Group paused",
+      },
+    ],
+    getObservability: () => ({
+      groupId: "group-1",
+      recentActivity: [],
+      totalEvents: 4,
+      infoEventCount: 2,
+      warningEventCount: 1,
+      errorEventCount: 1,
+      restartRecoveryCount: 0,
+      categoryCounts: {
+        lifecycle: 2,
+        trade: 0,
+        rule: 0,
+        intent: 0,
+        execution: 0,
+        health: 2,
+      },
+      lifecycleCounts: {
+        started: 1,
+        paused: 1,
+        resumed: 0,
+        stopped: 0,
+        emergencyStopped: 0,
+      },
+      lastEventAt: "2026-08-04T12:05:00.000Z",
+      lastLifecycleAt: "2026-08-04T12:03:00.000Z",
+      lastLifecycleMessage: "Copy group Primary Group paused",
+      lastErrorAt: "2026-08-04T12:05:00.000Z",
+      lastErrorMessage: "Follower disconnected",
+      lastRestartRecoveryAt: undefined,
+      lastRestartRecoveryMessage: undefined,
+    }),
+    positionSnapshotDependencies: {
+      tradovateInstances: new Map([
+        [
+          "trad-user",
+          {
+            isTokenValid: () => true,
+            async getPositions() {
+              return [{ accountId: "T-123", symbol: "ESU6", netPos: 1 }];
+            },
+          },
+        ],
+      ]),
+      tradeifyInstances: new Map(),
+    },
+  });
+
+  const copyGroupNotifications = result.notifications.filter(
+    (notification) => notification.category === "copy_group",
+  );
+
+  assert.equal(copyGroupNotifications.length, 1);
+  assert.equal(copyGroupNotifications[0]?.id, "copy-group-alert:group-1");
+  assert.equal(copyGroupNotifications[0]?.title, "Primary Group recovery required");
+  assert.match(copyGroupNotifications[0]?.message ?? "", /Follower disconnected\./);
+  assert.match(copyGroupNotifications[0]?.message ?? "", /Active signals: 1 error, 1 warning, 1 health signal, 1 lifecycle update\./);
+  assert.match(copyGroupNotifications[0]?.message ?? "", /Last lifecycle update: Copy group Primary Group paused/);
+  assert.equal(copyGroupNotifications[0]?.restartRecoveryMessage, undefined);
+});
+
+test("buildNotifications prefers shared copy-group alert stories when available", async () => {
+  const result = await buildNotifications({
+    userAccounts: [
+      createAccount({
+        id: "acct-1",
+        userId: "user-1",
+        name: "Trad Follower",
+        platform: "Tradovate",
+        tradovateUsername: "trad-user",
+        tradovateAccountId: "T-123",
+      }),
+    ],
+    registeredGroups: [
+      {
+        group: {
+          groupId: "group-1",
+          userId: "user-1",
+          name: "Primary Group",
+          masterAccountId: "master-1",
+          followerAccountIds: ["acct-1"],
+          groupSettings: { enabled: true },
+          riskSettings: { onRiskBreach: "PAUSE" },
+          executionSettings: {
+            mode: "SIMULATED",
+            maxRetries: 1,
+            retryDelayMs: 100,
+            orderTimeoutMs: 1000,
+            flattenOnEmergencyStop: false,
+          },
+          createdAt: "2026-08-04T11:00:00.000Z",
+          updatedAt: "2026-08-04T11:00:00.000Z",
+        },
+        followers: [],
+      },
+    ],
+    getRecentActivity: () => [],
+    copyGroupAlertStories: [
+      {
+        alertId: "health:group-1:2026-08-11T12:00:00.000Z",
+        storyKey: "copy-group:group-1",
+        userId: "user-1",
+        groupId: "group-1",
+        timestamp: "2026-08-11T12:00:00.000Z",
+        severity: "error",
+        title: "Primary Group recovery required",
+        message: "Health moved from healthy to unhealthy. Emergency stop: manual review required",
+        source: "health",
+        healthStatus: "UNHEALTHY",
+        restartRecoveryMessage: "Recovered copy group Primary Group into STOPPED state after reload.",
+        restartRecoveryAt: "2026-08-11T11:58:00.000Z",
+      },
+    ],
+    positionSnapshotDependencies: {
+      tradovateInstances: new Map([
+        [
+          "trad-user",
+          {
+            isTokenValid: () => true,
+            async getPositions() {
+              return [{ accountId: "T-123", symbol: "ESU6", netPos: 1 }];
+            },
+          },
+        ],
+      ]),
+      tradeifyInstances: new Map(),
+    },
+  });
+
+  const copyGroupNotification = result.notifications.find(
+    (notification) => notification.category === "copy_group",
+  );
+
+  assert.equal(copyGroupNotification?.id, "health:group-1:2026-08-11T12:00:00.000Z");
+  assert.equal(copyGroupNotification?.message, "Health moved from healthy to unhealthy. Emergency stop: manual review required");
+  assert.equal(
+    copyGroupNotification?.restartRecoveryMessage,
+    "Recovered copy group Primary Group into STOPPED state after reload.",
+  );
+  assert.equal(copyGroupNotification?.restartRecoveryAt, "2026-08-11T11:58:00.000Z");
 });
 
 test("buildNotifications rolls trade lifecycle updates into one warning notification for partial and acknowledged orders", async () => {
@@ -591,6 +902,164 @@ test("buildNotifications includes overdue position sync follow-up alerts", async
           severity: "warn",
           title: "Index Leaders manual sync handoff overdue",
           message: "Follower One has been approved for 60 minutes without operator handoff. No operator assigned.",
+        },
+      ],
+    );
+  } finally {
+    tradeHistoryStore.stop();
+    tradeHistoryStore.clear();
+  }
+});
+
+test("buildNotifications includes overdue execution follow-up alerts for open review and stale broker states", async () => {
+  tradeHistoryStore.clear();
+  tradeHistoryStore.start();
+
+  try {
+    (tradeHistoryStore as any).upsert("failed-open", {
+      historyId: "failed-open",
+      intentId: "failed-open",
+      masterAccountId: "master-1",
+      masterFillId: "fill-failed-open",
+      followerAccountId: "acct-1",
+      symbol: "ES",
+      lifecycleStatus: "FAILED",
+      createdAt: "2026-08-11T11:30:00.000Z",
+      updatedAt: "2026-08-11T11:40:00.000Z",
+      failedAt: "2026-08-11T11:40:00.000Z",
+      lastErrorMessage: "Broker rejected order",
+      events: [
+        {
+          type: "execution.failed",
+          timestamp: "2026-08-11T11:40:00.000Z",
+          message: "Execution failed",
+        },
+      ],
+    }, {
+      type: "execution.failed",
+      timestamp: "2026-08-11T11:40:00.000Z",
+      message: "Execution failed",
+    });
+
+    (tradeHistoryStore as any).upsert("ack-stale", {
+      historyId: "ack-stale",
+      intentId: "ack-stale",
+      masterAccountId: "master-1",
+      masterFillId: "fill-ack-stale",
+      followerAccountId: "acct-1",
+      symbol: "NQ",
+      lifecycleStatus: "ACKNOWLEDGED",
+      createdAt: "2026-08-11T11:43:00.000Z",
+      updatedAt: "2026-08-11T11:48:00.000Z",
+      acknowledgedAt: "2026-08-11T11:48:00.000Z",
+      events: [
+        {
+          type: "execution.acknowledged",
+          timestamp: "2026-08-11T11:48:00.000Z",
+          message: "Broker acknowledged order (WORKING)",
+        },
+      ],
+    }, {
+      type: "execution.acknowledged",
+      timestamp: "2026-08-11T11:48:00.000Z",
+      message: "Broker acknowledged order (WORKING)",
+    });
+
+    (tradeHistoryStore as any).upsert("failed-reviewed", {
+      historyId: "failed-reviewed",
+      intentId: "failed-reviewed",
+      masterAccountId: "master-1",
+      masterFillId: "fill-failed-reviewed",
+      followerAccountId: "acct-1",
+      symbol: "YM",
+      lifecycleStatus: "FAILED",
+      createdAt: "2026-08-11T11:20:00.000Z",
+      updatedAt: "2026-08-11T11:30:00.000Z",
+      failedAt: "2026-08-11T11:30:00.000Z",
+      lastErrorMessage: "Rejected upstream",
+      reviewStatus: "reviewed",
+      reviewNote: "Already investigated.",
+      reviewedAt: "2026-08-11T11:35:00.000Z",
+      events: [
+        {
+          type: "execution.failed",
+          timestamp: "2026-08-11T11:30:00.000Z",
+          message: "Execution failed",
+        },
+      ],
+    }, {
+      type: "execution.failed",
+      timestamp: "2026-08-11T11:30:00.000Z",
+      message: "Execution failed",
+    });
+
+    const result = await buildNotifications({
+      userAccounts: [
+        createAccount({
+          id: "acct-1",
+          userId: "user-1",
+          name: "Follower One",
+          platform: "Tradovate",
+          tradovateUsername: "trad-user",
+          tradovateAccountId: "T-123",
+        }),
+      ],
+      registeredGroups: [],
+      getRecentActivity: () => [],
+      positionSnapshotDependencies: {
+        tradovateInstances: new Map([
+          [
+            "trad-user",
+            {
+              isTokenValid: () => true,
+              async getPositions() {
+                return [{ accountId: "T-123", symbol: "ESU6", netPos: 1 }];
+              },
+            },
+          ],
+        ]),
+        tradeifyInstances: new Map(),
+      },
+      executionFollowUpReviews: [
+        {
+          historyId: "failed-open",
+          status: "pending",
+          operatorName: "joseph",
+        },
+        {
+          historyId: "failed-reviewed",
+          status: "reviewed",
+          operatorName: "joseph",
+          note: "Already investigated.",
+          reviewedAt: "2026-08-11T11:35:00.000Z",
+        },
+      ],
+      now: new Date("2026-08-11T12:00:00.000Z"),
+    });
+
+    const executionFollowUpNotifications = result.notifications.filter((notification) =>
+      notification.id.startsWith("execution-follow-up:"),
+    );
+
+    assert.deepEqual(
+      executionFollowUpNotifications.map((notification) => ({
+        id: notification.id,
+        severity: notification.severity,
+        title: notification.title,
+        message: notification.message,
+      })),
+      [
+        {
+          id: "execution-follow-up:ack-stale:stale",
+          severity: "warn",
+          title: "NQ broker recheck overdue",
+          message: "acknowledged has been in flight for 12 minutes without a new lifecycle update. No operator assigned.",
+        },
+        {
+          id: "execution-follow-up:failed-open:review",
+          severity: "error",
+          title: "ES execution follow-up overdue",
+          message: "failed has been waiting 20 minutes for operator review. Assigned operator: joseph.",
         },
       ],
     );

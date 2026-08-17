@@ -1,5 +1,9 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
+import {
+  buildRithmicLoginMetadata,
+  type RithmicLoginMetadata,
+} from './rithmic-login-metadata';
 
 /**
  * Rithmic R|Protocol API Client — corrected to v0.87.0.0 spec
@@ -28,14 +32,6 @@ export interface RithmicAccount {
   balance?: number;
   active?: boolean;
   currency?: string;
-}
-
-export interface RithmicLoginMetadata {
-  fcmId: string;
-  ibId: string;
-  uniqueUserId: string;
-  timestamp: string;
-  timezone: string;
 }
 
 export interface RithmicOrderFillEvent {
@@ -246,6 +242,7 @@ export class RithmicAPI extends EventEmitter {
   private orderUpdateWs: WebSocket | null = null;
   private authenticated = false;
   private heartbeatInterval: NodeJS.Timeout | null = null;
+  private lastLoginMetadata?: RithmicLoginMetadata;
 
   constructor(credentials: RithmicCredentials) {
     super();
@@ -886,8 +883,12 @@ export class RithmicAPI extends EventEmitter {
           const fcmId = fields.strings.get(FIELD.FCM_ID)?.[0] ?? '';
           const ibId  = fields.strings.get(FIELD.IB_ID)?.[0]  ?? '';
           const uniqueUserId = fields.strings.get(FIELD.UNIQUE_USER_ID)?.[0] ?? '';
-          const timestamp = new Date().toISOString();
-          const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          const authData = buildRithmicLoginMetadata({
+            fcmId,
+            ibId,
+            uniqueUserId,
+          });
+          this.lastLoginMetadata = authData;
           console.log(`[RithmicAPI] Login OK — fcm_id=${fcmId} ib_id=${ibId}`);
 
           if (infraType === INFRA_TYPE.TICKER_PLANT) {
@@ -903,13 +904,7 @@ export class RithmicAPI extends EventEmitter {
             message: 'Authenticated with Rithmic',
             fcmId,
             ibId,
-            authData: {
-              fcmId,
-              ibId,
-              uniqueUserId,
-              timestamp,
-              timezone,
-            },
+            authData,
           });
 
           if (onAuthenticated) onAuthenticated(ws, fields);
@@ -1510,6 +1505,10 @@ export class RithmicAPI extends EventEmitter {
 
   isAuthenticated(): boolean {
     return this.authenticated && this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  getLastLoginMetadata(): RithmicLoginMetadata | undefined {
+    return this.lastLoginMetadata;
   }
 
   private startHeartbeat() {

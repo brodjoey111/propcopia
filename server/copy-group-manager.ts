@@ -32,6 +32,11 @@ export interface CopyGroupManagerOptions {
     groupId: string;
     activity: CopyGroupActivity;
   }) => void | Promise<void>;
+  onStateChanged?: (input: {
+    userId: string;
+    groupId: string;
+    state: CopyGroupRuntimeState;
+  }) => void | Promise<void>;
 }
 
 export interface CopyGroupRuntime {
@@ -63,6 +68,41 @@ type TradeRuleObservedPayload = {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function validateCopyGroupConfiguration(group: CopyGroup, followers: CopyFollower[]): void {
+  const declaredFollowerIds = new Set(group.followerAccountIds);
+  if (declaredFollowerIds.size !== group.followerAccountIds.length) {
+    throw new Error(`Copy group ${group.groupId} contains duplicate follower account ids`);
+  }
+
+  if (declaredFollowerIds.has(group.masterAccountId)) {
+    throw new Error(`Copy group ${group.groupId} cannot use its master account as a follower`);
+  }
+
+  const configuredFollowerIds = new Set<string>();
+  for (const follower of followers) {
+    if (follower.groupId !== group.groupId) {
+      throw new Error(
+        `Follower ${follower.followerAccountId} belongs to ${follower.groupId}, not ${group.groupId}`,
+      );
+    }
+
+    if (configuredFollowerIds.has(follower.followerAccountId)) {
+      throw new Error(
+        `Copy group ${group.groupId} contains duplicate follower ${follower.followerAccountId}`,
+      );
+    }
+
+    configuredFollowerIds.add(follower.followerAccountId);
+  }
+
+  const followerListsMatch =
+    declaredFollowerIds.size === configuredFollowerIds.size &&
+    Array.from(declaredFollowerIds).every((followerId) => configuredFollowerIds.has(followerId));
+  if (!followerListsMatch) {
+    throw new Error(`Copy group ${group.groupId} follower configuration is inconsistent`);
+  }
 }
 
 function createInitialState(groupId: string, followerCount: number): CopyGroupRuntimeState {
@@ -181,13 +221,19 @@ export class CopyGroupManager {
   private observedIntentStatuses = new Map<string, Map<string, Set<string>>>();
   private activityJournal = new CopyGroupActivityJournal();
   private onActivityRecorded?: CopyGroupManagerOptions["onActivityRecorded"];
+  private onStateChanged?: CopyGroupManagerOptions["onStateChanged"];
 
   constructor(options: CopyGroupManagerOptions = {}) {
     this.onActivityRecorded = options.onActivityRecorded;
+    this.onStateChanged = options.onStateChanged;
   }
 
   setActivityRecorder(onActivityRecorded?: CopyGroupManagerOptions["onActivityRecorded"]): void {
     this.onActivityRecorded = onActivityRecorded;
+  }
+
+  setStateRecorder(onStateChanged?: CopyGroupManagerOptions["onStateChanged"]): void {
+    this.onStateChanged = onStateChanged;
   }
 
   registerGroup(
@@ -195,6 +241,8 @@ export class CopyGroupManager {
     followers: CopyFollower[],
     options?: CopyGroupRegistrationOptions,
   ): CopyGroupRuntime {
+    validateCopyGroupConfiguration(group, followers);
+
     if (this.groups.has(group.groupId)) {
       throw new Error(`Copy group already registered: ${group.groupId}`);
     }
@@ -290,6 +338,8 @@ export class CopyGroupManager {
     followers: CopyFollower[],
     options?: CopyGroupRegistrationOptions,
   ): CopyGroupRuntime {
+    validateCopyGroupConfiguration(group, followers);
+
     const existingRuntime = this.runtimes.get(group.groupId);
     if (!existingRuntime) {
       return this.registerGroup(group, followers, options);
@@ -407,6 +457,10 @@ export class CopyGroupManager {
 
     await runtime.engine.disconnect();
 
+    // STOPPED is the neutral restart state; internal execution guards must match it.
+    runtime.executionManager.deactivateKillSwitch();
+    runtime.executionManager.resume();
+
     runtime.state.status = 'STOPPED';
     runtime.state.stoppedAt = nowIso();
     runtime.state.masterConnected = false;
@@ -510,6 +564,30 @@ export class CopyGroupManager {
     this.refreshHealth(runtime);
   }
 
+  async applyRiskBreach(
+    groupId: string,
+    reason: string,
+  ): Promise<CopyGroup["riskSettings"]["onRiskBreach"] | null> {
+    const runtime = this.requireRuntime(groupId);
+    if (runtime.state.status !== 'RUNNING' && runtime.state.status !== 'PAUSED') {
+      return null;
+    }
+
+    const action = runtime.group.riskSettings.onRiskBreach;
+    if (action === 'PAUSE') {
+      if (runtime.state.status === 'RUNNING') {
+        this.pause(groupId);
+      }
+    } else if (action === 'STOP') {
+      await this.stop(groupId);
+    } else {
+      await this.emergencyStop(groupId, `${reason} Flattening requires an approved broker workflow.`);
+    }
+
+    await this.recordStateChange(runtime);
+    return action;
+  }
+
   getGroup(groupId: string): RegisteredCopyGroup | undefined {
     return this.groups.get(groupId);
   }
@@ -531,6 +609,11 @@ export class CopyGroupManager {
   getRecentActivity(groupId: string): CopyGroupActivity[] {
     this.requireRuntime(groupId);
     return this.activityJournal.getRecentActivity(groupId);
+  }
+
+  getObservability(groupId: string): CopyGroupObservability {
+    this.requireRuntime(groupId);
+    return this.activityJournal.getObservability(groupId);
   }
 
   getPersistedState(groupId: string): CopyGroupRuntimeState {
@@ -764,6 +847,20 @@ export class CopyGroupManager {
         },
       });
       this.refreshHealth(runtime);
+
+      if (payload.reasonCode === 'RISK_LIMIT_BREACHED') {
+        void this.applyRiskBreach(
+          groupId,
+          `Risk limit breached for follower ${payload.followerAccountId}.`,
+        ).catch((error) => {
+          this.recordActivity(runtime, {
+            severity: 'ERROR',
+            category: 'HEALTH',
+            message: error instanceof Error ? error.message : 'Failed to apply risk breach action.',
+            followerAccountId: payload.followerAccountId,
+          });
+        });
+      }
     };
 
     const onTradeCopied = (payload: TradeCopiedPayload) => {
@@ -855,6 +952,12 @@ export class CopyGroupManager {
     };
 
     runtime.observability = this.activityJournal.append(runtime.group.groupId, entry);
+    propCopiaEventBus.publish('copy_group.activity_recorded', {
+      group: runtime.group,
+      runtime: { ...runtime.state },
+      activity: entry,
+      observability: runtime.observability,
+    });
 
     if (!this.onActivityRecorded) {
       return;
@@ -871,9 +974,28 @@ export class CopyGroupManager {
     });
   }
 
+  private async recordStateChange(runtime: CopyGroupRuntime): Promise<void> {
+    if (!this.onStateChanged) {
+      return;
+    }
+
+    await this.onStateChanged({
+      userId: runtime.group.userId,
+      groupId: runtime.group.groupId,
+      state: this.getPersistedState(runtime.group.groupId),
+    });
+  }
+
   private refreshHealth(runtime: CopyGroupRuntime): void {
     this.syncConnectionState(runtime);
     const checkedAt = nowIso();
+    const previousStatus = runtime.health.status;
+    const previousWarnings = runtime.health.warnings.join(' | ');
+    const previousErrors = runtime.health.errors.join(' | ');
+    const previousMasterMessage = runtime.health.masterConnection.message;
+    const previousFollowerMessage = runtime.health.followerConnections.message;
+    const previousExecutionMessage = runtime.health.executionPipeline.message;
+    const previousIntentMessage = runtime.health.intentPipeline.message;
     const warnings: string[] = [];
     const errors: string[] = [];
 
@@ -959,6 +1081,28 @@ export class CopyGroupManager {
       runtime.health.status = 'DEGRADED';
     } else {
       runtime.health.status = 'HEALTHY';
+    }
+
+    const healthChanged =
+      previousStatus !== runtime.health.status ||
+      previousWarnings !== runtime.health.warnings.join(' | ') ||
+      previousErrors !== runtime.health.errors.join(' | ') ||
+      previousMasterMessage !== runtime.health.masterConnection.message ||
+      previousFollowerMessage !== runtime.health.followerConnections.message ||
+      previousExecutionMessage !== runtime.health.executionPipeline.message ||
+      previousIntentMessage !== runtime.health.intentPipeline.message;
+
+    if (healthChanged) {
+      propCopiaEventBus.publish('copy_group.health_changed', {
+        group: runtime.group,
+        runtime: { ...runtime.state },
+        previousStatus,
+        health: {
+          ...runtime.health,
+          warnings: [...runtime.health.warnings],
+          errors: [...runtime.health.errors],
+        },
+      });
     }
   }
 }

@@ -27,6 +27,11 @@ function createNotification(
     accountId: overrides.accountId,
     groupId: overrides.groupId,
     storyKey: overrides.storyKey,
+    reviewStatus: overrides.reviewStatus,
+    reviewNote: overrides.reviewNote,
+    reviewedAt: overrides.reviewedAt,
+    restartRecoveryMessage: overrides.restartRecoveryMessage,
+    restartRecoveryAt: overrides.restartRecoveryAt,
     tradeSummary: overrides.tradeSummary,
   };
 }
@@ -52,6 +57,19 @@ test("toActivityFeedType maps reviewed trade failures to success entries", () =>
           relatedEventCount: 0,
           reviewStatus: "reviewed",
         },
+      }),
+    ),
+    "success",
+  );
+});
+
+test("toActivityFeedType maps reviewed non-trade alerts to success entries", () => {
+  assert.equal(
+    toActivityFeedType(
+      createNotification({
+        category: "position",
+        severity: "warn",
+        reviewStatus: "reviewed",
       }),
     ),
     "success",
@@ -196,6 +214,22 @@ test("describeExecutionAttentionNotification flags reviewed trade alerts as hand
   });
 });
 
+test("describeExecutionAttentionNotification flags reviewed non-trade alerts as handled items", () => {
+  const view = describeExecutionAttentionNotification(
+    createNotification({
+      category: "position",
+      severity: "warn",
+      reviewStatus: "reviewed",
+      reviewNote: "Reconnect proof accepted until restart.",
+    }),
+  );
+
+  assert.deepEqual(view, {
+    state: "ok",
+    label: "Reviewed",
+  });
+});
+
 test("describeNotificationMessage compacts reviewed trade failures", () => {
   const message = describeNotificationMessage(
     createNotification({
@@ -216,6 +250,21 @@ test("describeNotificationMessage compacts reviewed trade failures", () => {
   );
 
   assert.equal(message, "Reviewed failure. Checked broker logs and left for retry review");
+});
+
+test("describeNotificationMessage compacts reviewed non-trade alerts", () => {
+  const message = describeNotificationMessage(
+    createNotification({
+      category: "position",
+      severity: "warn",
+      title: "Rithmic readiness reviewed",
+      message: "Reconnect proof still missing",
+      reviewStatus: "reviewed",
+      reviewNote: "Reconnect accepted until next restart.",
+    }),
+  );
+
+  assert.equal(message, "Reviewed. Reconnect accepted until next restart.");
 });
 
 test("describeActivityNotificationMessage compacts reviewed failures for the activity feed", () => {
@@ -241,6 +290,49 @@ test("describeActivityNotificationMessage compacts reviewed failures for the act
     message,
     "Reviewed: ES failed reviewed. Review note: Checked broker logs and left for retry review",
   );
+});
+
+test("describeActivityNotificationMessage compacts reviewed non-trade alerts for the activity feed", () => {
+  const message = describeActivityNotificationMessage(
+    createNotification({
+      category: "position",
+      severity: "warn",
+      title: "Rithmic readiness reviewed",
+      message: "Reconnect proof still missing",
+      reviewStatus: "reviewed",
+      reviewNote: "Reconnect accepted until next restart.",
+    }),
+  );
+
+  assert.equal(
+    message,
+    "Reviewed: Rithmic readiness reviewed. Review note: Reconnect accepted until next restart.",
+  );
+});
+
+test("filterNotifications searches restart recovery details for copy-group alerts", async () => {
+  const { filterNotifications } = await import("./notifications");
+
+  const filtered = filterNotifications(
+    [
+      createNotification({
+        id: "copy-recovery",
+        category: "copy_group",
+        severity: "warn",
+        restartRecoveryMessage: "Recovered copy group Primary Group into STOPPED state after reload.",
+      }),
+      createNotification({
+        id: "copy-other",
+        category: "copy_group",
+        severity: "warn",
+        restartRecoveryMessage: "Restored paused copy group Backup Group after reload.",
+      }),
+    ],
+    "copy_group",
+    "stopped state after reload",
+  );
+
+  assert.deepEqual(filtered.map((notification) => notification.id), ["copy-recovery"]);
 });
 
 test("clusterNotifications rolls consecutive trade updates for the same order path together", () => {
@@ -388,6 +480,27 @@ test("filterReviewedNotifications hides reviewed trade failures when requested",
     "active-trade",
     "copy-group-item",
   ]);
+});
+
+test("filterReviewedNotifications hides reviewed non-trade alerts when requested", () => {
+  const filtered = filterReviewedNotifications(
+    [
+      createNotification({
+        id: "reviewed-position",
+        category: "position",
+        severity: "warn",
+        reviewStatus: "reviewed",
+      }),
+      createNotification({
+        id: "open-position",
+        category: "position",
+        severity: "warn",
+      }),
+    ],
+    false,
+  );
+
+  assert.deepEqual(filtered.map((notification) => notification.id), ["open-position"]);
 });
 
 test("applyNotificationPreferences hides error notifications when disabled", () => {

@@ -13,6 +13,11 @@ export async function disconnectAccount(accountId: string) {
   return response.json();
 }
 
+export async function revalidateRithmicReadiness(accountId: string) {
+  const response = await apiRequest("POST", `/api/accounts/${accountId}/rithmic-readiness/revalidate`);
+  return response.json();
+}
+
 export function updateAccountConnectionInQueryData(
   data: AccountsQueryData,
   accountId: string,

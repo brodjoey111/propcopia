@@ -22,12 +22,14 @@ import {
   buildPositionSyncOverview,
   type PositionSyncOverviewResult,
 } from "./position-sync-overview-service";
+import type { PersistedExecutionFollowUpReview } from "./execution-follow-up-review-store";
 import {
   buildDashboardExecutionAttentionCards,
   buildDashboardExecutionPathRows,
   type DashboardExecutionAttentionCard,
   type DashboardExecutionPathRow,
 } from "../client/src/lib/trade-history";
+import { tradeLogger, type TradeLoggerStats } from "./trade-logger";
 
 export interface DashboardTradeHistorySummary {
   total: number;
@@ -79,6 +81,12 @@ export interface DashboardExecutionRecoveryOverview {
   items: DashboardExecutionRecoveryItem[];
 }
 
+export interface DashboardExecutionRecoverySignal {
+  label: string;
+  detail: string;
+  tone: "ok" | "warn" | "danger" | "muted";
+}
+
 export interface DashboardExecutionRecoveryItem {
   historyId: string;
   symbol: string;
@@ -94,9 +102,17 @@ export interface DashboardExecutionRecoveryItem {
   ageMinutes: number;
   headline: string;
   detail: string;
+  checkpoint: DashboardExecutionRecoverySignal;
+  recoveryWindow: DashboardExecutionRecoverySignal;
   reviewStatus?: "pending" | "reviewed";
   reviewNote?: string;
   reviewedAt?: string;
+  operatorName?: string;
+  operatorHistory?: Array<{
+    operatorName: string;
+    assignedAt: string;
+    reason?: string;
+  }>;
 }
 
 function buildRecoveryActionCounts(
@@ -146,10 +162,212 @@ function buildRecoveryActionCounts(
     });
 }
 
+function formatRecoveryAgeLabel(ageMinutes: number): string {
+  return ageMinutes === 1 ? "1 minute" : `${ageMinutes} minutes`;
+}
+
+function describeRecoveryAgeContext(record: TradeHistoryRecord): string {
+  switch (record.lifecycleStatus) {
+    case "PARTIALLY_FILLED":
+      return "partial fill update";
+    case "ACKNOWLEDGED":
+      return "broker acknowledgement";
+    case "SENT":
+      return "broker submission";
+    case "QUEUED":
+      return "queue handoff";
+    case "INTENT_CREATED":
+      return "intent creation";
+    case "FAILED":
+    case "CANCELLED":
+      return "failure event";
+    case "RULE_REJECTED":
+      return "rule rejection";
+    case "RULE_SKIPPED":
+      return "rule skip";
+    default:
+      return "latest lifecycle update";
+  }
+}
+
+function buildPartialRecoveryDetail(record: TradeHistoryRecord): string {
+  const filledQuantity = record.filledQuantity;
+  const requestedQuantity = record.quantity;
+  const remainingQuantity = record.remainingQuantity;
+  const partialFillCount = record.partialFillCount;
+
+  if (
+    typeof filledQuantity === "number" &&
+    typeof requestedQuantity === "number" &&
+    typeof remainingQuantity === "number"
+  ) {
+    const countSuffix =
+      typeof partialFillCount === "number" && partialFillCount > 0
+        ? ` after ${partialFillCount} partial fill${partialFillCount === 1 ? "" : "s"}`
+        : "";
+    return `${filledQuantity}/${requestedQuantity} filled with ${remainingQuantity} contract${remainingQuantity === 1 ? "" : "s"} still open${countSuffix}.`;
+  }
+
+  if (typeof remainingQuantity === "number") {
+    return `${remainingQuantity} contract${remainingQuantity === 1 ? "" : "s"} still open while fill updates continue.`;
+  }
+
+  return "Partial fills are still being processed.";
+}
+
+function buildExecutionRecoveryCheckpoint(
+  record: TradeHistoryRecord,
+  category: DashboardExecutionRecoveryItem["category"],
+): DashboardExecutionRecoverySignal {
+  switch (record.lifecycleStatus) {
+    case "INTENT_CREATED":
+      return {
+        label: "Intent captured",
+        detail: "The copy decision exists and is waiting to move into the execution queue.",
+        tone: "muted",
+      };
+    case "QUEUED":
+      return {
+        label: "Queued for routing",
+        detail: "Execution is staged in the local pipeline before broker submission begins.",
+        tone: "muted",
+      };
+    case "SENT":
+      return {
+        label: "Submitted to broker",
+        detail: record.brokerOrderId
+          ? `Broker order ${record.brokerOrderId} is waiting for acknowledgement.`
+          : "The order left the local queue and is waiting for broker acknowledgement.",
+        tone: category === "active" ? "ok" : "warn",
+      };
+    case "ACKNOWLEDGED":
+      return {
+        label: "Broker acknowledged",
+        detail: record.brokerOrderId
+          ? `Broker order ${record.brokerOrderId} is waiting on fill updates.`
+          : "The broker accepted the order and the queue is waiting on fills.",
+        tone: category === "active" ? "ok" : "warn",
+      };
+    case "PARTIALLY_FILLED":
+      return {
+        label: "Partial fill active",
+        detail: buildPartialRecoveryDetail(record),
+        tone: "warn",
+      };
+    case "RULE_SKIPPED":
+      return {
+        label: "Rule skipped routing",
+        detail:
+          record.lastErrorMessage ??
+          "A copy rule stopped this order before it reached the broker.",
+        tone: "warn",
+      };
+    case "RULE_REJECTED":
+      return {
+        label: "Rule rejected routing",
+        detail:
+          record.lastErrorMessage ??
+          "A blocking rule rejected this order before broker submission.",
+        tone: "danger",
+      };
+    case "CANCELLED":
+      return {
+        label: "Execution cancelled",
+        detail:
+          record.lastErrorMessage ??
+          "The order reached a cancelled state and needs operator context before retrying.",
+        tone: "danger",
+      };
+    case "FAILED":
+    default:
+      return {
+        label: "Execution failed",
+        detail:
+          record.lastErrorMessage ??
+          "The broker or workflow returned a terminal failure state that needs follow-up.",
+        tone: "danger",
+      };
+  }
+}
+
+function buildExecutionRecoveryWindow(input: {
+  record: TradeHistoryRecord;
+  category: DashboardExecutionRecoveryItem["category"];
+  ageMinutes: number;
+  staleThresholdMinutes: number;
+  reviewStatus?: "pending" | "reviewed";
+}): DashboardExecutionRecoverySignal {
+  const ageLabel = formatRecoveryAgeLabel(input.ageMinutes);
+  const ageContext = describeRecoveryAgeContext(input.record);
+
+  if (input.category === "failed") {
+    if (input.reviewStatus === "reviewed") {
+      return {
+        label: "Review captured",
+        detail: "The failure note is already attached. Reopen only if the broker state changes.",
+        tone: "ok",
+      };
+    }
+
+    return {
+      label: "Operator review open",
+      detail: `${ageLabel} since the ${ageContext}. Capture the follow-up note before the next retry decision.`,
+      tone: "danger",
+    };
+  }
+
+  if (input.category === "stale") {
+    const label =
+      input.record.lifecycleStatus === "SENT"
+        ? "Acknowledgement overdue"
+        : input.record.lifecycleStatus === "ACKNOWLEDGED" ||
+            input.record.lifecycleStatus === "PARTIALLY_FILLED"
+          ? "Fill update overdue"
+          : "Routing update overdue";
+
+    return {
+      label,
+      detail: `${ageLabel} since ${ageContext} (stale window ${input.staleThresholdMinutes}m).`,
+      tone: "danger",
+    };
+  }
+
+  if (input.record.lifecycleStatus === "PARTIALLY_FILLED") {
+    return {
+      label: "Fresh partial window",
+      detail: `${ageLabel} since the last partial fill update, still inside the ${input.staleThresholdMinutes} minute watch window.`,
+      tone: "ok",
+    };
+  }
+
+  if (input.record.lifecycleStatus === "ACKNOWLEDGED") {
+    return {
+      label: "Fresh fill window",
+      detail: `${ageLabel} since broker acknowledgement, still inside the ${input.staleThresholdMinutes} minute watch window.`,
+      tone: "ok",
+    };
+  }
+
+  if (input.record.lifecycleStatus === "SENT") {
+    return {
+      label: "Fresh acknowledgement window",
+      detail: `${ageLabel} since broker submission, still inside the ${input.staleThresholdMinutes} minute watch window.`,
+      tone: "ok",
+    };
+  }
+
+  return {
+    label: "Fresh routing window",
+    detail: `${ageLabel} since ${ageContext}. Routing is still inside the ${input.staleThresholdMinutes} minute watch window.`,
+    tone: "muted",
+  };
+}
+
 function buildExecutionRecoveryItem(
   record: TradeHistoryRecord,
   nowMs: number,
   staleThresholdMinutes: number,
+  review?: PersistedExecutionFollowUpReview,
 ): DashboardExecutionRecoveryItem | null {
   if (record.lifecycleStatus === "FILLED") {
     return null;
@@ -161,7 +379,9 @@ function buildExecutionRecoveryItem(
   );
 
   if (FAILED_TRADE_STATUSES.has(record.lifecycleStatus)) {
-    const reviewed = record.reviewStatus === "reviewed";
+    const reviewed = review?.status === "reviewed" || record.reviewStatus === "reviewed";
+    const reviewNote = review?.note ?? record.reviewNote;
+    const reviewedAt = review?.reviewedAt ?? record.reviewedAt;
     return {
       historyId: record.historyId,
       symbol: record.symbol,
@@ -173,12 +393,22 @@ function buildExecutionRecoveryItem(
       ageMinutes,
       headline: reviewed ? "Reviewed failure" : "Needs review",
       detail:
-        reviewed && record.reviewNote
-          ? `Reviewed note: ${record.reviewNote}`
+        reviewed && reviewNote
+          ? `Reviewed note: ${reviewNote}`
           : record.lastErrorMessage ?? "Execution stopped before completion.",
-      reviewStatus: record.reviewStatus,
-      reviewNote: record.reviewNote,
-      reviewedAt: record.reviewedAt,
+      checkpoint: buildExecutionRecoveryCheckpoint(record, "failed"),
+      recoveryWindow: buildExecutionRecoveryWindow({
+        record,
+        category: "failed",
+        ageMinutes,
+        staleThresholdMinutes,
+        reviewStatus: reviewed ? "reviewed" : record.reviewStatus,
+      }),
+      reviewStatus: reviewed ? "reviewed" : record.reviewStatus,
+      reviewNote,
+      reviewedAt,
+      operatorName: review?.operatorName,
+      operatorHistory: review?.operatorHistory,
     };
   }
 
@@ -198,9 +428,19 @@ function buildExecutionRecoveryItem(
       ageMinutes,
       headline: "Possibly stalled",
       detail: `No new lifecycle update for ${ageMinutes} minute${ageMinutes === 1 ? "" : "s"}.`,
-      reviewStatus: record.reviewStatus,
-      reviewNote: record.reviewNote,
-      reviewedAt: record.reviewedAt,
+      checkpoint: buildExecutionRecoveryCheckpoint(record, "stale"),
+      recoveryWindow: buildExecutionRecoveryWindow({
+        record,
+        category: "stale",
+        ageMinutes,
+        staleThresholdMinutes,
+        reviewStatus: review?.status ?? record.reviewStatus,
+      }),
+      reviewStatus: review?.status ?? record.reviewStatus,
+      reviewNote: review?.note ?? record.reviewNote,
+      reviewedAt: review?.reviewedAt ?? record.reviewedAt,
+      operatorName: review?.operatorName,
+      operatorHistory: review?.operatorHistory,
     };
   }
 
@@ -221,9 +461,19 @@ function buildExecutionRecoveryItem(
         remainingQuantity > 0
           ? `${filledQuantity} filled, ${remainingQuantity} still open.`
           : "Partial fills are still being processed.",
-      reviewStatus: record.reviewStatus,
-      reviewNote: record.reviewNote,
-      reviewedAt: record.reviewedAt,
+      checkpoint: buildExecutionRecoveryCheckpoint(record, "partial"),
+      recoveryWindow: buildExecutionRecoveryWindow({
+        record,
+        category: "partial",
+        ageMinutes,
+        staleThresholdMinutes,
+        reviewStatus: review?.status ?? record.reviewStatus,
+      }),
+      reviewStatus: review?.status ?? record.reviewStatus,
+      reviewNote: review?.note ?? record.reviewNote,
+      reviewedAt: review?.reviewedAt ?? record.reviewedAt,
+      operatorName: review?.operatorName,
+      operatorHistory: review?.operatorHistory,
     };
   }
 
@@ -238,9 +488,19 @@ function buildExecutionRecoveryItem(
     ageMinutes,
     headline: "Still in flight",
     detail: `Last lifecycle update ${ageMinutes} minute${ageMinutes === 1 ? "" : "s"} ago.`,
-    reviewStatus: record.reviewStatus,
-    reviewNote: record.reviewNote,
-    reviewedAt: record.reviewedAt,
+    checkpoint: buildExecutionRecoveryCheckpoint(record, "active"),
+    recoveryWindow: buildExecutionRecoveryWindow({
+      record,
+      category: "active",
+      ageMinutes,
+      staleThresholdMinutes,
+      reviewStatus: review?.status ?? record.reviewStatus,
+    }),
+    reviewStatus: review?.status ?? record.reviewStatus,
+    reviewNote: review?.note ?? record.reviewNote,
+    reviewedAt: review?.reviewedAt ?? record.reviewedAt,
+    operatorName: review?.operatorName,
+    operatorHistory: review?.operatorHistory,
   };
 }
 
@@ -282,6 +542,7 @@ export interface DashboardRuntimeOverviewResult extends AccountsRuntimeOverviewR
     totalUnrealizedPnl: number;
     totalOpenPositions: number;
   };
+  tradeLogger: TradeLoggerStats;
   copyGroups: CopyGroupRuntimeOverview;
   operationsOverview: OperationsOverviewResult;
   tradeAnalytics: DashboardTradeAnalytics;
@@ -304,6 +565,7 @@ interface BuildDashboardRuntimeOverviewInput extends BuildAccountsRuntimeOvervie
     health: unknown;
   } | undefined;
   getRecentActivity: (groupId: string) => CopyGroupActivity[];
+  executionFollowUpReviews?: PersistedExecutionFollowUpReview[];
 }
 
 const FAILED_TRADE_STATUSES = new Set<TradeHistoryLifecycleStatus>([
@@ -444,15 +706,25 @@ function buildCopyGroupRuntimeSummary(input: {
 }
 
 function pickTradeTimestamp(record: TradeHistoryRecord): string {
-  return (
-    record.filledAt ??
-    record.acknowledgedAt ??
-    record.sentAt ??
-    record.failedAt ??
-    record.queuedAt ??
-    record.updatedAt ??
-    record.createdAt
-  );
+  switch (record.lifecycleStatus) {
+    case "FILLED":
+      return record.filledAt ?? record.updatedAt ?? record.acknowledgedAt ?? record.sentAt ?? record.createdAt;
+    case "PARTIALLY_FILLED":
+      return record.updatedAt ?? record.acknowledgedAt ?? record.sentAt ?? record.queuedAt ?? record.createdAt;
+    case "ACKNOWLEDGED":
+      return record.acknowledgedAt ?? record.sentAt ?? record.queuedAt ?? record.updatedAt ?? record.createdAt;
+    case "SENT":
+      return record.sentAt ?? record.queuedAt ?? record.updatedAt ?? record.createdAt;
+    case "FAILED":
+    case "CANCELLED":
+      return record.failedAt ?? record.updatedAt ?? record.sentAt ?? record.createdAt;
+    case "QUEUED":
+      return record.queuedAt ?? record.updatedAt ?? record.createdAt;
+    case "INTENT_CREATED":
+      return record.updatedAt ?? record.createdAt;
+    default:
+      return record.updatedAt ?? record.createdAt;
+  }
 }
 
 function summarizeTradeRecords(records: TradeHistoryRecord[]): DashboardTradeHistorySummary {
@@ -535,6 +807,7 @@ export function summarizeExecutionRecovery(
     now?: string;
     staleThresholdMinutes?: number;
     limit?: number;
+    executionFollowUpReviews?: PersistedExecutionFollowUpReview[];
   } = {},
 ): DashboardExecutionRecoveryOverview {
   const staleThresholdMinutes = Math.max(
@@ -544,6 +817,9 @@ export function summarizeExecutionRecovery(
   const limit = Math.max(1, Math.floor(options.limit ?? 4));
   const nowMs = new Date(options.now ?? new Date().toISOString()).getTime();
   const staleThresholdMs = staleThresholdMinutes * 60_000;
+  const reviewsByHistoryId = new Map(
+    (options.executionFollowUpReviews ?? []).map((review) => [review.historyId, review]),
+  );
 
   const counts = records.reduce(
     (summary, record) => {
@@ -592,7 +868,14 @@ export function summarizeExecutionRecovery(
     ["active", 3],
   ]);
   const items: DashboardExecutionRecoveryItem[] = records
-    .map((record) => buildExecutionRecoveryItem(record, nowMs, staleThresholdMinutes))
+    .map((record) =>
+      buildExecutionRecoveryItem(
+        record,
+        nowMs,
+        staleThresholdMinutes,
+        reviewsByHistoryId.get(record.historyId),
+      ),
+    )
     .filter((item): item is DashboardExecutionRecoveryItem => item !== null)
     .sort((left, right) => {
       const priorityDiff = (priority.get(left.category) ?? 99) - (priority.get(right.category) ?? 99);
@@ -739,7 +1022,9 @@ export async function buildDashboardRuntimeOverview(
     dailyExecutionSeries: summarizeTradeRecordsByDay(recentTrades, 5),
     attentionCards: buildDashboardExecutionAttentionCards(recentTrades.slice(0, 4)),
     recentPathRows: buildDashboardExecutionPathRows(recentTrades.slice(0, 4), 3),
-    executionRecovery: summarizeExecutionRecovery(recentTrades),
+    executionRecovery: summarizeExecutionRecovery(recentTrades, {
+      executionFollowUpReviews: input.executionFollowUpReviews,
+    }),
   };
   const totalBalance = input.userAccounts.reduce((sum, account) => {
     const liveAccount = accountsOverview.accountLiveMetrics.accounts.find(
@@ -812,6 +1097,7 @@ export async function buildDashboardRuntimeOverview(
   return {
     ...accountsOverview,
     dashboardSummary,
+    tradeLogger: tradeLogger.getStats(),
     copyGroups,
     operationsOverview,
     tradeAnalytics,

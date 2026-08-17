@@ -1,0 +1,44 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+test("activity copy-group health hook centralizes review persistence, filtering, and bulk actions", () => {
+  const source = readFileSync("client/src/hooks/use-activity-copy-group-health-board.ts", "utf8");
+
+  assert.match(source, /COPY_GROUP_HEALTH_REVIEW_STORAGE_KEY/);
+  assert.match(source, /COPY_GROUP_HEALTH_BOARD_VIEW_STORAGE_KEY/);
+  assert.match(source, /loadCopyGroupHealthReviews/);
+  assert.match(source, /loadStoredCopyGroupHealthBoardView/);
+  assert.match(source, /normalizeCopyGroupHealthBoardView/);
+  assert.match(source, /normalizeCopyGroupHealthReviewFilter/);
+  assert.match(source, /parseCopyGroupHealthReviewsJson/);
+  assert.match(source, /buildCopyGroupHealthConcernSignature/);
+  assert.match(source, /countRecentMatchingHealthReviews/);
+  assert.match(source, /window\.localStorage\.setItem/);
+  assert.match(source, /saveActivityPreferences/);
+  assert.match(source, /copyGroupHealthReviewFilter/);
+  assert.match(source, /copyGroupHealthRecoveryFilter/);
+  assert.match(source, /copyGroupHealthBoardView/);
+  assert.match(source, /copyGroupHealthSearch/);
+  assert.match(source, /selectedCopyGroupHealthGroupIds/);
+  assert.match(source, /copyGroupHealthBulkResultSummary/);
+  assert.match(source, /sortedCopyGroupHealthEntries/);
+  assert.match(source, /recoverNowCopyGroupHealthEntries/);
+  assert.match(source, /handleAcknowledgeCopyGroupHealth/);
+  assert.match(source, /handleClearCopyGroupHealthReview/);
+  assert.match(source, /handleToggleCopyGroupHealthSelection/);
+  assert.match(source, /handleSelectAllVisibleCopyGroupHealthEntries/);
+  assert.match(source, /handleSelectAttentionCopyGroupHealthEntries/);
+  assert.match(source, /handleSelectRecoverNowCopyGroupHealthEntries/);
+  assert.match(source, /handleSelectStaleCopyGroupHealthEntries/);
+  assert.match(source, /handleClearCopyGroupHealthSelection/);
+  assert.match(source, /handleBulkClearCopyGroupHealthReviews/);
+  assert.match(source, /handleBulkAcknowledgeCopyGroupHealthReviews/);
+  assert.match(source, /recoveryQueueLabel === "Recover now"/);
+  assert.match(source, /repeatedReviewCount >= 2/);
+  assert.match(source, /entry\.signalFreshnessLabel/);
+  assert.match(source, /entry\.signalFreshnessDetail/);
+  assert.match(source, /entry\.routingGateLabel/);
+  assert.match(source, /entry\.routingGateDetail/);
+  assert.match(source, /reviewedBy: options\.user\?\.username \?\? "Operator"/);
+});

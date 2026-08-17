@@ -1,18 +1,31 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AddAccountDialog } from "@/components/add-account-dialog";
-import { ConfigureAccountDialog } from "@/components/configure-account-dialog";
+import { DashboardAccountRosterPanel } from "@/components/dashboard-account-roster-panel";
+import { DashboardExecutionFollowUpGrid } from "@/components/dashboard-execution-follow-up-grid";
+import { DashboardPositionSyncPanel } from "@/components/dashboard-position-sync-panel";
+import { DashboardRithmicReadinessPanel } from "@/components/dashboard-rithmic-readiness-panel";
+import { DashboardSignalMatrixPanel } from "@/components/dashboard-signal-matrix-panel";
 import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
 import { LiveActivityFeed } from "@/components/live-activity-feed";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
+import { useDashboardDetailPreferences } from "@/hooks/use-dashboard-detail-preferences";
+import { useDashboardExecutionFollowUp } from "@/hooks/use-dashboard-execution-follow-up";
+import { useFollowUpReviewData } from "@/hooks/use-follow-up-review-data";
+import { useDashboardPositionSyncData } from "@/hooks/use-dashboard-position-sync-data";
+import { useDashboardPositionSyncWorkflow } from "@/hooks/use-dashboard-position-sync-workflow";
+import { useFollowUpReviewActions } from "@/hooks/use-follow-up-review-actions";
+import { useNotifications } from "@/hooks/use-notifications";
+import { useOperatorFollowUpData } from "@/hooks/use-operator-follow-up-data";
+import { usePositionSyncWorkflowActions } from "@/hooks/use-position-sync-workflow-actions";
 import { useToast } from "@/hooks/use-toast";
 import type { AccountCreatePayload } from "@/lib/account-create-payload";
 import {
   buildCopySessionSignalRows,
   buildCopyGroupActivityFeed,
+  buildCopyGroupRestartRecoveryItems,
   describeCopyGroupPulse,
   filterCopyGroupActivityFeed,
   hydrateCopyGroup,
@@ -30,21 +43,16 @@ import {
   type AccountLiveMetricsResponse,
 } from "@/lib/account-live-metrics";
 import {
-  buildAccountRiskFollowUpQueue,
   buildAccountRiskById,
   toAccountRiskBadgeView,
 } from "@/lib/account-risk";
 import {
-  buildPositionSyncReview,
-  buildPositionSyncSummaryCards,
-  describePositionSyncOverview,
-  sortPositionSyncGroups,
-} from "@/lib/position-sync";
+  buildRithmicReadinessViewItems,
+  getRithmicAccounts,
+  type RithmicReadinessResponse,
+} from "@/lib/rithmic-readiness";
 import {
-  buildPositionSyncWorkflowKey,
-  toPositionSyncWorkflowState,
   type PositionSyncWorkflowSaveInput,
-  type PositionSyncWorkflowState,
 } from "@/lib/position-sync-workflow";
 import {
   LIVE_QUERY_POLL_MS,
@@ -54,7 +62,6 @@ import {
 import type { OperationsOverviewResponse } from "@/lib/operations-overview";
 import type {
   DashboardRuntimeOverviewResponse,
-  PositionSyncOverviewResponse,
 } from "@/lib/runtime-overview";
 import { type TradeHistoryDailySummary } from "@/lib/trade-history";
 import { apiRequest, getQueryFn, queryClient } from "@/lib/queryClient";
@@ -63,6 +70,10 @@ import {
   disconnectAccount,
   updateAccountConnectionInQueryData,
 } from "@/lib/account-connection-api";
+import {
+  buildRithmicReadinessReviewPayload,
+  type RithmicReadinessFollowUpItemView,
+} from "@/lib/follow-up-operator";
 import type { Account as AccountType } from "@shared/schema";
 import {
   Activity,
@@ -71,12 +82,10 @@ import {
   BarChart3,
   BriefcaseBusiness,
   CircleDollarSign,
-  Cpu,
   Gauge,
   Layers3,
   RadioTower,
   ShieldCheck,
-  Sparkles,
   TrendingUp,
   Users,
   Wallet,
@@ -240,14 +249,6 @@ function formatActivityTimestamp(timestamp: string) {
 
 export default function Dashboard() {
   const { toast } = useToast();
-  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
-  const [loadDetailSections, setLoadDetailSections] = useState(false);
-  const [showAccountRoster, setShowAccountRoster] = useState(false);
-  const [showOpenPositions, setShowOpenPositions] = useState(false);
-  const [showCopyGroupDetail, setShowCopyGroupDetail] = useState(false);
-  const [showPositionSyncDetail, setShowPositionSyncDetail] = useState(false);
-  const [selectedPositionSyncGroupId, setSelectedPositionSyncGroupId] = useState<string | null>(null);
-  const [positionSyncReviewNotes, setPositionSyncReviewNotes] = useState<Record<string, string>>({});
   const currentDateLabel = new Intl.DateTimeFormat("en-US", {
     month: "long",
     day: "numeric",
@@ -259,6 +260,8 @@ export default function Dashboard() {
     accountId: string;
     accountName: string;
   }>({ open: false, accountId: "", accountName: "" });
+  const [rithmicReadinessNotes, setRithmicReadinessNotes] = useState<Record<string, string>>({});
+  const [isRecheckingAllRithmicReadiness, setIsRecheckingAllRithmicReadiness] = useState(false);
 
   const globalRiskSettings = {
     positionScaling: 100,
@@ -270,37 +273,34 @@ export default function Dashboard() {
     queryKey: ["/api/accounts"],
   });
   const accounts = accountsData?.accounts || [];
+  const rithmicAccounts = getRithmicAccounts(accounts);
   const hasConnectedAccounts = accounts.some((account) => account.isConnected);
+  const hasRithmicAccounts = rithmicAccounts.length > 0;
   const usingMockData = accounts.length === 0;
+  const {
+    loadDetailSections,
+    showAccountRoster,
+    setShowAccountRoster,
+    showOpenPositions,
+    setShowOpenPositions,
+    showCopyGroupDetail,
+    setShowCopyGroupDetail,
+    showPositionSyncDetail,
+    setShowPositionSyncDetail,
+    selectedPositionSyncGroupId,
+    setSelectedPositionSyncGroupId,
+  } = useDashboardDetailPreferences({
+    usingMockData,
+  });
   const { data: authData } = useQuery<AuthMeResponse | null>({
     queryKey: ["/api/auth/me"],
     queryFn: getQueryFn({ on401: "returnNull" }),
   });
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setLoadDetailSections(true);
-    }, 150);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (usingMockData) {
-      setShowAccountRoster(true);
-      setShowOpenPositions(true);
-      setShowCopyGroupDetail(true);
-      setShowPositionSyncDetail(true);
-    }
-  }, [usingMockData]);
-
-  useEffect(() => {
-    if (!showPositionSyncDetail) {
-      setSelectedPositionSyncGroupId(null);
-    }
-  }, [showPositionSyncDetail]);
+  const { data: notificationsData } = useNotifications();
+  const {
+    rithmicReadinessReviewData,
+    rithmicReadinessReviewsByStoryKey,
+  } = useFollowUpReviewData(authData?.user?.id);
   const { data: tradeCopyStatusData } = useQuery<TradeCopyStatusResponse | null>({
     queryKey: authData?.user?.id ? ["/api/trade-copy/status", authData.user.id] : ["/api/trade-copy/status", "anonymous"],
     queryFn: async ({ queryKey }) => {
@@ -344,6 +344,33 @@ export default function Dashboard() {
     },
     enabled: !!authData?.user?.id && hasConnectedAccounts,
     refetchInterval: hasConnectedAccounts ? LIVE_QUERY_POLL_MS : false,
+    refetchIntervalInBackground: false,
+    staleTime: LIVE_QUERY_STALE_MS,
+  });
+  const { data: rithmicReadinessData } = useQuery<RithmicReadinessResponse[] | null>({
+    queryKey: authData?.user?.id
+      ? ["/api/accounts/rithmic-readiness", authData.user.id, rithmicAccounts.map((account) => account.id).join(",")]
+      : ["/api/accounts/rithmic-readiness", "anonymous"],
+    queryFn: async () => {
+      const responses = await Promise.all(
+        rithmicAccounts.map(async (account) => {
+          const res = await fetch(`/api/accounts/${account.id}/rithmic-readiness`, {
+            credentials: "include",
+          });
+
+          if (!res.ok) {
+            const text = (await res.text()) || res.statusText;
+            throw new Error(`${res.status}: ${text}`);
+          }
+
+          return res.json() as Promise<RithmicReadinessResponse>;
+        }),
+      );
+
+      return responses;
+    },
+    enabled: !!authData?.user?.id && hasRithmicAccounts,
+    refetchInterval: LIVE_QUERY_POLL_MS,
     refetchIntervalInBackground: false,
     staleTime: LIVE_QUERY_STALE_MS,
   });
@@ -401,70 +428,6 @@ export default function Dashboard() {
     refetchIntervalInBackground: false,
     staleTime: LIVE_QUERY_STALE_MS,
   });
-  const { data: positionSyncDetailData } = useQuery<PositionSyncOverviewResponse | null>({
-    queryKey: authData?.user?.id
-      ? ["/api/position-sync/plans", authData.user.id, selectedPositionSyncGroupId ?? "all"]
-      : ["/api/position-sync/plans", "anonymous", selectedPositionSyncGroupId ?? "all"],
-    queryFn: async ({ queryKey }) => {
-      const groupId = queryKey[2];
-      const url =
-        typeof groupId === "string" && groupId !== "all"
-          ? `/api/position-sync/plans?groupId=${encodeURIComponent(groupId)}`
-          : (queryKey[0] as string);
-      const res = await fetch(url, {
-        credentials: "include",
-      });
-
-      if (res.status === 401 || res.status === 404) {
-        return null;
-      }
-
-      if (!res.ok) {
-        const text = (await res.text()) || res.statusText;
-        throw new Error(`${res.status}: ${text}`);
-      }
-
-      return res.json();
-    },
-    enabled:
-      !!authData?.user?.id &&
-      hasConnectedAccounts &&
-      loadDetailSections &&
-      showPositionSyncDetail &&
-      !usingMockData,
-    refetchInterval: hasConnectedAccounts ? LIVE_QUERY_POLL_MS : false,
-    refetchIntervalInBackground: false,
-    staleTime: LIVE_QUERY_STALE_MS,
-  });
-  const { data: positionSyncWorkflowData } = useQuery<{
-    success: boolean;
-    reviews: PositionSyncWorkflowSaveInput[];
-  } | null>({
-    queryKey: authData?.user?.id ? ["/api/position-sync/reviews", authData.user.id] : ["/api/position-sync/reviews", "anonymous"],
-    queryFn: async ({ queryKey }) => {
-      const res = await fetch(queryKey[0] as string, {
-        credentials: "include",
-      });
-
-      if (res.status === 401 || res.status === 404) {
-        return null;
-      }
-
-      if (!res.ok) {
-        const text = (await res.text()) || res.statusText;
-        throw new Error(`${res.status}: ${text}`);
-      }
-
-      return res.json();
-    },
-    enabled:
-      !!authData?.user?.id &&
-      hasConnectedAccounts &&
-      loadDetailSections &&
-      showPositionSyncDetail &&
-      !usingMockData,
-    staleTime: LIVE_QUERY_STALE_MS,
-  });
   const copyGroupSnapshotData: CopyGroupSnapshotApiResponse | null = runtimeOverviewData?.copyGroups
     ? {
         success: true,
@@ -475,15 +438,11 @@ export default function Dashboard() {
     : null;
   const operationsOverviewData: OperationsOverviewResponse | null = runtimeOverviewData?.operationsOverview ?? null;
   const positionSyncOverview = runtimeOverviewData?.positionSyncOverview ?? null;
-  const positionSyncDetailOverview = positionSyncDetailData ?? positionSyncOverview;
   const dashboardSummary = runtimeOverviewData?.dashboardSummary ?? null;
   const accountBalanceMetricsById = buildAccountBalanceMetricsById(accountLiveMetricsData?.accounts ?? []);
   const accountRiskOverview = runtimeOverviewData?.accountRiskOverview;
   const accountRiskById = buildAccountRiskById(accountRiskOverview?.accounts ?? []);
   const positionMetricsById = buildAccountLiveMetricsById(positionSnapshotData?.accounts ?? []);
-  const positionSyncWorkflowState: PositionSyncWorkflowState = positionSyncWorkflowData?.reviews
-    ? toPositionSyncWorkflowState(positionSyncWorkflowData.reviews)
-    : {};
   const tradeAnalytics = runtimeOverviewData?.tradeAnalytics;
   const hydratedCopyGroups = copyGroupSnapshotData?.groups.map((group) => hydrateCopyGroup(group)) ?? [];
   const copyGroupFeed = copyGroupSnapshotData
@@ -511,7 +470,30 @@ export default function Dashboard() {
   };
   const breachedRiskCount = accountRiskOverview?.summary.breachedAccounts ?? 0;
   const warningRiskCount = accountRiskOverview?.summary.warningAccounts ?? 0;
-  const riskFollowUpItems = buildAccountRiskFollowUpQueue(accountRiskOverview?.accounts ?? []).slice(0, 4);
+  const {
+    riskFollowUpItems: sharedRiskFollowUpItems,
+    executionFollowUpItems,
+    visibleRithmicReadinessFollowUpItems,
+    rithmicReadinessFollowUpSummary,
+  } = useOperatorFollowUpData({
+    notifications: notificationsData?.notifications ?? [],
+    accountRiskAccounts: accountRiskOverview?.accounts ?? [],
+    executionRecovery: runtimeOverviewData?.tradeAnalytics.executionRecovery,
+    rithmicReadinessReviews: rithmicReadinessReviewData?.reviews ?? [],
+  });
+  const riskFollowUpItems = sharedRiskFollowUpItems.slice(0, 4);
+  const rithmicReadinessFollowUpItems = visibleRithmicReadinessFollowUpItems.slice(0, 4);
+  const {
+    reviewedCount: reviewedRithmicReadinessCount,
+    ownedCount: ownedRithmicReadinessCount,
+    unownedCount: unownedRithmicReadinessCount,
+    reassignedCount: reassignedRithmicReadinessCount,
+  } = rithmicReadinessFollowUpSummary;
+  const rithmicReadinessByAccountId = Object.fromEntries(
+    buildRithmicReadinessViewItems(
+      rithmicReadinessData?.map((response) => response.readiness) ?? [],
+    ).map((item) => [item.accountId, item]),
+  );
 
   const dashboardAccounts: DashboardAccountView[] = usingMockData
     ? mockAccounts
@@ -590,6 +572,20 @@ export default function Dashboard() {
     actionCounts: [],
     items: [],
   };
+  const tradeLoggerStats = runtimeOverviewData?.tradeLogger ?? {
+    pendingCount: 0,
+    maxPendingCount: 0,
+    totalQueued: 0,
+    totalFlushed: 0,
+    totalFlushes: 0,
+    totalFailedFlushes: 0,
+    lastSuccessfulBatchSize: undefined,
+    lastFlushDurationMs: undefined,
+    lastFlushedAt: undefined,
+    lastErrorAt: undefined,
+    lastErrorMessage: undefined,
+    isFlushing: false,
+  };
   const filledRate = tradeHistorySummary.total > 0
     ? Math.round((tradeHistorySummary.filled / tradeHistorySummary.total) * 100)
     : 0;
@@ -634,17 +630,27 @@ export default function Dashboard() {
       }
     : derivedCopyGroupOverview;
   const copyGroupPulse = describeCopyGroupPulse(copyGroupOverview);
-  const positionSyncPulse = describePositionSyncOverview(positionSyncOverview);
-  const positionSyncCards = buildPositionSyncSummaryCards(positionSyncOverview);
-  const positionSyncSummaryGroups = showPositionSyncDetail
-    ? sortPositionSyncGroups(positionSyncOverview?.groups ?? [])
-    : [];
-  const positionSyncPlanGroups = showPositionSyncDetail
-    ? sortPositionSyncGroups(positionSyncDetailOverview?.groups ?? [])
-    : [];
-  const positionSyncReviewGroups = showPositionSyncDetail
-    ? buildPositionSyncReview(positionSyncDetailOverview?.groups ?? []).slice(0, 2)
-    : [];
+  const {
+    positionSyncWorkflowState,
+    positionSyncPulse,
+    positionSyncCards,
+    positionSyncRepairBoardSummary,
+    positionSyncRepairSummary,
+    positionSyncRepairAttentionItems,
+    positionSyncSummaryGroups,
+    positionSyncPlanGroups,
+    positionSyncReviewGroups,
+  } = useDashboardPositionSyncData({
+    userId: authData?.user?.id,
+    enabled: !!authData?.user?.id && hasConnectedAccounts && loadDetailSections,
+    selectedGroupId: selectedPositionSyncGroupId,
+    showPositionSyncDetail,
+    usingMockData,
+    overview: positionSyncOverview,
+    staleTime: LIVE_QUERY_STALE_MS,
+    refetchInterval: hasConnectedAccounts ? LIVE_QUERY_POLL_MS : false,
+    refetchIntervalInBackground: false,
+  });
   const copyGroupAlerts = showCopyGroupDetail
     ? (
       operationsOverviewData
@@ -667,6 +673,24 @@ export default function Dashboard() {
         : filterCopyGroupActivityFeed(copyGroupFeed, "alerts").slice(0, 8)
     )
     : [];
+  const copyGroupRuntimeSummariesByGroupId = Object.fromEntries(
+    (copyGroupSnapshotData?.groups ?? []).map((group) => [
+      group.group.group.groupId,
+      group.runtimeSummary,
+    ]),
+  );
+  const copyGroupActivityByGroupId = Object.fromEntries(
+    (copyGroupSnapshotData?.groups ?? []).map((group) => [
+      group.group.group.groupId,
+      group.activityPreview,
+    ]),
+  );
+  const copyGroupRestartRecoveryItems = buildCopyGroupRestartRecoveryItems({
+    groups: hydratedCopyGroups,
+    runtimeSummariesByGroupId: copyGroupRuntimeSummariesByGroupId,
+    activityByGroupId: copyGroupActivityByGroupId,
+    limit: 3,
+  });
   const copyGroupFollowUpItems = hydratedCopyGroups
     .map((group, index) => ({
       groupId: group.groupId,
@@ -676,8 +700,8 @@ export default function Dashboard() {
     .filter((group) => group.runtimeSummary)
     .filter((group) =>
       group.runtimeSummary?.tone === "danger" ||
-      group.runtimeSummary?.tone === "warn" ||
-      group.runtimeSummary?.label === "Restored offline",
+      (group.runtimeSummary?.tone === "warn" &&
+        group.runtimeSummary?.label !== "Restored offline"),
     )
     .slice(0, 4);
   const totalUnrealizedPnl = dashboardSummary?.totalUnrealizedPnl
@@ -769,73 +793,28 @@ export default function Dashboard() {
     },
   });
 
-  const recheckExecutionRecoveryMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/runtime/dashboard-overview/recheck");
-      return response.json();
-    },
-    onSuccess: () => {
-      refreshDashboardRuntimeOverviewQuery();
-    },
+  const {
+    saveRithmicReadinessReviewsMutation,
+    saveExecutionFollowUpReviewsMutation,
+    recheckExecutionFollowUpItemMutation: recheckExecutionRecoveryItemMutation,
+    recheckRithmicReadinessMutation,
+  } = useFollowUpReviewActions({
+    userId: authData?.user?.id,
   });
-
-  const recheckExecutionRecoveryItemMutation = useMutation({
-    mutationFn: async (historyId: string) => {
-      const response = await apiRequest("POST", `/api/runtime/dashboard-overview/recheck/${historyId}`);
-      return response.json() as Promise<{
-        success: boolean;
-        historyId: string;
-        recoveryItem: { symbol: string; headline: string } | null;
-      }>;
-    },
-    onSuccess: () => {
-      refreshDashboardRuntimeOverviewQuery();
-    },
-  });
-
-  const reviewExecutionRecoveryItemMutation = useMutation({
-    mutationFn: async ({ historyId, note }: { historyId: string; note?: string }) => {
-      const response = await apiRequest("POST", `/api/runtime/dashboard-overview/review/${historyId}`, {
-        note,
-      });
-      return response.json() as Promise<{
-        success: boolean;
-        historyId: string;
-        recoveryItem: { symbol: string; headline: string; reviewStatus?: "pending" | "reviewed" } | null;
-      }>;
-    },
-    onSuccess: () => {
-      refreshDashboardRuntimeOverviewQuery();
-    },
-  });
-  const savePositionSyncWorkflowMutation = useMutation({
-    mutationFn: async (reviews: PositionSyncWorkflowSaveInput[]) => {
-      const response = await apiRequest("POST", "/api/position-sync/reviews", {
-        reviews,
-      });
-      return response.json() as Promise<{
-        success: boolean;
-        reviews: PositionSyncWorkflowSaveInput[];
-      }>;
-    },
-    onSuccess: (result, reviews) => {
-      queryClient.setQueryData(
-        authData?.user?.id ? ["/api/position-sync/reviews", authData.user.id] : ["/api/position-sync/reviews", "anonymous"],
-        result,
-      );
-
+  const { savePositionSyncWorkflowMutation } = usePositionSyncWorkflowActions({
+    userId: authData?.user?.id,
+    onSuccess: (_result, reviews) => {
       const savedFollowerCount = reviews.length;
       const hasReviewedEntry = reviews.some((review) => review.status === "reviewed");
       if (hasReviewedEntry) {
         setPositionSyncReviewNotes((current) => {
           const next = { ...current };
           for (const review of reviews) {
-            delete next[buildPositionSyncWorkflowKey(review.groupId, review.followerAccountId)];
+            delete next[`${review.groupId}:${review.followerAccountId}`];
           }
           return next;
         });
       }
-
       toast({
         title: hasReviewedEntry ? "Sync Review Saved" : "Simulated Sync Prepared",
         description: hasReviewedEntry
@@ -844,6 +823,214 @@ export default function Dashboard() {
       });
     },
   });
+  const {
+    positionSyncReviewNotes,
+    setPositionSyncReviewNotes,
+    handlePositionSyncReview,
+    handlePositionSyncSimulation,
+    handleRepairCandidateTakeOwnership,
+    handleRepairCandidateAdvance,
+  } = useDashboardPositionSyncWorkflow({
+    username: authData?.user?.username,
+    positionSyncWorkflowState,
+    positionSyncReviewGroups,
+    savePositionSyncWorkflowMutation,
+  });
+  const {
+    reviewNotes,
+    setReviewNotes,
+    recheckExecutionRecoveryMutation,
+    handleExecutionRecoveryRecheck,
+    handleExecutionRecoveryItemRecheck,
+    handleExecutionRecoveryItemReview,
+    handleExecutionRecoveryItemTakeOwnership,
+    handleExecutionRecoveryItemSaveNote,
+    handleExecutionRecoveryItemReopen,
+  } = useDashboardExecutionFollowUp({
+    username: authData?.user?.username,
+    refreshDashboardRuntimeOverview: refreshDashboardRuntimeOverviewQuery,
+    saveExecutionFollowUpReviewsMutation,
+    recheckExecutionRecoveryItemMutation: recheckExecutionRecoveryItemMutation,
+    onRecheckSuccess: () => {
+      toast({
+        title: "Recovery State Rechecked",
+        description: "Execution recovery was refreshed from the latest stored lifecycle activity.",
+      });
+    },
+    onRecheckError: (error) => {
+      toast({
+        title: "Recovery Recheck Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+    onItemRecheckSuccess: (result) => {
+      toast({
+        title: "Execution Rechecked",
+        description: result.recoveryItem
+          ? `${result.recoveryItem.symbol} is still flagged as ${result.recoveryItem.headline.toLowerCase()}.`
+          : "That execution is no longer showing as a recovery candidate.",
+      });
+    },
+    onItemRecheckError: (error) => {
+      toast({
+        title: "Execution Recheck Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+    onReviewSuccess: () => {
+      toast({
+        title: "Execution Reviewed",
+        description: "That recovery item is now marked as reviewed across your operator surfaces.",
+      });
+    },
+    onReviewError: (error) => {
+      toast({
+        title: "Review Update Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleRithmicReadinessTakeOwnership = (item: RithmicReadinessFollowUpItemView) => {
+    if (!authData?.user?.id) {
+      return;
+    }
+
+    const currentReview = rithmicReadinessReviewsByStoryKey.get(item.storyKey) ?? item.review;
+    const now = new Date().toISOString();
+    saveRithmicReadinessReviewsMutation.mutate([
+      buildRithmicReadinessReviewPayload({
+        storyKey: item.storyKey,
+        accountId: item.accountId,
+        currentReview,
+        operatorName: authData.user.username,
+        note: rithmicReadinessNotes[item.storyKey]?.trim() || currentReview?.note,
+        status: currentReview?.status ?? "pending",
+        assignmentReason: currentReview?.operatorName
+          ? "Reassigned Rithmic readiness ownership"
+          : "Claimed Rithmic readiness follow-up",
+        reviewedAt: now,
+      }),
+    ]);
+  };
+
+  const handleRithmicReadinessSaveNote = (item: RithmicReadinessFollowUpItemView) => {
+    if (!authData?.user?.id) {
+      return;
+    }
+
+    const currentReview = rithmicReadinessReviewsByStoryKey.get(item.storyKey) ?? item.review;
+    saveRithmicReadinessReviewsMutation.mutate([
+      buildRithmicReadinessReviewPayload({
+        storyKey: item.storyKey,
+        accountId: item.accountId,
+        currentReview,
+        operatorName: currentReview?.operatorName ?? authData.user.username,
+        note: rithmicReadinessNotes[item.storyKey]?.trim() || undefined,
+        status: currentReview?.status ?? "pending",
+      }),
+    ]);
+  };
+
+  const handleRithmicReadinessReview = (item: RithmicReadinessFollowUpItemView) => {
+    if (!authData?.user?.id) {
+      return;
+    }
+
+    const currentReview = rithmicReadinessReviewsByStoryKey.get(item.storyKey) ?? item.review;
+    const now = new Date().toISOString();
+    saveRithmicReadinessReviewsMutation.mutate([
+      buildRithmicReadinessReviewPayload({
+        storyKey: item.storyKey,
+        accountId: item.accountId,
+        currentReview,
+        operatorName: currentReview?.operatorName ?? authData.user.username,
+        note: rithmicReadinessNotes[item.storyKey]?.trim() || currentReview?.note,
+        status: "reviewed",
+        assignmentReason: "Reviewed Rithmic readiness alert",
+        reviewedAt: now,
+      }),
+    ]);
+  };
+
+  const handleRithmicReadinessReopen = (item: RithmicReadinessFollowUpItemView) => {
+    if (!authData?.user?.id) {
+      return;
+    }
+
+    const currentReview = rithmicReadinessReviewsByStoryKey.get(item.storyKey) ?? item.review;
+    const now = new Date().toISOString();
+    saveRithmicReadinessReviewsMutation.mutate([
+      buildRithmicReadinessReviewPayload({
+        storyKey: item.storyKey,
+        accountId: item.accountId,
+        currentReview,
+        operatorName: currentReview?.operatorName ?? authData.user.username,
+        note: rithmicReadinessNotes[item.storyKey]?.trim() || currentReview?.note,
+        status: "pending",
+        assignmentReason: "Reopened Rithmic readiness alert",
+        reviewedAt: now,
+      }),
+    ]);
+  };
+
+  const handleRithmicReadinessRecheck = async (item: RithmicReadinessFollowUpItemView) => {
+    try {
+      const result = await recheckRithmicReadinessMutation.mutateAsync(item.accountId);
+      toast({
+        title: "Rithmic Readiness Rechecked",
+        description: result.readiness.ready
+          ? `${result.readiness.accountName} is ready after the latest saved-account check.`
+          : `${result.readiness.accountName} refreshed. ${result.readiness.blockers[0] ?? "Reconnect proof still needs follow-up."}`,
+      });
+    } catch (error) {
+      toast({
+        title: "Rithmic Re-check Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRithmicReadinessRecheckAll = async () => {
+    if (rithmicReadinessFollowUpItems.length === 0) {
+      return;
+    }
+
+    setIsRecheckingAllRithmicReadiness(true);
+
+    let readyCount = 0;
+    let blockedCount = 0;
+
+    try {
+      for (const item of rithmicReadinessFollowUpItems) {
+        const result = await recheckRithmicReadinessMutation.mutateAsync(item.accountId);
+        if (result.readiness.ready) {
+          readyCount += 1;
+        } else {
+          blockedCount += 1;
+        }
+      }
+
+      toast({
+        title: "Rithmic Readiness Batch Rechecked",
+        description: blockedCount === 0
+          ? `${readyCount} saved Rithmic account${readyCount === 1 ? "" : "s"} refreshed and ready for the next restart check.`
+          : `${readyCount} ready, ${blockedCount} still need follow-up after the latest saved-account refresh.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Rithmic Batch Re-check Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRecheckingAllRithmicReadiness(false);
+    }
+  };
 
   const handleConnect = async (accountId: string) => {
     const account = accounts.find((item) => item.id === accountId);
@@ -865,108 +1052,6 @@ export default function Dashboard() {
 
   const handleDisconnectClick = (accountId: string, accountName: string) => {
     setDisconnectAlert({ open: true, accountId, accountName });
-  };
-
-  const handleExecutionRecoveryRecheck = async () => {
-    try {
-      await recheckExecutionRecoveryMutation.mutateAsync();
-      toast({
-        title: "Recovery State Rechecked",
-        description: "Execution recovery was refreshed from the latest stored lifecycle activity.",
-      });
-    } catch (error) {
-      toast({
-        title: "Recovery Recheck Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleExecutionRecoveryItemRecheck = async (historyId: string) => {
-    try {
-      const result = await recheckExecutionRecoveryItemMutation.mutateAsync(historyId);
-      toast({
-        title: "Execution Rechecked",
-        description: result.recoveryItem
-          ? `${result.recoveryItem.symbol} is still flagged as ${result.recoveryItem.headline.toLowerCase()}.`
-          : "That execution is no longer showing as a recovery candidate.",
-      });
-    } catch (error) {
-      toast({
-        title: "Execution Recheck Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleExecutionRecoveryItemReview = async (historyId: string) => {
-    try {
-      const note = reviewNotes[historyId]?.trim();
-      const result = await reviewExecutionRecoveryItemMutation.mutateAsync({
-        historyId,
-        note: note && note.length > 0 ? note : undefined,
-      });
-      setReviewNotes((current) => {
-        const next = { ...current };
-        delete next[historyId];
-        return next;
-      });
-      toast({
-        title: "Failure Reviewed",
-        description: result.recoveryItem?.reviewStatus === "reviewed"
-          ? "That recovery item is now marked as reviewed."
-          : "The recovery item was refreshed after review.",
-      });
-    } catch (error) {
-      toast({
-        title: "Review Update Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handlePositionSyncReview = (groupId: string, followerAccountId: string) => {
-    const workflowKey = buildPositionSyncWorkflowKey(groupId, followerAccountId);
-    const trimmedNote = positionSyncReviewNotes[workflowKey]?.trim();
-    const reviewedAt = new Date().toISOString();
-
-    savePositionSyncWorkflowMutation.mutate([
-      {
-        groupId,
-        followerAccountId,
-        status: "reviewed",
-        note: trimmedNote && trimmedNote.length > 0 ? trimmedNote : undefined,
-        reviewedAt,
-        simulatedAt: positionSyncWorkflowState[workflowKey]?.simulatedAt,
-      },
-    ]);
-  };
-
-  const handlePositionSyncSimulation = (groupId: string) => {
-    const reviewGroup = positionSyncReviewGroups.find((group) => group.groupId === groupId);
-    if (!reviewGroup) {
-      return;
-    }
-
-    const simulatedAt = new Date().toISOString();
-
-    savePositionSyncWorkflowMutation.mutate(
-      reviewGroup.followers.map((follower) => {
-        const workflowKey = buildPositionSyncWorkflowKey(groupId, follower.followerAccountId);
-
-        return {
-          groupId,
-          followerAccountId: follower.followerAccountId,
-          status: "simulated" as const,
-          note: positionSyncReviewNotes[workflowKey]?.trim() || positionSyncWorkflowState[workflowKey]?.note,
-          reviewedAt: positionSyncWorkflowState[workflowKey]?.reviewedAt,
-          simulatedAt,
-        };
-      }),
-    );
   };
 
   const handleDisconnectConfirm = async () => {
@@ -1315,6 +1400,59 @@ export default function Dashboard() {
                 ))}
               </div>
 
+              <div className="mt-4 rounded-2xl border border-white/8 bg-black/10 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Trade Logger</p>
+                    <p className="mt-2 text-sm font-semibold text-white">
+                      {tradeLoggerStats.totalFailedFlushes > 0
+                        ? "Recent logger retries need review."
+                        : tradeLoggerStats.isFlushing
+                          ? "Lifecycle records are flushing now."
+                          : tradeLoggerStats.pendingCount > 0
+                            ? "Queued lifecycle records are waiting for the next flush."
+                            : "Lifecycle logging is keeping up with the queue."}
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {tradeLoggerStats.lastErrorMessage
+                        ? tradeLoggerStats.lastErrorMessage
+                        : tradeLoggerStats.lastSuccessfulBatchSize
+                          ? `Last successful batch: ${tradeLoggerStats.lastSuccessfulBatchSize} records${tradeLoggerStats.lastFlushDurationMs !== undefined ? ` in ${tradeLoggerStats.lastFlushDurationMs} ms` : ""}.`
+                          : "The runtime logger will show queue pressure and retry health here."}
+                    </p>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={
+                      tradeLoggerStats.totalFailedFlushes > 0
+                        ? "border-red-400/30 bg-red-400/10 text-red-200"
+                        : tradeLoggerStats.isFlushing
+                          ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-100"
+                          : "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
+                    }
+                  >
+                    {tradeLoggerStats.totalFailedFlushes > 0
+                      ? "Retrying"
+                      : tradeLoggerStats.isFlushing
+                        ? "Flushing"
+                        : "Clear"}
+                  </Badge>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  {[
+                    { label: "Queued records", value: tradeLoggerStats.pendingCount },
+                    { label: "Peak queue", value: tradeLoggerStats.maxPendingCount },
+                    { label: "Failed flushes", value: tradeLoggerStats.totalFailedFlushes },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
+                      <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">{item.label}</p>
+                      <p className="mt-2 text-xl font-semibold text-white">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <p className="mt-3 text-xs text-zinc-500">
                 Stale executions are orders that have been in flight for more than {executionRecovery.staleThresholdMinutes} minutes.
               </p>
@@ -1362,100 +1500,21 @@ export default function Dashboard() {
                 ) : null}
               </div>
 
-              {executionRecovery.items.length > 0 ? (
-                <div className="mt-4 grid gap-3 xl:grid-cols-2">
-                  {executionRecovery.items.map((item) => (
-                    <div key={item.historyId} className="rounded-2xl border border-white/8 bg-black/10 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-white">{item.symbol}</p>
-                          <p className="mt-1 text-xs text-zinc-400">{item.followerAccountId}</p>
-                        </div>
-                        <Badge
-                          variant="outline"
-                          className={
-                            item.category === "failed"
-                              ? "border-red-400/30 bg-red-400/10 text-red-200"
-                              : item.category === "stale"
-                                ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
-                                : item.category === "partial"
-                                  ? "border-sky-400/30 bg-sky-400/10 text-sky-200"
-                                  : "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
-                          }
-                        >
-                          {item.headline}
-                        </Badge>
-                      </div>
-                      <p className="mt-3 text-sm text-zinc-300">{item.detail}</p>
-                      {item.category === "failed" && item.reviewStatus !== "reviewed" ? (
-                        <div className="mt-3">
-                          <Textarea
-                            value={reviewNotes[item.historyId] ?? ""}
-                            onChange={(event) =>
-                              setReviewNotes((current) => ({
-                                ...current,
-                                [item.historyId]: event.target.value,
-                              }))
-                            }
-                            placeholder="Add a short review note before marking this failure reviewed"
-                            className="min-h-[88px] border-white/10 bg-white/[0.03] text-sm text-zinc-100 placeholder:text-zinc-500"
-                          />
-                        </div>
-                      ) : null}
-                      <div className="mt-3 inline-flex rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs font-medium text-zinc-300">
-                        {item.recommendedActionLabel}
-                      </div>
-                      {item.reviewStatus === "reviewed" ? (
-                        <div className="mt-2 space-y-1">
-                          <p className="text-xs text-emerald-300">
-                          Reviewed{item.reviewedAt ? ` at ${new Date(item.reviewedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}.
-                          </p>
-                          {item.reviewNote ? (
-                            <p className="text-xs text-zinc-400">{item.reviewNote}</p>
-                          ) : null}
-                        </div>
-                      ) : null}
-                      <div className="mt-3">
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="border-white/10 bg-white/[0.03] text-zinc-200 hover:bg-white/[0.08]"
-                            onClick={() => handleExecutionRecoveryItemRecheck(item.historyId)}
-                            disabled={recheckExecutionRecoveryItemMutation.isPending}
-                          >
-                            {recheckExecutionRecoveryItemMutation.isPending &&
-                            recheckExecutionRecoveryItemMutation.variables === item.historyId
-                              ? "Rechecking item..."
-                              : "Recheck This Execution"}
-                          </Button>
-                          {item.category === "failed" ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="border-emerald-400/20 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"
-                              onClick={() => handleExecutionRecoveryItemReview(item.historyId)}
-                              disabled={reviewExecutionRecoveryItemMutation.isPending || item.reviewStatus === "reviewed"}
-                            >
-                              {reviewExecutionRecoveryItemMutation.isPending &&
-                              reviewExecutionRecoveryItemMutation.variables?.historyId === item.historyId
-                                ? "Saving review..."
-                                : item.reviewStatus === "reviewed"
-                                  ? "Reviewed"
-                                  : "Mark Reviewed"}
-                            </Button>
-                          ) : null}
-                        </div>
-                      </div>
-                      <p className="mt-2 text-xs uppercase tracking-[0.18em] text-zinc-500">
-                        {item.lifecycleStatus.replaceAll("_", " ")} | {item.ageMinutes}m ago
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
+              <DashboardExecutionFollowUpGrid
+                authUsername={authData?.user?.username}
+                executionFollowUpItems={executionFollowUpItems}
+                executionRecovery={executionRecovery}
+                reviewNotes={reviewNotes}
+                setReviewNotes={setReviewNotes}
+                isSavingReview={saveExecutionFollowUpReviewsMutation.isPending}
+                isRecheckingItem={recheckExecutionRecoveryItemMutation.isPending}
+                recheckingHistoryId={recheckExecutionRecoveryItemMutation.variables}
+                onTakeOwnership={handleExecutionRecoveryItemTakeOwnership}
+                onSaveNote={handleExecutionRecoveryItemSaveNote}
+                onRecheck={handleExecutionRecoveryItemRecheck}
+                onReview={handleExecutionRecoveryItemReview}
+                onReopen={handleExecutionRecoveryItemReopen}
+              />
             </div>
 
             <div className="mt-4 grid gap-3 xl:grid-cols-3">
@@ -1513,307 +1572,51 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        <Card className="border-white/10 bg-[linear-gradient(180deg,rgba(10,12,18,0.98),rgba(8,11,16,0.98))] p-5 shadow-xl shadow-black/25">
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Signal Matrix</p>
-              <h2 className="mt-2 text-2xl font-semibold text-white">Connection and routing health</h2>
-            </div>
-            <Cpu className="h-5 w-5 text-zinc-500" />
-          </div>
-
-          <div className="space-y-3">
-              {matrixRows.map((row) => (
-              <div key={row.label} className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-4">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">{row.label}</p>
-                  <p className="mt-1 text-sm text-zinc-300">{row.value}</p>
-                </div>
-                <div
-                  className={`rounded-full px-3 py-1 text-xs font-medium ${
-                    row.state === "ok"
-                      ? "bg-emerald-400/10 text-emerald-300"
-                      : row.state === "alert"
-                        ? "bg-red-400/10 text-red-300"
-                        : row.state === "watch"
-                          ? "bg-amber-400/10 text-amber-300"
-                          : "bg-white/[0.06] text-zinc-300"
-                  }`}
-                >
-                  {row.state === "ok"
-                    ? "OK"
-                    : row.state === "alert"
-                      ? "Alert"
-                      : row.state === "watch"
-                        ? "Watch"
-                        : "Not started"}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {riskFollowUpItems.length > 0 && (
-            <div className="mt-5 space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Risk Follow-Up</p>
-                  <p className="mt-1 text-sm text-zinc-400">
-                    Accounts that need a manual risk decision before the next copy session.
-                  </p>
-                </div>
-                <ShieldCheck className="h-4 w-4 text-zinc-500" />
-              </div>
-
-              {riskFollowUpItems.map((item) => (
-                <div
-                  key={item.accountId}
-                  className={`rounded-2xl border p-4 ${
-                    item.tone === "danger"
-                      ? "border-red-500/20 bg-red-500/10"
-                      : item.tone === "warn"
-                        ? "border-amber-500/20 bg-amber-500/10"
-                        : "border-white/10 bg-white/[0.04]"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-white">{item.accountName}</p>
-                      <p className="mt-1 text-xs text-zinc-300">{item.headline}</p>
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={
-                        item.tone === "danger"
-                          ? "border-red-400/20 bg-red-400/10 text-red-300"
-                          : item.tone === "warn"
-                            ? "border-amber-400/20 bg-amber-400/10 text-amber-300"
-                            : "border-white/10 bg-white/[0.04] text-zinc-300"
-                      }
-                    >
-                      {item.status === "BREACHED"
-                        ? "Hold"
-                        : item.status === "WARN"
-                          ? "Review"
-                          : "Pending"}
-                    </Badge>
-                  </div>
-                  <p className="mt-3 text-sm text-zinc-300">{item.detail}</p>
-                  <p className="mt-2 text-xs text-zinc-500">{item.recommendedAction}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="mt-5 rounded-[24px] border border-white/8 bg-gradient-to-br from-cyan-400/10 via-transparent to-emerald-400/10 p-5">
-            <div className="flex items-center gap-3">
-              <div className="rounded-2xl bg-white/10 p-3">
-                <Sparkles className="h-5 w-5 text-cyan-300" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-white">Why this revamp is different</p>
-                <p className="mt-1 text-sm leading-6 text-zinc-400">
-                  The layout now behaves more like a high-end operations board instead of a generic analytics dashboard.
-                </p>
-                {!usingMockData && followerHealthRows.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {followerHealthRows.slice(0, 3).map((follower) => (
-                      <Badge
-                        key={follower.accountId}
-                        variant="outline"
-                        className={
-                          follower.health === "unavailable"
-                            ? "border-red-400/30 bg-red-400/10 text-red-300"
-                            : "border-amber-400/30 bg-amber-400/10 text-amber-300"
-                        }
-                      >
-                        {follower.name}: {follower.health === "unavailable" ? "Needs attention" : "Reconnecting"}
-                      </Badge>
-                    ))}
-                    {followerHealthRows.length > 3 && (
-                      <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-zinc-300">
-                        +{followerHealthRows.length - 3} more
-                      </Badge>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </Card>
+        <section className="space-y-5">
+          <DashboardSignalMatrixPanel
+            matrixRows={matrixRows}
+            riskFollowUpItems={riskFollowUpItems}
+            usingMockData={usingMockData}
+            followerHealthRows={followerHealthRows}
+          />
+          <DashboardRithmicReadinessPanel
+            authUsername={authData?.user?.username}
+            hasRithmicAccounts={hasRithmicAccounts}
+            rithmicReadinessItems={rithmicReadinessFollowUpItems}
+            readinessByAccountId={rithmicReadinessByAccountId}
+            reviewedRithmicReadinessCount={reviewedRithmicReadinessCount}
+            ownedRithmicReadinessCount={ownedRithmicReadinessCount}
+            unownedRithmicReadinessCount={unownedRithmicReadinessCount}
+            reassignedRithmicReadinessCount={reassignedRithmicReadinessCount}
+            rithmicReadinessNotes={rithmicReadinessNotes}
+            setRithmicReadinessNotes={setRithmicReadinessNotes}
+            isSavingReview={saveRithmicReadinessReviewsMutation.isPending}
+            isRecheckingAll={isRecheckingAllRithmicReadiness}
+            isRecheckingItem={recheckRithmicReadinessMutation.isPending || isRecheckingAllRithmicReadiness}
+            recheckingAccountId={recheckRithmicReadinessMutation.variables}
+            onRecheckAll={handleRithmicReadinessRecheckAll}
+            onTakeOwnership={handleRithmicReadinessTakeOwnership}
+            onSaveNote={handleRithmicReadinessSaveNote}
+            onRecheck={handleRithmicReadinessRecheck}
+            onReview={handleRithmicReadinessReview}
+            onReopen={handleRithmicReadinessReopen}
+          />
+        </section>
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-        <section className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Account Roster</p>
-              <h2 className="mt-2 text-2xl font-semibold text-white">
-                {usingMockData ? "Mock account command cards" : "Live account command cards"}
-              </h2>
-            </div>
-            <div className="flex items-center gap-2">
-              {!usingMockData && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-white/10 bg-white/[0.04] text-zinc-300"
-                  onClick={() => setShowAccountRoster((current) => !current)}
-                >
-                  {showAccountRoster ? "Hide roster" : "Load roster"}
-                </Button>
-              )}
-              <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-zinc-300">
-                {usingMockData ? "UI preview data" : "live data"}
-              </Badge>
-            </div>
-          </div>
-
-          {!usingMockData && !showAccountRoster ? (
-            <Card className="border-dashed border-white/10 bg-white/[0.03] p-6 text-sm text-zinc-400">
-              Load the account roster when you want detailed balance, P&amp;L, and per-account controls.
-            </Card>
-          ) : (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {dashboardAccounts.map((account) => {
-              const isPositive = account.dailyPnl >= 0;
-              const isUnrealizedPositive = account.unrealizedPnl >= 0;
-
-              return (
-                <Card
-                  key={account.id}
-                  className={`relative overflow-hidden border-white/10 bg-[linear-gradient(180deg,rgba(10,12,18,0.98),rgba(8,10,16,0.98))] p-5 shadow-xl shadow-black/25`}
-                >
-                  <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${getBackgroundGlow(account.dailyPnl)} opacity-100`} />
-                  <div className="relative space-y-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-lg font-semibold text-white">{account.name}</h3>
-                          <Badge variant="outline" className="border-white/10 bg-white/[0.05] text-zinc-300 capitalize">
-                            {account.accountType}
-                          </Badge>
-                          {account.riskMode && (
-                            <Badge variant="outline" className="border-cyan-400/20 bg-cyan-400/10 text-cyan-300 capitalize">
-                              {account.riskMode}
-                            </Badge>
-                          )}
-                          {account.riskStatusLabel && (
-                            <Badge
-                              variant="outline"
-                              className={
-                                account.riskStatusTone === "ok"
-                                  ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
-                                  : account.riskStatusTone === "warn"
-                                    ? "border-amber-400/20 bg-amber-400/10 text-amber-300"
-                                    : account.riskStatusTone === "danger"
-                                      ? "border-red-400/20 bg-red-400/10 text-red-300"
-                                      : "border-white/10 bg-white/[0.04] text-zinc-300"
-                              }
-                            >
-                              {account.riskStatusLabel}
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="mt-2 text-sm text-zinc-500">
-                          {account.platform} • {account.accountId}
-                        </p>
-                      </div>
-
-                      <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-zinc-300">
-                        <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${account.isConnected ? "bg-emerald-400" : "bg-rose-400"}`} />
-                        {account.isConnected ? "Connected" : "Not connected"}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-                        <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Balance</p>
-                        <p className="mt-2 text-xl font-semibold text-white">{formatCurrency(account.balance)}</p>
-                      </div>
-                      <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-                        <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Open Positions</p>
-                        <p className="mt-2 text-xl font-semibold text-white">{account.openPositions}</p>
-                      </div>
-                      <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-                        <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Daily P&amp;L</p>
-                        <p className={`mt-2 text-xl font-semibold ${isPositive ? "text-emerald-300" : "text-rose-300"}`}>
-                          {account.dailyPnl >= 0 ? "+" : "-"}
-                          {formatCurrency(Math.abs(account.dailyPnl))}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-                        <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Unrealized</p>
-                        <p className={`mt-2 text-xl font-semibold ${isUnrealizedPositive ? "text-cyan-300" : "text-rose-300"}`}>
-                          {account.unrealizedPnl >= 0 ? "+" : "-"}
-                          {formatCurrency(Math.abs(account.unrealizedPnl))}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {account.positionScaling !== undefined && (
-                        <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-zinc-300">
-                          scaling {account.positionScaling}%
-                        </Badge>
-                      )}
-                      {account.maxContracts !== undefined && (
-                        <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-zinc-300">
-                          max {account.maxContracts} contracts
-                        </Badge>
-                      )}
-                      {account.blockedTickers && account.blockedTickers.length > 0 && (
-                        <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-zinc-300">
-                          {account.blockedTickers.length} blocked
-                        </Badge>
-                      )}
-                    </div>
-
-                    {!usingMockData && (
-                      <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                        <Button
-                          size="sm"
-                          className="border-emerald-400/20 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20"
-                          onClick={() => handleConnect(account.id)}
-                          disabled={account.isConnected}
-                        >
-                          Connect
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="border-white/10 bg-white/[0.04] text-zinc-300"
-                          onClick={() => handleDisconnectClick(account.id, account.name)}
-                          disabled={!account.isConnected}
-                        >
-                          Disconnect
-                        </Button>
-                        {account.accountType === "follower" ? (
-                          <ConfigureAccountDialog
-                            accountId={account.id}
-                            accountName={account.name}
-                            riskMode={account.riskMode || "global"}
-                            positionScaling={account.positionScaling || 100}
-                            maxContracts={account.maxContracts || undefined}
-                            blockedTickers={account.blockedTickers || []}
-                            globalSettings={globalRiskSettings}
-                            onSave={() => handleConfigure(account.id)}
-                          >
-                            <Button size="sm" variant="outline" className="border-white/10 bg-white/[0.04] text-zinc-300">
-                              Configure
-                            </Button>
-                          </ConfigureAccountDialog>
-                        ) : (
-                          <div className="hidden md:block" />
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-          )}
-        </section>
+        <DashboardAccountRosterPanel
+          usingMockData={usingMockData}
+          showAccountRoster={showAccountRoster}
+          dashboardAccounts={dashboardAccounts}
+          globalRiskSettings={globalRiskSettings}
+          formatCurrency={formatCurrency}
+          getBackgroundGlow={getBackgroundGlow}
+          onToggleRoster={() => setShowAccountRoster((current) => !current)}
+          onConnect={handleConnect}
+          onDisconnect={handleDisconnectClick}
+          onConfigure={handleConfigure}
+        />
 
         <section className="space-y-4">
           <Card className="border-white/10 bg-[linear-gradient(180deg,rgba(10,12,18,0.98),rgba(8,10,16,0.98))] p-5 shadow-xl shadow-black/25">
@@ -1914,9 +1717,47 @@ export default function Dashboard() {
                     : `${copyGroupOverview.avgDispatchLatencyMs.toFixed(1)} ms`}
                 </p>
               </div>
+              <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Restart recoveries</p>
+                <p className="mt-2 text-xl font-semibold text-emerald-300">
+                  {copyGroupRestartRecoveryItems.length}
+                </p>
+              </div>
             </div>
 
             <div className="mt-4 space-y-3">
+              {copyGroupRestartRecoveryItems.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Restart Recovery</p>
+                  <p className="text-xs text-zinc-400">
+                    Groups restored into a safe offline state after recent reload recovery.
+                  </p>
+                  {copyGroupRestartRecoveryItems.map((item) => (
+                    <div
+                      key={item.groupId}
+                      className={`rounded-2xl border p-3 ${
+                        item.tone === "ok"
+                          ? "border-emerald-500/20 bg-emerald-500/10"
+                          : "border-amber-500/20 bg-amber-500/10"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">{item.groupName}</p>
+                          <p className="mt-1 text-xs text-zinc-300">{item.label}</p>
+                        </div>
+                        {item.updatedLabel && (
+                          <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+                            {item.updatedLabel}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-2 text-sm text-zinc-300">{item.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {copyGroupFollowUpItems.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Operator Follow-Up</p>
@@ -1976,375 +1817,33 @@ export default function Dashboard() {
             </div>
           </Card>
 
-          <Card className="border-white/10 bg-[linear-gradient(180deg,rgba(10,12,18,0.98),rgba(8,10,16,0.98))] p-5 shadow-xl shadow-black/25">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Position Sync</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">{positionSyncPulse.headline}</h2>
-                <p className="mt-2 text-sm text-zinc-400">{positionSyncPulse.detail}</p>
-              </div>
-              <Gauge className="h-5 w-5 text-zinc-500" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              {positionSyncCards.map((card) => (
-                <div key={card.label} className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">{card.label}</p>
-                  <p
-                    className={`mt-2 text-xl font-semibold ${
-                      card.tone === "danger"
-                        ? "text-red-300"
-                        : card.tone === "warn"
-                          ? "text-amber-300"
-                          : card.tone === "ok"
-                            ? "text-emerald-300"
-                            : "text-zinc-200"
-                    }`}
-                  >
-                    {card.value}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <div className="flex justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="border-white/10 bg-white/[0.03] text-xs text-zinc-200 hover:bg-white/[0.08]"
-                  onClick={() => setShowPositionSyncDetail((current) => !current)}
-                >
-                  {showPositionSyncDetail ? "Hide sync detail" : "Load sync detail"}
-                </Button>
-              </div>
-
-              {showPositionSyncDetail ? (
-                <>
-                  <div className="space-y-3">
-                    {!usingMockData && positionSyncSummaryGroups.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {positionSyncSummaryGroups.slice(0, 4).map((group) => (
-                          <Button
-                            key={group.groupId}
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className={
-                              selectedPositionSyncGroupId === group.groupId
-                                ? "border-cyan-400/40 bg-cyan-400/10 text-cyan-200"
-                                : "border-white/10 bg-white/[0.03] text-zinc-300"
-                            }
-                            onClick={() => setSelectedPositionSyncGroupId(group.groupId)}
-                          >
-                            {group.groupName}
-                          </Button>
-                        ))}
-                        {selectedPositionSyncGroupId && positionSyncSummaryGroups.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-zinc-400 hover:text-zinc-200"
-                            onClick={() => setSelectedPositionSyncGroupId(null)}
-                          >
-                            Show all groups
-                          </Button>
-                        )}
-                      </div>
-                    )}
-
-                    {positionSyncSummaryGroups.length === 0 ? (
-                      <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4 text-sm text-zinc-400">
-                        Position alignment will appear here after copy groups and live snapshots are available.
-                      </div>
-                    ) : (
-                      positionSyncSummaryGroups.slice(0, 3).map((group) => (
-                        <div key={group.groupId} className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-white">{group.groupName}</p>
-                              <p className="mt-1 text-sm text-zinc-400">{group.summary}</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {!usingMockData && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-zinc-400 hover:text-zinc-200"
-                                  onClick={() => setSelectedPositionSyncGroupId(group.groupId)}
-                                >
-                                  Inspect plan
-                                </Button>
-                              )}
-                              <Badge
-                                variant="outline"
-                                className={
-                                  group.status === "OUT_OF_SYNC"
-                                    ? "border-red-400/30 bg-red-400/10 text-red-300"
-                                    : group.status === "UNAVAILABLE"
-                                      ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
-                                      : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-                                }
-                              >
-                                {group.status === "OUT_OF_SYNC"
-                                  ? "Adjustments needed"
-                                  : group.status === "UNAVAILABLE"
-                                    ? "Waiting on positions"
-                                    : "In sync"}
-                              </Badge>
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  {!usingMockData && positionSyncPlanGroups.length > 0 && (
-                    <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4 text-sm text-zinc-300">
-                      {selectedPositionSyncGroupId
-                        ? "Focused plan view is showing one copy group at a time."
-                        : "Review is showing all copy groups with live sync plans."}
-                    </div>
-                  )}
-
-                  {positionSyncReviewGroups.length > 0 && (
-                    <div className="grid grid-cols-1 gap-3">
-                      {positionSyncReviewGroups.map((group) => (
-                        <div key={group.groupId} className="rounded-2xl border border-white/8 bg-black/10 p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-white">{group.groupName}</p>
-                              <p className="mt-1 text-xs text-zinc-500">Master: {group.masterAccountName}</p>
-                              <p className="mt-2 text-sm text-zinc-400">{group.summary}</p>
-                            </div>
-                            <Badge
-                              variant="outline"
-                              className={
-                                group.status === "OUT_OF_SYNC"
-                                  ? "border-red-400/30 bg-red-400/10 text-red-300"
-                                  : "border-amber-400/30 bg-amber-400/10 text-amber-300"
-                              }
-                            >
-                              {group.status === "OUT_OF_SYNC" ? "Review plan" : "Waiting"}
-                            </Badge>
-                          </div>
-
-                          {!usingMockData && (
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="border-cyan-400/20 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/15"
-                                onClick={() => handlePositionSyncSimulation(group.groupId)}
-                              >
-                                Simulate sync
-                              </Button>
-                              <p className="text-xs text-zinc-500">
-                                Simulation markers are shared across signed-in sessions and do not send broker orders.
-                              </p>
-                            </div>
-                          )}
-
-                          <div className="mt-3 space-y-3">
-                            {group.followers.slice(0, 2).map((follower) => {
-                              const workflowKey = buildPositionSyncWorkflowKey(group.groupId, follower.followerAccountId);
-                              const workflowEntry = positionSyncWorkflowState[workflowKey];
-
-                              return (
-                                <div key={follower.followerAccountId} className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <p className="text-sm font-medium text-white">{follower.followerName}</p>
-                                    <p className="mt-1 text-xs text-zinc-400">{follower.summary}</p>
-                                  </div>
-                                  <div className="flex flex-wrap items-center justify-end gap-2">
-                                    {workflowEntry?.status === "reviewed" && (
-                                      <Badge
-                                        variant="outline"
-                                        className="border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-                                      >
-                                        Reviewed
-                                      </Badge>
-                                    )}
-                                    {workflowEntry?.status === "approved" && (
-                                      <Badge
-                                        variant="outline"
-                                        className="border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
-                                      >
-                                        Approved
-                                      </Badge>
-                                    )}
-                                    {workflowEntry?.status === "handed_off" && (
-                                      <Badge
-                                        variant="outline"
-                                        className="border-amber-400/30 bg-amber-400/10 text-amber-100"
-                                      >
-                                        Handed Off
-                                      </Badge>
-                                    )}
-                                    {workflowEntry?.status === "completed_manually" && (
-                                      <Badge
-                                        variant="outline"
-                                        className="border-emerald-400/30 bg-emerald-400/15 text-emerald-100"
-                                      >
-                                        Completed Manually
-                                      </Badge>
-                                    )}
-                                    {workflowEntry?.status === "simulated" && (
-                                      <Badge
-                                        variant="outline"
-                                        className="border-cyan-400/30 bg-cyan-400/10 text-cyan-200"
-                                      >
-                                        Simulated
-                                      </Badge>
-                                    )}
-                                    <Badge
-                                      variant="outline"
-                                      className={
-                                        follower.status === "OUT_OF_SYNC"
-                                          ? "border-red-400/30 bg-red-400/10 text-red-300"
-                                          : "border-amber-400/30 bg-amber-400/10 text-amber-300"
-                                      }
-                                    >
-                                      {follower.status === "OUT_OF_SYNC"
-                                        ? `${follower.adjustmentCount} adjustment${follower.adjustmentCount === 1 ? "" : "s"}`
-                                        : "Waiting"}
-                                    </Badge>
-                                  </div>
-                                </div>
-
-                                {follower.adjustments.length > 0 && (
-                                  <div className="mt-3 space-y-2">
-                                    {follower.adjustments.slice(0, 2).map((adjustment) => (
-                                      <div
-                                        key={`${follower.followerAccountId}-${adjustment.symbol}-${adjustment.actionLabel}`}
-                                        className="rounded-lg border border-white/8 bg-black/10 px-3 py-2"
-                                      >
-                                        <div className="flex items-center justify-between gap-3">
-                                          <span className="text-xs font-semibold text-white">{adjustment.symbol}</span>
-                                          <span className="text-xs text-red-300">{adjustment.actionLabel}</span>
-                                        </div>
-                                        <p className="mt-1 text-xs text-zinc-400">{adjustment.detail}</p>
-                                      </div>
-                                    ))}
-                                    {follower.adjustments.length > 2 && (
-                                      <p className="text-xs text-zinc-500">
-                                        +{follower.adjustments.length - 2} more planned adjustment{follower.adjustments.length - 2 === 1 ? "" : "s"}.
-                                      </p>
-                                    )}
-                                  </div>
-                                )}
-
-                                {!usingMockData && (
-                                  <div className="mt-3 space-y-3 rounded-xl border border-white/8 bg-black/10 p-3">
-                                    <Textarea
-                                      value={positionSyncReviewNotes[workflowKey] ?? workflowEntry?.note ?? ""}
-                                      onChange={(event) =>
-                                        setPositionSyncReviewNotes((current) => ({
-                                          ...current,
-                                          [workflowKey]: event.target.value,
-                                        }))}
-                                      placeholder="Add an operator note for this sync plan"
-                                      className="min-h-[88px] border-white/10 bg-white/[0.03] text-sm text-zinc-100 placeholder:text-zinc-500"
-                                    />
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        className="bg-white text-black hover:bg-zinc-200"
-                                        onClick={() => handlePositionSyncReview(group.groupId, follower.followerAccountId)}
-                                      >
-                                        Mark reviewed
-                                      </Button>
-                                      {workflowEntry?.reviewedAt && (
-                                        <p className="text-xs text-zinc-500">
-                                          Reviewed on {new Date(workflowEntry.reviewedAt).toLocaleString()}.
-                                        </p>
-                                      )}
-                                      {workflowEntry?.operatorName && (
-                                        <p className="text-xs text-zinc-500">
-                                          Operator owner: {workflowEntry.operatorName}.
-                                        </p>
-                                      )}
-                                      {(workflowEntry?.operatorHistory?.length ?? 0) > 1 && (
-                                        <p className="text-xs text-zinc-500">
-                                          Ownership changes: {(workflowEntry?.operatorHistory?.length ?? 0) - 1}.
-                                        </p>
-                                      )}
-                                      {workflowEntry?.operatorHistory?.[workflowEntry.operatorHistory.length - 1]?.reason && (
-                                        <p className="text-xs text-zinc-500">
-                                          Latest ownership reason: {workflowEntry.operatorHistory[workflowEntry.operatorHistory.length - 1]?.reason}.
-                                        </p>
-                                      )}
-                                      {(workflowEntry?.operatorHistory?.length ?? 0) > 0 && (
-                                        <div className="rounded-lg border border-white/8 bg-white/[0.03] px-3 py-3">
-                                          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">
-                                            Ownership Timeline
-                                          </p>
-                                          <div className="mt-2 space-y-2">
-                                            {workflowEntry?.operatorHistory?.map((assignment, index) => (
-                                              <div
-                                                key={`${workflowKey}-assignment-${index}`}
-                                                className="border-l border-white/10 pl-3 text-xs text-zinc-400"
-                                              >
-                                                <p className="text-zinc-200">
-                                                  {assignment.operatorName} on {new Date(assignment.assignedAt).toLocaleString()}.
-                                                </p>
-                                                {assignment.reason && (
-                                                  <p className="mt-1 text-zinc-500">{assignment.reason}</p>
-                                                )}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-                                      {workflowEntry?.approvedAt && (
-                                        <p className="text-xs text-zinc-500">
-                                          Approved on {new Date(workflowEntry.approvedAt).toLocaleString()}.
-                                        </p>
-                                      )}
-                                      {workflowEntry?.handedOffAt && (
-                                        <p className="text-xs text-zinc-500">
-                                          Handed off on {new Date(workflowEntry.handedOffAt).toLocaleString()}.
-                                        </p>
-                                      )}
-                                      {workflowEntry?.completedManuallyAt && (
-                                        <p className="text-xs text-zinc-500">
-                                          Completed manually on {new Date(workflowEntry.completedManuallyAt).toLocaleString()}.
-                                        </p>
-                                      )}
-                                      {!workflowEntry?.reviewedAt && workflowEntry?.simulatedAt && (
-                                        <p className="text-xs text-zinc-500">
-                                          Simulated on {new Date(workflowEntry.simulatedAt).toLocaleString()}.
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                                </div>
-                              );
-                            })}
-                            {group.followers.length > 2 && (
-                              <p className="text-xs text-zinc-500">
-                                +{group.followers.length - 2} more follower{group.followers.length - 2 === 1 ? "" : "s"} in this review.
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-4 text-sm text-zinc-400">
-                  Load position-sync detail when you want per-group sync status and follower review items.
-                </div>
-              )}
-            </div>
-          </Card>
+          <DashboardPositionSyncPanel
+            usingMockData={usingMockData}
+            positionSyncPulse={positionSyncPulse}
+            positionSyncRepairSummary={positionSyncRepairSummary}
+            positionSyncCards={positionSyncCards}
+            positionSyncRepairBoardSummary={positionSyncRepairBoardSummary}
+            positionSyncRepairAttentionItems={positionSyncRepairAttentionItems}
+            showPositionSyncDetail={showPositionSyncDetail}
+            onToggleDetail={() => setShowPositionSyncDetail((current) => !current)}
+            positionSyncSummaryGroups={positionSyncSummaryGroups}
+            positionSyncPlanGroups={positionSyncPlanGroups}
+            positionSyncReviewGroups={positionSyncReviewGroups}
+            selectedPositionSyncGroupId={selectedPositionSyncGroupId}
+            onSelectGroup={setSelectedPositionSyncGroupId}
+            positionSyncWorkflowState={positionSyncWorkflowState}
+            positionSyncReviewNotes={positionSyncReviewNotes}
+            onPositionSyncReviewNoteChange={(workflowKey, value) =>
+              setPositionSyncReviewNotes((current) => ({
+                ...current,
+                [workflowKey]: value,
+              }))
+            }
+            onPositionSyncSimulation={handlePositionSyncSimulation}
+            onPositionSyncReview={handlePositionSyncReview}
+            onRepairCandidateTakeOwnership={handleRepairCandidateTakeOwnership}
+            onRepairCandidateAdvance={handleRepairCandidateAdvance}
+          />
         </section>
       </div>
 

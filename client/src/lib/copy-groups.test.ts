@@ -5,6 +5,8 @@ import {
   buildCopySessionSignalRows,
   buildCopyGroupHealthWatchlist,
   buildCopyGroupActivityFeed,
+  buildCopyGroupHistorySummary,
+  buildCopyGroupRestartRecoveryItems,
   buildCopyGroupActivityTimeline,
   clusterCopyGroupActivityFeed,
   describeCopyGroupBoardState,
@@ -250,13 +252,20 @@ test("buildCopyGroupHealthWatchlist prioritizes unhealthy and degraded groups", 
       groupName: entry.groupName,
       concernLabel: entry.concernLabel,
       tone: entry.tone,
+      recoveryQueueLabel: entry.recoveryQueueLabel,
+      routingGateLabel: entry.routingGateLabel,
     })),
     [
-      { groupName: "Emergency Group", concernLabel: "Needs attention", tone: "danger" },
-      { groupName: "Degraded Runner", concernLabel: "On watch", tone: "warn" },
-      { groupName: "Paused Group", concernLabel: "Paused", tone: "muted" },
+      { groupName: "Emergency Group", concernLabel: "Needs attention", tone: "danger", recoveryQueueLabel: "Recover now", routingGateLabel: "Recovery gate" },
+      { groupName: "Degraded Runner", concernLabel: "On watch", tone: "warn", recoveryQueueLabel: "Stabilize soon", routingGateLabel: "Routing gate" },
+      { groupName: "Paused Group", concernLabel: "Paused", tone: "muted", recoveryQueueLabel: "Resume check", routingGateLabel: "Resume gate" },
     ],
   );
+  assert.match(
+    watchlist.entries[2]?.routingGateDetail ?? "",
+    /Master and followers look ready\. Resume when the next routing window opens\./,
+  );
+  assert.equal(watchlist.entries[2]?.routingGateTone, "ok");
 });
 
 test("buildCopyGroupHealthWatchlist includes recovery and stability context", () => {
@@ -309,11 +318,87 @@ test("buildCopyGroupHealthWatchlist includes recovery and stability context", ()
     watchlist.entries[0]?.latestRecoveryActionLabel ?? "",
     /Copy group Degraded Runner resumed\./,
   );
+  assert.equal(
+    watchlist.entries[0]?.latestRestartRecoveryLabel,
+    undefined,
+  );
   assert.match(
     watchlist.entries[0]?.lastStableSignalLabel ?? "",
     /Last stable signal at Aug 4,/,
   );
+  assert.equal(watchlist.entries[0]?.routingGateLabel, "Routing gate");
+  assert.match(
+    watchlist.entries[0]?.routingGateDetail ?? "",
+    /Reconnect 1 follower before you route this group again\./,
+  );
+  assert.equal(watchlist.entries[0]?.routingGateTone, "warn");
+  assert.equal(watchlist.entries[0]?.signalFreshnessLabel, "Quiet 30m");
+  assert.match(
+    watchlist.entries[0]?.signalFreshnessDetail ?? "",
+    /Monitor the next routing window before escalating this group\./,
+  );
+  assert.equal(watchlist.entries[0]?.signalFreshnessTone, "muted");
   assert.equal(watchlist.entries[0]?.timeInConcernStateLabel, "30 minutes");
+});
+
+test("buildCopyGroupHealthWatchlist surfaces restart recovery context separately from general recovery actions", () => {
+  const watchlist = buildCopyGroupHealthWatchlist(
+    [
+      createGroup({
+        groupId: "group-3",
+        name: "Recovered Group",
+        runtime: {
+          groupId: "group-3",
+          status: "STOPPED",
+          isKillSwitchActive: false,
+          masterConnected: false,
+          connectedFollowerCount: 0,
+          totalFollowerCount: 2,
+        },
+        health: {
+          groupId: "group-3",
+          status: "HEALTHY",
+          warnings: [],
+          errors: [],
+          checkedAt: "2026-08-04T12:05:00.000Z",
+        },
+      }),
+    ],
+    {
+      "group-3": [
+        {
+          eventId: "event-1",
+          groupId: "group-3",
+          timestamp: "2026-08-04T12:04:00.000Z",
+          severity: "INFO",
+          category: "LIFECYCLE",
+          message: "Recovered copy group Recovered Group into STOPPED state after reload.",
+        },
+      ],
+    },
+    "2026-08-04T12:33:00.000Z",
+  );
+
+  assert.match(
+    watchlist.entries[0]?.latestRestartRecoveryLabel ?? "",
+    /Recovered copy group Recovered Group into STOPPED state after reload\./,
+  );
+  assert.equal(
+    watchlist.entries[0]?.latestRestartRecoveryAt,
+    "2026-08-04T12:04:00.000Z",
+  );
+  assert.equal(watchlist.entries[0]?.routingGateLabel, "Stage gate");
+  assert.match(
+    watchlist.entries[0]?.routingGateDetail ?? "",
+    /Reconnect the master account before you stage this group again\./,
+  );
+  assert.equal(watchlist.entries[0]?.routingGateTone, "danger");
+  assert.equal(watchlist.entries[0]?.signalFreshnessLabel, "Quiet 29m");
+  assert.match(
+    watchlist.entries[0]?.signalFreshnessDetail ?? "",
+    /Quiet history can be normal while this group remains offline\./,
+  );
+  assert.equal(watchlist.entries[0]?.signalFreshnessTone, "muted");
 });
 
 test("clusterCopyGroupActivityFeed combines consecutive updates for the same order path", () => {
@@ -437,6 +522,149 @@ test("buildCopyGroupActivityTimeline sorts newest first, applies tone, and respe
   );
   assert.match(items[0]?.timestampLabel ?? "", /^Aug 4,/);
   assert.match(items[1]?.timestampLabel ?? "", /^Aug 4,/);
+});
+
+test("buildCopyGroupHistorySummary condenses lifecycle and observability context", () => {
+  const summary = buildCopyGroupHistorySummary(
+    [
+      {
+        eventId: "event-1",
+        groupId: "group-1",
+        timestamp: "2026-08-04T12:02:00.000Z",
+        severity: "ERROR",
+        category: "LIFECYCLE",
+        message: "Emergency stop activated: manual review required",
+      },
+    ],
+    {
+      groupId: "group-1",
+      recentActivity: [],
+      totalEvents: 7,
+      infoEventCount: 3,
+      warningEventCount: 2,
+      errorEventCount: 2,
+      restartRecoveryCount: 1,
+      categoryCounts: {
+        lifecycle: 4,
+        trade: 0,
+        rule: 1,
+        intent: 0,
+        execution: 1,
+        health: 1,
+      },
+      lifecycleCounts: {
+        started: 1,
+        paused: 1,
+        resumed: 1,
+        stopped: 0,
+        emergencyStopped: 1,
+      },
+      lastEventAt: "2026-08-04T12:02:00.000Z",
+      lastLifecycleAt: "2026-08-04T12:02:00.000Z",
+      lastLifecycleMessage: "Emergency stop activated: manual review required",
+      lastErrorAt: "2026-08-04T12:02:00.000Z",
+      lastErrorMessage: "Emergency stop activated: manual review required",
+      lastRestartRecoveryAt: "2026-08-04T11:58:00.000Z",
+      lastRestartRecoveryMessage: "Recovered copy group Alpha into STOPPED state after reload.",
+    },
+    {
+      now: "2026-08-04T12:02:00.000Z",
+    },
+  );
+
+  assert.equal(summary.lifecycleHeadline, "1 start • 1 pause • 1 resume • 1 emergency stop");
+  assert.match(summary.lifecycleDetail, /Emergency stop activated: manual review required/);
+  assert.equal(summary.severityLabel, "2 errors logged");
+  assert.equal(summary.severityTone, "danger");
+  assert.equal(summary.signalFreshnessLabel, "Fresh 0m ago");
+  assert.match(summary.signalFreshnessDetail, /Latest signal logged Aug 4,/);
+  assert.equal(summary.signalFreshnessTone, "ok");
+  assert.equal(summary.recoveryPriorityLabel, "Review now");
+  assert.match(
+    summary.recoveryPriorityDetail,
+    /Most recent blocker: Emergency stop activated: manual review required/,
+  );
+  assert.equal(summary.recoveryPriorityTone, "danger");
+  assert.equal(summary.restartSignalLabel, "1 restart recovery captured");
+  assert.match(
+    summary.restartSignalDetail,
+    /Recovered copy group Alpha into STOPPED state after reload\./,
+  );
+  assert.equal(summary.restartSignalTone, "ok");
+  assert.deepEqual(
+    summary.categoryBadges.map((badge) => ({ label: badge.label, value: badge.value })),
+    [
+      { label: "Lifecycle", value: 4 },
+      { label: "Health", value: 1 },
+      { label: "Execution", value: 1 },
+      { label: "Rules", value: 1 },
+      { label: "Recovery", value: 1 },
+    ],
+  );
+});
+
+test("buildCopyGroupHistorySummary marks warning-only histories for near-term review", () => {
+  const summary = buildCopyGroupHistorySummary(
+    [
+      {
+        eventId: "event-2",
+        groupId: "group-2",
+        timestamp: "2026-08-04T12:05:00.000Z",
+        severity: "WARN",
+        category: "HEALTH",
+        message: "Follower reconnecting",
+      },
+    ],
+    undefined,
+    {
+      now: "2026-08-04T14:10:00.000Z",
+    },
+  );
+
+  assert.equal(summary.recoveryPriorityLabel, "Review soon");
+  assert.match(
+    summary.recoveryPriorityDetail,
+    /Warnings or paused state should be checked before the next copy session\./,
+  );
+  assert.equal(summary.recoveryPriorityTone, "warn");
+  assert.equal(summary.signalFreshnessLabel, "Stale 2h 5m");
+  assert.match(
+    summary.signalFreshnessDetail,
+    /Recheck the activity feed if this group should still be active\./,
+  );
+  assert.equal(summary.signalFreshnessTone, "warn");
+  assert.equal(summary.restartSignalLabel, "No restart recovery captured");
+  assert.match(
+    summary.restartSignalDetail,
+    /This history window has not yet recorded a restore or recovery event after reload\./,
+  );
+  assert.equal(summary.restartSignalTone, "muted");
+});
+
+test("buildCopyGroupHistorySummary marks quiet histories without escalating them into blockers", () => {
+  const summary = buildCopyGroupHistorySummary(
+    [
+      {
+        eventId: "event-3",
+        groupId: "group-3",
+        timestamp: "2026-08-04T12:00:00.000Z",
+        severity: "INFO",
+        category: "LIFECYCLE",
+        message: "Copy group Gamma paused.",
+      },
+    ],
+    undefined,
+    {
+      now: "2026-08-04T12:32:00.000Z",
+    },
+  );
+
+  assert.equal(summary.signalFreshnessLabel, "Quiet 32m");
+  assert.match(
+    summary.signalFreshnessDetail,
+    /Quiet history can be normal for paused or idle groups\./,
+  );
+  assert.equal(summary.signalFreshnessTone, "muted");
 });
 
 test("filterCopyGroupActivityFeed keeps warnings and errors in alerts mode", () => {
@@ -647,5 +875,85 @@ test("describeCopyGroupRuntimeSummary explains ready and running states", () => 
       tone: "warn",
       updatedLabel: "Aug 11, 9:30 AM",
     },
+  );
+});
+
+test("buildCopyGroupRestartRecoveryItems surfaces recent safe reload recoveries first", () => {
+  const items = buildCopyGroupRestartRecoveryItems({
+    groups: [
+      createGroup({
+        groupId: "group-1",
+        name: "Recovered Group",
+        runtime: {
+          groupId: "group-1",
+          status: "STOPPED",
+          isKillSwitchActive: false,
+          masterConnected: false,
+          connectedFollowerCount: 0,
+          totalFollowerCount: 2,
+          stoppedAt: "2026-08-11T13:27:00.000Z",
+        },
+      }),
+      createGroup({
+        groupId: "group-2",
+        name: "Backup Group",
+      }),
+    ],
+    runtimeSummariesByGroupId: {
+      "group-1": {
+        label: "Restored offline",
+        detail: "Recovered copy group Recovered Group into STOPPED state after reload.",
+        tone: "warn",
+        updatedLabel: "Aug 11, 9:27 AM",
+      },
+    },
+    activityByGroupId: {
+      "group-1": [
+        {
+          eventId: "event-2",
+          groupId: "group-1",
+          timestamp: "2026-08-11T13:27:00.000Z",
+          severity: "INFO",
+          category: "LIFECYCLE",
+          message: "Recovered copy group Recovered Group into STOPPED state after reload.",
+        },
+      ],
+      "group-2": [
+        {
+          eventId: "event-1",
+          groupId: "group-2",
+          timestamp: "2026-08-11T13:20:00.000Z",
+          severity: "INFO",
+          category: "LIFECYCLE",
+          message: "Restored paused copy group Backup Group in a safe offline state.",
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    items.map((item) => ({
+      groupId: item.groupId,
+      label: item.label,
+      detail: item.detail,
+      tone: item.tone,
+      updatedLabel: item.updatedLabel,
+    })),
+    [
+      {
+        groupId: "group-1",
+        label: "Restored offline",
+        detail: "Recovered copy group Recovered Group into STOPPED state after reload.",
+        tone: "ok",
+        updatedLabel: "Aug 11, 9:27 AM",
+      },
+      {
+        groupId: "group-2",
+        label: "Restart recovery captured",
+        detail: "Restored paused copy group Backup Group in a safe offline state.",
+        tone: "warn",
+        updatedLabel: "Aug 11, 9:20 AM",
+      },
+    ],
   );
 });

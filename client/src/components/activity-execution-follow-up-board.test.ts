@@ -1,0 +1,36 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+test("activity execution follow-up board keeps shared execution queue controls", () => {
+  const source = readFileSync("client/src/components/activity-execution-follow-up-board.tsx", "utf8");
+
+  assert.match(source, /Execution Follow-Up/);
+  assert.match(source, /Shared execution recovery queue/);
+  assert.match(source, /Reviewed \{props\.reviewedExecutionFollowUpCount\}/);
+  assert.match(source, /Failed \{props\.failedExecutionFollowUpCount\}/);
+  assert.match(source, /Stale \{props\.staleExecutionFollowUpCount\}/);
+  assert.match(source, /Partial \{props\.partialExecutionFollowUpCount\}/);
+  assert.match(source, /Active \{props\.activeExecutionFollowUpCount\}/);
+  assert.match(source, /Search by symbol, follower, issue, or review note/);
+  assert.match(source, /Compact view/);
+  assert.match(source, /Detailed view/);
+  assert.match(source, /Select visible/);
+  assert.match(source, /Select failed only/);
+  assert.match(source, /Clear selection/);
+  assert.match(source, /Take ownership of selected/);
+  assert.match(source, /Recheck selected/);
+  assert.match(source, /Review failed selected/);
+  assert.match(source, /Reopen selected/);
+  assert.match(source, /Execution review note/);
+  assert.match(source, /Compact view keeps the queue lighter\. Switch to detailed view for notes and ownership history\./);
+  assert.match(source, /Ownership Timeline/);
+  assert.match(source, /Take ownership/);
+  assert.match(source, /Save note/);
+  assert.match(source, /Recheck/);
+  assert.match(source, /Mark reviewed/);
+  assert.match(source, /ExecutionFollowUpSignalSummary/);
+  assert.match(source, /checkpoint=\{item\.checkpoint\}/);
+  assert.match(source, /recoveryWindow=\{item\.recoveryWindow\}/);
+  assert.match(source, /No execution follow-up items match the current search right now\./);
+});

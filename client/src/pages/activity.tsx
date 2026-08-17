@@ -1,17 +1,50 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
+import { ActivityCopyGroupAlertBoard } from "@/components/activity-copy-group-alert-board";
+import { ActivityCopyGroupHealthBoard } from "@/components/activity-copy-group-health-board";
+import { ActivityExecutionFollowUpBoard } from "@/components/activity-execution-follow-up-board";
+import { ActivityOperatorAuditBoard } from "@/components/activity-operator-audit-board";
+import { ActivityRithmicReadinessBoard } from "@/components/activity-rithmic-readiness-board";
+import { ActivityRiskFollowUpBoard } from "@/components/activity-risk-follow-up-board";
+import { ActivitySyncRepairBoard } from "@/components/activity-sync-repair-board";
+import { ActivitySyncReviewBoard } from "@/components/activity-sync-review-board";
 import { LiveActivityFeed } from "@/components/live-activity-feed";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@/contexts/user-context";
-import { useNotifications } from "@/hooks/use-notifications";
+import { notificationsQueryKey, useNotifications } from "@/hooks/use-notifications";
 import { useToast } from "@/hooks/use-toast";
+import {
+  type CopyGroupHealthReviewFilter,
+  buildCopyGroupHealthConcernSignature,
+  countRecentMatchingHealthReviews,
+  useActivityCopyGroupHealthBoard,
+} from "@/hooks/use-activity-copy-group-health-board";
+import { useActivitySyncRepairBoard } from "@/hooks/use-activity-sync-repair-board";
+import {
+  type QueueAuditFocus,
+  type QueueSort,
+  useActivitySyncReviewBoard,
+} from "@/hooks/use-activity-sync-review-board";
+import { useFollowUpReviewActions } from "@/hooks/use-follow-up-review-actions";
+import { useFollowUpReviewData } from "@/hooks/use-follow-up-review-data";
+import { useOperatorFollowUpData } from "@/hooks/use-operator-follow-up-data";
+import { usePositionSyncReviewData } from "@/hooks/use-position-sync-review-data";
+import { usePositionSyncWorkflowActions } from "@/hooks/use-position-sync-workflow-actions";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
-  buildAccountRiskFollowUpQueue,
-  type AccountRiskFollowUpItem,
-} from "@/lib/account-risk";
+  appendExecutionFollowUpOperatorAssignment,
+  appendRiskFollowUpOperatorAssignment,
+  buildExecutionFollowUpReviewPayload,
+  buildRithmicReadinessReviewPayload,
+  buildRiskFollowUpReviewPayload,
+  type ExecutionFollowUpFilter,
+  type ExecutionFollowUpReviewEntry,
+  type RithmicReadinessFollowUpFilter,
+  type RiskFollowUpFilter,
+  type RiskFollowUpReviewEntry,
+} from "@/lib/follow-up-operator";
 import {
   LIVE_QUERY_POLL_MS,
   LIVE_QUERY_STALE_MS,
@@ -30,23 +63,21 @@ import {
 import {
   clusterNotifications,
   describeActivityNotificationMessage,
-  buildRiskNotificationFollowUpQueue,
   filterReviewedNotifications,
   toActivityFeedType,
 } from "@/lib/notifications";
 import {
   buildPositionSyncQueue,
-  filterPositionSyncQueue,
-  type PositionSyncQueueFilter,
+  type PositionSyncRepairCandidateFilter,
 } from "@/lib/position-sync-queue";
 import {
-  appendPositionSyncOperatorAssignment,
-  toPositionSyncWorkflowState,
+  buildPositionSyncWorkflowUpdate,
   type PositionSyncWorkflowSaveInput,
 } from "@/lib/position-sync-workflow";
+import { buildOperatorWorkSummary } from "@/lib/operator-work";
 import type {
   AccountsRuntimeOverviewResponse,
-  PositionSyncOverviewResponse,
+  DashboardRuntimeOverviewResponse,
 } from "@/lib/runtime-overview";
 
 interface ActivityPageData {
@@ -55,70 +86,49 @@ interface ActivityPageData {
   activityByGroupId: Record<string, CopyGroupSnapshotApiResponse["groups"][number]["activityPreview"]>;
 }
 
-type QueueSort = "recent" | "age" | "owner" | "reassignments";
-type QueueAuditFocus = "all" | "overdue" | "unassigned" | "reassigned";
-type CopyGroupHealthReviewFilter = "all" | "unreviewed" | "reviewed" | "stale" | "recurring";
-type CopyGroupHealthBoardView = "compact" | "detailed";
-type RiskFollowUpFilter = "all" | "open" | "reviewed" | "owned" | "unowned" | "reassigned";
-
-const ACTIVITY_QUEUE_SORT_STORAGE_KEY = "propcopia.activity.queueSort";
-const ACTIVITY_QUEUE_AUDIT_FOCUS_STORAGE_KEY = "propcopia.activity.queueAuditFocus";
-const COPY_GROUP_HEALTH_REVIEW_STORAGE_KEY = "propcopia.activity.copyGroupHealthReviews";
-const COPY_GROUP_HEALTH_BOARD_VIEW_STORAGE_KEY = "propcopia.activity.copyGroupHealthBoardView";
-
-interface CopyGroupHealthReviewState {
-  acknowledgedAt: string;
-  note: string;
-  concernSignature?: string;
-  reviewedBy?: string;
-  history?: Array<{
-    acknowledgedAt: string;
-    note: string;
-    reviewedBy?: string;
-    concernSignature?: string;
-  }>;
+interface CopyGroupAlertFeedItem {
+  alertId: string;
+  storyKey: string;
+  userId: string;
+  groupId: string;
+  timestamp: string;
+  severity: "info" | "warn" | "error";
+  title: string;
+  message: string;
+  accountId?: string;
+  source: "activity" | "health";
+  healthStatus?: "HEALTHY" | "DEGRADED" | "UNHEALTHY";
+  restartRecoveryMessage?: string;
+  restartRecoveryAt?: string;
 }
 
-interface RiskFollowUpOperatorAssignment {
-  operatorName: string;
-  assignedAt: string;
-  reason?: string;
+interface CopyGroupAlertsResponse {
+  success: boolean;
+  activeStories: CopyGroupAlertFeedItem[];
+  recentAlerts: CopyGroupAlertFeedItem[];
+  generatedAt: string;
 }
 
-interface RiskFollowUpReviewEntry {
-  accountId: string;
+interface CopyGroupAlertReviewEntry {
+  storyKey: string;
+  groupId: string;
   status: "pending" | "reviewed";
   note?: string;
   operatorName?: string;
-  operatorHistory?: RiskFollowUpOperatorAssignment[];
+  operatorHistory?: Array<{
+    operatorName: string;
+    assignedAt: string;
+    reason?: string;
+  }>;
   reviewedAt?: string;
 }
 
-function appendRiskFollowUpOperatorAssignment(
-  history: RiskFollowUpOperatorAssignment[] | undefined,
-  operatorName: string | undefined,
-  assignedAt: string,
-  reason?: string,
-): RiskFollowUpOperatorAssignment[] | undefined {
-  if (!operatorName) {
-    return history;
-  }
-
-  const nextHistory = history ? [...history] : [];
-  const previousAssignment = nextHistory[nextHistory.length - 1];
-
-  if (previousAssignment?.operatorName === operatorName) {
-    return nextHistory;
-  }
-
-  nextHistory.push({
-    operatorName,
-    assignedAt,
-    reason,
-  });
-
-  return nextHistory;
+interface CopyGroupAlertReviewsResponse {
+  success: boolean;
+  reviews: CopyGroupAlertReviewEntry[];
 }
+
+type CopyGroupAlertFilter = "all" | "unowned" | "mine" | "reviewed" | "stale";
 
 function formatTimestamp(timestamp: string): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -219,132 +229,51 @@ async function loadActivityPageData(): Promise<ActivityPageData> {
   };
 }
 
-function loadStoredQueueSort(): QueueSort {
-  if (typeof window === "undefined") {
-    return "recent";
+function isCopyGroupAlertReviewStale(
+  alert: CopyGroupAlertFeedItem,
+  review: CopyGroupAlertReviewEntry | undefined,
+): boolean {
+  if (!review?.reviewedAt) {
+    return false;
   }
 
-  const stored = window.localStorage.getItem(ACTIVITY_QUEUE_SORT_STORAGE_KEY);
-  return stored === "age" || stored === "owner" || stored === "reassignments"
-    ? stored
-    : "recent";
+  const reviewedAtMs = new Date(review.reviewedAt).getTime();
+  const alertAtMs = new Date(alert.timestamp).getTime();
+  return !Number.isNaN(reviewedAtMs) && !Number.isNaN(alertAtMs) && reviewedAtMs < alertAtMs;
 }
 
-function loadStoredQueueAuditFocus(): QueueAuditFocus {
-  if (typeof window === "undefined") {
-    return "all";
+function getCopyGroupAlertFreshnessLabel(
+  alert: CopyGroupAlertFeedItem,
+  review: CopyGroupAlertReviewEntry | undefined,
+): {
+  label: string;
+  toneClass: string;
+} {
+  if (!review) {
+    return {
+      label: "New alert",
+      toneClass: "border-cyan-400/30 bg-cyan-400/10 text-cyan-100",
+    };
   }
 
-  const stored = window.localStorage.getItem(ACTIVITY_QUEUE_AUDIT_FOCUS_STORAGE_KEY);
-  return stored === "overdue" || stored === "unassigned" || stored === "reassigned"
-    ? stored
-    : "all";
-}
-
-function normalizeQueueSort(value?: string | null): QueueSort {
-  return value === "age" || value === "owner" || value === "reassignments"
-    ? value
-    : "recent";
-}
-
-function normalizeQueueAuditFocus(value?: string | null): QueueAuditFocus {
-  return value === "overdue" || value === "unassigned" || value === "reassigned"
-    ? value
-    : "all";
-}
-
-function loadCopyGroupHealthReviews(): Record<string, CopyGroupHealthReviewState> {
-  if (typeof window === "undefined") {
-    return {};
+  if (isCopyGroupAlertReviewStale(alert, review)) {
+    return {
+      label: "Retriggered after review",
+      toneClass: "border-amber-300/30 bg-amber-300/10 text-amber-100",
+    };
   }
 
-  const stored = window.localStorage.getItem(COPY_GROUP_HEALTH_REVIEW_STORAGE_KEY);
-  if (!stored) {
-    return {};
+  if (review.status === "reviewed") {
+    return {
+      label: "Covered by review",
+      toneClass: "border-emerald-400/30 bg-emerald-400/10 text-emerald-100",
+    };
   }
 
-  try {
-    return JSON.parse(stored) as Record<string, CopyGroupHealthReviewState>;
-  } catch {
-    return {};
-  }
-}
-
-function loadStoredCopyGroupHealthBoardView(): CopyGroupHealthBoardView {
-  if (typeof window === "undefined") {
-    return "compact";
-  }
-
-  const stored = window.localStorage.getItem(COPY_GROUP_HEALTH_BOARD_VIEW_STORAGE_KEY);
-  return stored === "detailed" ? "detailed" : "compact";
-}
-
-function normalizeCopyGroupHealthBoardView(value?: string | null): CopyGroupHealthBoardView {
-  return value === "detailed" ? "detailed" : "compact";
-}
-
-function normalizeCopyGroupHealthReviewFilter(
-  value?: string | null,
-): CopyGroupHealthReviewFilter {
-  return value === "unreviewed" ||
-    value === "reviewed" ||
-    value === "stale" ||
-    value === "recurring"
-    ? value
-    : "all";
-}
-
-function parseCopyGroupHealthReviewsJson(
-  value?: string | null,
-): Record<string, CopyGroupHealthReviewState> {
-  if (!value) {
-    return {};
-  }
-
-  try {
-    return JSON.parse(value) as Record<string, CopyGroupHealthReviewState>;
-  } catch {
-    return {};
-  }
-}
-
-function buildCopyGroupHealthConcernSignature(entry: {
-  groupId: string;
-  status: string;
-  healthStatus: string;
-  concernLabel: string;
-  detail: string;
-  latestRecoveryActionAt?: string;
-}): string {
-  return [
-    entry.groupId,
-    entry.status,
-    entry.healthStatus,
-    entry.concernLabel,
-    entry.detail,
-    entry.latestRecoveryActionAt ?? "no-recovery-action",
-  ].join("|");
-}
-
-function countRecentMatchingHealthReviews(
-  review: CopyGroupHealthReviewState | undefined,
-  concernSignature: string,
-  now = new Date(),
-): number {
-  if (!review?.history?.length) {
-    return 0;
-  }
-
-  const cutoffMs = now.getTime() - 24 * 60 * 60 * 1000;
-
-  return review.history.filter((item) => {
-    if (item.concernSignature !== concernSignature) {
-      return false;
-    }
-
-    const acknowledgedAtMs = new Date(item.acknowledgedAt).getTime();
-    return !Number.isNaN(acknowledgedAtMs) && acknowledgedAtMs >= cutoffMs;
-  }).length;
+  return {
+    label: "Owned and pending",
+    toneClass: "border-white/10 bg-white/[0.04] text-zinc-200",
+  };
 }
 
 export default function Activity() {
@@ -361,19 +290,29 @@ export default function Activity() {
     refetchIntervalInBackground: false,
     staleTime: LIVE_QUERY_STALE_MS,
   });
-  const { data: notificationsData } = useNotifications();
-  const { data: positionSyncWorkflowData } = useQuery<{
-    success: boolean;
-    reviews: PositionSyncWorkflowSaveInput[];
-  } | null>({
-    queryKey: user?.id ? ["/api/position-sync/reviews", user.id] : ["/api/position-sync/reviews", "anonymous"],
-    queryFn: async ({ queryKey }) => getJson(queryKey[0] as string),
+  const { data: copyGroupAlertsData } = useQuery<CopyGroupAlertsResponse>({
+    queryKey: ["/api/copy-groups", "alerts"],
+    queryFn: () => getJson<CopyGroupAlertsResponse>("/api/copy-groups/alerts"),
+    refetchInterval: LIVE_QUERY_POLL_MS,
+    refetchIntervalInBackground: false,
+    staleTime: LIVE_QUERY_STALE_MS,
+  });
+  const { data: copyGroupAlertReviewsData } = useQuery<CopyGroupAlertReviewsResponse>({
+    queryKey: ["/api/copy-groups", "alert-reviews"],
+    queryFn: () => getJson<CopyGroupAlertReviewsResponse>("/api/copy-groups/alert-reviews"),
     enabled: !!user?.id,
     staleTime: LIVE_QUERY_STALE_MS,
   });
-  const { data: positionSyncPlansData } = useQuery<PositionSyncOverviewResponse | null>({
-    queryKey: user?.id ? ["/api/position-sync/plans", user.id] : ["/api/position-sync/plans", "anonymous"],
-    queryFn: async ({ queryKey }) => getJson(queryKey[0] as string),
+  const { data: notificationsData } = useNotifications();
+  const {
+    positionSyncPlansData,
+    positionSyncWorkflowData,
+    positionSyncWorkflowState,
+    positionSyncRepairCandidates,
+    positionSyncRepairBoardSummary,
+    positionSyncRepairSummary,
+  } = usePositionSyncReviewData({
+    userId: user?.id,
     enabled: !!user?.id,
     staleTime: LIVE_QUERY_STALE_MS,
   });
@@ -383,109 +322,42 @@ export default function Activity() {
     enabled: !!user?.id,
     staleTime: LIVE_QUERY_STALE_MS,
   });
-  const { data: riskFollowUpReviewData } = useQuery<{
-    success: boolean;
-    reviews: RiskFollowUpReviewEntry[];
-  } | null>({
-    queryKey: user?.id ? ["/api/risk-follow-up/reviews", user.id] : ["/api/risk-follow-up/reviews", "anonymous"],
+  const { data: dashboardRuntimeOverviewData } = useQuery<DashboardRuntimeOverviewResponse | null>({
+    queryKey: user?.id ? ["/api/runtime/dashboard-overview", user.id] : ["/api/runtime/dashboard-overview", "anonymous"],
     queryFn: async ({ queryKey }) => getJson(queryKey[0] as string),
     enabled: !!user?.id,
     staleTime: LIVE_QUERY_STALE_MS,
   });
+  const {
+    riskFollowUpReviewData,
+    executionFollowUpReviewData,
+    rithmicReadinessReviewData,
+    riskReviewsByAccountId,
+    executionReviewsByHistoryId,
+    rithmicReadinessReviewsByStoryKey,
+  } = useFollowUpReviewData(user?.id);
   const [showReviewed, setShowReviewed] = useState(true);
-  const [queueFilter, setQueueFilter] = useState<PositionSyncQueueFilter>("all");
-  const [queueSearch, setQueueSearch] = useState("");
-  const [assignmentReasons, setAssignmentReasons] = useState<Record<string, string>>({});
-  const [queueAuditFocus, setQueueAuditFocus] = useState<QueueAuditFocus>(loadStoredQueueAuditFocus);
-  const [queueSort, setQueueSort] = useState<QueueSort>(loadStoredQueueSort);
-  const [activityPreferencesHydrated, setActivityPreferencesHydrated] = useState(false);
-  const [copyGroupHealthReviews, setCopyGroupHealthReviews] = useState<Record<string, CopyGroupHealthReviewState>>(
-    loadCopyGroupHealthReviews,
-  );
-  const [copyGroupHealthNotes, setCopyGroupHealthNotes] = useState<Record<string, string>>({});
-  const [copyGroupHealthReviewFilter, setCopyGroupHealthReviewFilter] =
-    useState<CopyGroupHealthReviewFilter>("all");
-  const [copyGroupHealthBoardView, setCopyGroupHealthBoardView] =
-    useState<CopyGroupHealthBoardView>(loadStoredCopyGroupHealthBoardView);
-  const [copyGroupHealthSearch, setCopyGroupHealthSearch] = useState("");
-  const [selectedCopyGroupHealthGroupIds, setSelectedCopyGroupHealthGroupIds] = useState<string[]>([]);
-  const [copyGroupHealthPreferencesHydrated, setCopyGroupHealthPreferencesHydrated] = useState(false);
+  const [copyGroupAlertNotes, setCopyGroupAlertNotes] = useState<Record<string, string>>({});
+  const [copyGroupAlertFilter, setCopyGroupAlertFilter] = useState<CopyGroupAlertFilter>("all");
+  const [copyGroupAlertSearch, setCopyGroupAlertSearch] = useState("");
+  const [selectedCopyGroupAlertStoryKeys, setSelectedCopyGroupAlertStoryKeys] = useState<string[]>([]);
   const [riskFollowUpSearch, setRiskFollowUpSearch] = useState("");
   const [riskFollowUpNotes, setRiskFollowUpNotes] = useState<Record<string, string>>({});
   const [riskFollowUpFilter, setRiskFollowUpFilter] = useState<RiskFollowUpFilter>("all");
   const [selectedRiskFollowUpAccountIds, setSelectedRiskFollowUpAccountIds] = useState<string[]>([]);
+  const [executionFollowUpSearch, setExecutionFollowUpSearch] = useState("");
+  const [executionFollowUpNotes, setExecutionFollowUpNotes] = useState<Record<string, string>>({});
+  const [executionFollowUpFilter, setExecutionFollowUpFilter] = useState<ExecutionFollowUpFilter>("all");
+  const [selectedExecutionFollowUpHistoryIds, setSelectedExecutionFollowUpHistoryIds] = useState<string[]>([]);
+  const [rithmicReadinessSearch, setRithmicReadinessSearch] = useState("");
+  const [rithmicReadinessNotes, setRithmicReadinessNotes] = useState<Record<string, string>>({});
+  const [rithmicReadinessFilter, setRithmicReadinessFilter] =
+    useState<RithmicReadinessFollowUpFilter>("all");
+  const [selectedRithmicReadinessStoryKeys, setSelectedRithmicReadinessStoryKeys] = useState<string[]>([]);
 
   useEffect(() => {
     setShowReviewed(user?.showReviewedNotifications ?? true);
   }, [user?.showReviewedNotifications]);
-
-  useEffect(() => {
-    if (!user?.id) {
-      setActivityPreferencesHydrated(false);
-      return;
-    }
-
-    setQueueSort(normalizeQueueSort(user.activityQueueSort));
-    setQueueAuditFocus(normalizeQueueAuditFocus(user.activityQueueAuditFocus));
-    setActivityPreferencesHydrated(true);
-  }, [user?.activityQueueAuditFocus, user?.activityQueueSort, user?.id]);
-
-  useEffect(() => {
-    if (!user?.id) {
-      setCopyGroupHealthPreferencesHydrated(false);
-      return;
-    }
-
-    setCopyGroupHealthReviewFilter(
-      normalizeCopyGroupHealthReviewFilter(user.copyGroupHealthReviewFilter),
-    );
-    setCopyGroupHealthReviews(
-      parseCopyGroupHealthReviewsJson(user.copyGroupHealthReviewsJson),
-    );
-    setCopyGroupHealthPreferencesHydrated(true);
-  }, [
-    user?.copyGroupHealthReviewFilter,
-    user?.copyGroupHealthReviewsJson,
-    user?.id,
-  ]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.localStorage.setItem(ACTIVITY_QUEUE_AUDIT_FOCUS_STORAGE_KEY, queueAuditFocus);
-  }, [queueAuditFocus]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.localStorage.setItem(ACTIVITY_QUEUE_SORT_STORAGE_KEY, queueSort);
-  }, [queueSort]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.localStorage.setItem(
-      COPY_GROUP_HEALTH_REVIEW_STORAGE_KEY,
-      JSON.stringify(copyGroupHealthReviews),
-    );
-  }, [copyGroupHealthReviews]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.localStorage.setItem(
-      COPY_GROUP_HEALTH_BOARD_VIEW_STORAGE_KEY,
-      copyGroupHealthBoardView,
-    );
-  }, [copyGroupHealthBoardView]);
 
   const groups = data?.groups ?? [];
   const copyGroupOverview = summarizeCopyGroups(groups);
@@ -496,262 +368,151 @@ export default function Activity() {
   );
   const allActivity = clusterCopyGroupActivityFeed(data?.feed ?? []);
   const alertActivity = filterCopyGroupActivityFeed(allActivity, "alerts");
+  const copyGroupAlertStories = copyGroupAlertsData?.activeStories ?? [];
+  const recentCopyGroupAlerts = copyGroupAlertsData?.recentAlerts ?? [];
+  const copyGroupAlertReviews = copyGroupAlertReviewsData?.reviews ?? [];
+  const copyGroupAlertReviewsByStoryKey = new Map(
+    copyGroupAlertReviews.map((review) => [review.storyKey, review]),
+  );
+  const unownedCopyGroupAlertCount = copyGroupAlertStories.filter(
+    (alert) => !copyGroupAlertReviewsByStoryKey.get(alert.storyKey)?.operatorName,
+  ).length;
+  const newCopyGroupAlertCount = copyGroupAlertStories.filter(
+    (alert) => getCopyGroupAlertFreshnessLabel(alert, copyGroupAlertReviewsByStoryKey.get(alert.storyKey)).label === "New alert",
+  ).length;
+  const myCopyGroupAlertCount = copyGroupAlertStories.filter(
+    (alert) => copyGroupAlertReviewsByStoryKey.get(alert.storyKey)?.operatorName === user?.username,
+  ).length;
+  const reviewedCopyGroupAlertCount = copyGroupAlertStories.filter(
+    (alert) => copyGroupAlertReviewsByStoryKey.get(alert.storyKey)?.status === "reviewed",
+  ).length;
+  const staleCopyGroupAlertCount = copyGroupAlertStories.filter((alert) =>
+    isCopyGroupAlertReviewStale(alert, copyGroupAlertReviewsByStoryKey.get(alert.storyKey)),
+  ).length;
+  const filteredCopyGroupAlertStories = copyGroupAlertStories.filter((alert) => {
+    const review = copyGroupAlertReviewsByStoryKey.get(alert.storyKey);
+    const searchNeedle = copyGroupAlertSearch.trim().toLowerCase();
+    const matchesFilter =
+      copyGroupAlertFilter === "all"
+        ? true
+        : copyGroupAlertFilter === "unowned"
+          ? !review?.operatorName
+          : copyGroupAlertFilter === "mine"
+            ? review?.operatorName === user?.username
+            : copyGroupAlertFilter === "reviewed"
+              ? review?.status === "reviewed"
+              : isCopyGroupAlertReviewStale(alert, review);
+
+    if (!matchesFilter) {
+      return false;
+    }
+
+    if (!searchNeedle) {
+      return true;
+    }
+
+    return [
+      alert.title,
+      alert.message,
+      alert.restartRecoveryMessage,
+      alert.groupId,
+      alert.storyKey,
+      review?.operatorName,
+      review?.note,
+    ]
+      .filter(Boolean)
+      .some((value) => value!.toLowerCase().includes(searchNeedle));
+  });
+  const sortedCopyGroupAlertStories = [...filteredCopyGroupAlertStories].sort((left, right) => {
+    const leftReview = copyGroupAlertReviewsByStoryKey.get(left.storyKey);
+    const rightReview = copyGroupAlertReviewsByStoryKey.get(right.storyKey);
+    const leftUnowned = !leftReview?.operatorName ? 0 : 1;
+    const rightUnowned = !rightReview?.operatorName ? 0 : 1;
+    if (leftUnowned !== rightUnowned) {
+      return leftUnowned - rightUnowned;
+    }
+
+    const leftStale = isCopyGroupAlertReviewStale(left, leftReview) ? 0 : 1;
+    const rightStale = isCopyGroupAlertReviewStale(right, rightReview) ? 0 : 1;
+    if (leftStale !== rightStale) {
+      return leftStale - rightStale;
+    }
+
+    const severityRank = new Map<CopyGroupAlertFeedItem["severity"], number>([
+      ["error", 0],
+      ["warn", 1],
+      ["info", 2],
+    ]);
+    const leftSeverity = severityRank.get(left.severity) ?? 99;
+    const rightSeverity = severityRank.get(right.severity) ?? 99;
+    if (leftSeverity !== rightSeverity) {
+      return leftSeverity - rightSeverity;
+    }
+
+    return right.timestamp.localeCompare(left.timestamp);
+  });
   const notifications = filterReviewedNotifications(
     notificationsData?.notifications ?? [],
     showReviewed,
   );
   const clusteredNotifications = clusterNotifications(notifications);
   const unreadEstimate = notificationsData?.unreadEstimate ?? 0;
-  const accountRiskFollowUpItems = buildAccountRiskFollowUpQueue(
-    accountsOverviewData?.accountRiskOverview.accounts ?? [],
-  );
-  const riskNotificationFollowUpItems = buildRiskNotificationFollowUpQueue(notificationsData?.notifications ?? []);
-  const riskFollowUpItems = accountRiskFollowUpItems.map((item) => {
-    const matchingNotification = riskNotificationFollowUpItems.find((notification) => notification.id === item.accountId || notification.id.includes(item.accountId));
-    const review = (riskFollowUpReviewData?.reviews ?? []).find((entry) => entry.accountId === item.accountId);
-
-    return {
-      ...item,
-      notificationId: matchingNotification?.id ?? item.accountId,
-      notificationTimestamp: matchingNotification?.timestamp,
-      review,
-    };
+  const {
+    riskFollowUpItems,
+    filteredRiskFollowUpItems,
+    riskFollowUpSummary,
+    executionFollowUpItems,
+    filteredExecutionFollowUpItems,
+    executionFollowUpSummary,
+    rithmicReadinessFollowUpItems,
+    filteredRithmicReadinessFollowUpItems,
+    rithmicReadinessFollowUpSummary,
+    visibleRithmicReadinessFollowUpItems,
+  } = useOperatorFollowUpData({
+    notifications: notificationsData?.notifications ?? [],
+    showReviewed,
+    accountRiskAccounts: accountsOverviewData?.accountRiskOverview.accounts ?? [],
+    executionRecovery: dashboardRuntimeOverviewData?.tradeAnalytics.executionRecovery,
+    riskReviews: riskFollowUpReviewData?.reviews ?? [],
+    executionReviews: executionFollowUpReviewData?.reviews ?? [],
+    rithmicReadinessReviews: rithmicReadinessReviewData?.reviews ?? [],
+    riskFilter: riskFollowUpFilter,
+    riskSearch: riskFollowUpSearch,
+    executionFilter: executionFollowUpFilter,
+    executionSearch: executionFollowUpSearch,
+    executionNotes: executionFollowUpNotes,
+    rithmicReadinessFilter,
+    rithmicReadinessSearch,
   });
-  const filteredRiskFollowUpItems = riskFollowUpItems.filter((item) => {
-    if (riskFollowUpFilter === "open" && item.review?.status === "reviewed") {
-      return false;
-    }
-
-    if (riskFollowUpFilter === "reviewed" && item.review?.status !== "reviewed") {
-      return false;
-    }
-
-    if (riskFollowUpFilter === "owned" && !item.review?.operatorName) {
-      return false;
-    }
-
-    if (riskFollowUpFilter === "unowned" && item.review?.operatorName) {
-      return false;
-    }
-
-    if (riskFollowUpFilter === "reassigned" && (item.review?.operatorHistory?.length ?? 0) <= 1) {
-      return false;
-    }
-
-    const search = riskFollowUpSearch.trim().toLowerCase();
-    if (!search) {
-      return true;
-    }
-
-    return [
-      item.accountName,
-      item.headline,
-      item.detail,
-      item.recommendedAction,
-      item.review?.operatorName,
-      item.review?.note,
-    ]
-      .filter((value): value is string => typeof value === "string" && value.length > 0)
-      .join(" ")
-      .toLowerCase()
-      .includes(search);
-  });
-  const reviewedRiskFollowUpCount = riskFollowUpItems.filter((item) => item.review?.status === "reviewed").length;
-  const ownedRiskFollowUpCount = riskFollowUpItems.filter((item) => !!item.review?.operatorName).length;
-  const unownedRiskFollowUpCount = riskFollowUpItems.filter((item) => !item.review?.operatorName).length;
-  const reassignedRiskFollowUpCount = riskFollowUpItems.filter(
-    (item) => (item.review?.operatorHistory?.length ?? 0) > 1,
-  ).length;
-  const reviewedCopyGroupHealthCount = copyGroupHealthWatchlist.entries.filter(
-    (entry) => !!copyGroupHealthReviews[entry.groupId],
-  ).length;
-  const staleCopyGroupHealthReviewCount = copyGroupHealthWatchlist.entries.filter((entry) => {
-    const storedReview = copyGroupHealthReviews[entry.groupId];
-    if (!storedReview) {
-      return false;
-    }
-
-    return storedReview.concernSignature !== buildCopyGroupHealthConcernSignature(entry);
-  }).length;
-  const unreviewedCopyGroupHealthCount = copyGroupHealthWatchlist.entries.filter((entry) => {
-    const storedReview = copyGroupHealthReviews[entry.groupId];
-    if (!storedReview) {
-      return true;
-    }
-
-    return storedReview.concernSignature !== buildCopyGroupHealthConcernSignature(entry);
-  }).length;
-  const recurringCopyGroupHealthCount = copyGroupHealthWatchlist.entries.filter((entry) => {
-    const review = copyGroupHealthReviews[entry.groupId];
-    return countRecentMatchingHealthReviews(
-      review,
-      buildCopyGroupHealthConcernSignature(entry),
-    ) >= 2;
-  }).length;
-  const filteredCopyGroupHealthEntries = copyGroupHealthWatchlist.entries.filter((entry) => {
-    const storedReview = copyGroupHealthReviews[entry.groupId];
-    const concernSignature = buildCopyGroupHealthConcernSignature(entry);
-    const reviewIsStale =
-      !!storedReview &&
-      storedReview.concernSignature !== concernSignature;
-    const repeatedReviewCount = countRecentMatchingHealthReviews(
-      storedReview,
-      concernSignature,
-    );
-
-    if (copyGroupHealthReviewFilter === "unreviewed") {
-      return !storedReview || reviewIsStale;
-    }
-
-    if (copyGroupHealthReviewFilter === "reviewed") {
-      return !!storedReview && !reviewIsStale;
-    }
-
-    if (copyGroupHealthReviewFilter === "stale") {
-      return reviewIsStale;
-    }
-
-    if (copyGroupHealthReviewFilter === "recurring") {
-      return repeatedReviewCount >= 2;
-    }
-
-    return true;
-  }).filter((entry) => {
-    const search = copyGroupHealthSearch.trim().toLowerCase();
-    if (!search) {
-      return true;
-    }
-
-    const review = copyGroupHealthReviews[entry.groupId];
-    const haystack = [
-      entry.groupName,
-      entry.detail,
-      entry.concernLabel,
-      entry.latestRecoveryActionLabel,
-      entry.lastStableSignalLabel,
-      entry.timeInConcernStateLabel,
-      review?.note,
-      review?.reviewedBy,
-      ...(review?.history?.flatMap((item) => [item.note, item.reviewedBy]) ?? []),
-    ]
-      .filter((value): value is string => typeof value === "string" && value.length > 0)
-      .join(" ")
-      .toLowerCase();
-
-    return haystack.includes(search);
-  });
-  const sortedCopyGroupHealthEntries = [...filteredCopyGroupHealthEntries].sort((left, right) => {
-    const leftReview = copyGroupHealthReviews[left.groupId];
-    const rightReview = copyGroupHealthReviews[right.groupId];
-    const leftReviewIsStale =
-      !!leftReview &&
-      leftReview.concernSignature !== buildCopyGroupHealthConcernSignature(left);
-    const rightReviewIsStale =
-      !!rightReview &&
-      rightReview.concernSignature !== buildCopyGroupHealthConcernSignature(right);
-
-    const leftPriority =
-      leftReviewIsStale
-        ? 0
-        : left.tone === "danger"
-          ? 1
-          : !leftReview
-            ? 2
-            : left.tone === "warn"
-              ? 3
-              : left.tone === "muted"
-                ? 4
-                : 5;
-    const rightPriority =
-      rightReviewIsStale
-        ? 0
-        : right.tone === "danger"
-          ? 1
-          : !rightReview
-            ? 2
-            : right.tone === "warn"
-              ? 3
-              : right.tone === "muted"
-                ? 4
-                : 5;
-
-    if (leftPriority !== rightPriority) {
-      return leftPriority - rightPriority;
-    }
-
-    const leftDuration = Number.parseInt(left.timeInConcernStateLabel ?? "0", 10);
-    const rightDuration = Number.parseInt(right.timeInConcernStateLabel ?? "0", 10);
-    if (leftDuration !== rightDuration) {
-      return rightDuration - leftDuration;
-    }
-
-    return left.groupName.localeCompare(right.groupName);
-  });
-  const positionSyncWorkflowState = positionSyncWorkflowData?.reviews
-    ? toPositionSyncWorkflowState(positionSyncWorkflowData.reviews)
-    : {};
+  const {
+    reviewedCount: reviewedRiskFollowUpCount,
+    ownedCount: ownedRiskFollowUpCount,
+    unownedCount: unownedRiskFollowUpCount,
+    reassignedCount: reassignedRiskFollowUpCount,
+  } = riskFollowUpSummary;
+  const {
+    reviewedCount: reviewedExecutionFollowUpCount,
+    failedCount: failedExecutionFollowUpCount,
+    staleCount: staleExecutionFollowUpCount,
+    partialCount: partialExecutionFollowUpCount,
+    activeCount: activeExecutionFollowUpCount,
+  } = executionFollowUpSummary;
+  const {
+    reviewedCount: reviewedRithmicReadinessCount,
+    ownedCount: ownedRithmicReadinessCount,
+    unownedCount: unownedRithmicReadinessCount,
+    reassignedCount: reassignedRithmicReadinessCount,
+  } = rithmicReadinessFollowUpSummary;
   const positionSyncQueue = buildPositionSyncQueue(
     positionSyncPlansData,
     positionSyncWorkflowData?.reviews ?? [],
   );
-  const filteredPositionSyncQueue = filterPositionSyncQueue(
-    positionSyncQueue,
-    queueFilter,
-    queueSearch,
-  );
-  const auditFocusedQueue = filteredPositionSyncQueue.filter((entry) => {
-    if (queueAuditFocus === "overdue") {
-      return entry.needsAttention;
-    }
-
-    if (queueAuditFocus === "unassigned") {
-      return (entry.status === "approved" || entry.status === "handed_off") && !entry.operatorName;
-    }
-
-    if (queueAuditFocus === "reassigned") {
-      return entry.reassignmentCount > 0;
-    }
-
-    return true;
+  const operatorWorkSummary = buildOperatorWorkSummary({
+    riskItems: riskFollowUpItems,
+    executionItems: executionFollowUpItems,
+    rithmicReadinessItems: visibleRithmicReadinessFollowUpItems,
+    syncItems: positionSyncQueue,
   });
-  const sortedAuditFocusedQueue = [...auditFocusedQueue].sort((left, right) => {
-    if (queueSort === "age") {
-      return right.ageMinutes - left.ageMinutes;
-    }
-
-    if (queueSort === "owner") {
-      const leftOwner = (left.operatorName ?? "zzzz-unassigned").toLowerCase();
-      const rightOwner = (right.operatorName ?? "zzzz-unassigned").toLowerCase();
-      const ownerDiff = leftOwner.localeCompare(rightOwner);
-      if (ownerDiff !== 0) {
-        return ownerDiff;
-      }
-    }
-
-    if (queueSort === "reassignments") {
-      const reassignDiff = right.reassignmentCount - left.reassignmentCount;
-      if (reassignDiff !== 0) {
-        return reassignDiff;
-      }
-    }
-
-    return right.ageMinutes - left.ageMinutes;
-  });
-  const overdueSyncEntries = positionSyncQueue.filter((entry) => entry.needsAttention);
-  const unassignedSyncEntries = positionSyncQueue.filter(
-    (entry) =>
-      (entry.status === "approved" || entry.status === "handed_off") &&
-      !entry.operatorName,
-  );
-  const reassignedSyncEntries = positionSyncQueue.filter(
-    (entry) => entry.reassignmentCount > 0,
-  );
-  const attentionSyncCount = positionSyncQueue.filter((entry) => entry.needsAttention).length;
-  const unassignedSyncCount = positionSyncQueue.filter(
-    (entry) =>
-      (entry.status === "approved" || entry.status === "handed_off") &&
-      !entry.operatorName,
-  ).length;
   const reviewedSyncCount = Object.values(positionSyncWorkflowState).filter(
     (entry) => entry.status === "reviewed",
   ).length;
@@ -768,116 +529,167 @@ export default function Activity() {
     (entry) => entry.status === "completed_manually",
   ).length;
 
-  const handleAcknowledgeCopyGroupHealth = (groupId: string) => {
-    const entry = copyGroupHealthWatchlist.entries.find((item) => item.groupId === groupId);
-    if (!entry) {
+  const buildCopyGroupAlertReviewPayload = (input: {
+    alert: CopyGroupAlertFeedItem;
+    currentReview?: CopyGroupAlertReviewEntry;
+    status: "pending" | "reviewed";
+    operatorName?: string;
+    note?: string;
+    assignmentReason?: string;
+    reviewedAt?: string;
+  }): CopyGroupAlertReviewEntry => ({
+    storyKey: input.alert.storyKey,
+    groupId: input.alert.groupId,
+    status: input.status,
+    note: input.note,
+    operatorName: input.operatorName,
+    operatorHistory: input.assignmentReason && input.operatorName
+      ? [
+          ...(input.currentReview?.operatorHistory ?? []),
+          {
+            operatorName: input.operatorName,
+            assignedAt: new Date().toISOString(),
+            reason: input.assignmentReason,
+          },
+        ]
+      : input.currentReview?.operatorHistory,
+    reviewedAt: input.reviewedAt,
+  });
+
+  const handleTakeCopyGroupAlertOwnership = (alert: CopyGroupAlertFeedItem) => {
+    if (!user?.id) {
       return;
     }
 
-    setCopyGroupHealthReviews((current) => ({
-      ...current,
-      [groupId]: {
-        acknowledgedAt: new Date().toISOString(),
-        note: copyGroupHealthNotes[groupId]?.trim() ?? "",
-        concernSignature: buildCopyGroupHealthConcernSignature(entry),
-        reviewedBy: user?.username ?? "Operator",
-        history: [
-          {
-            acknowledgedAt: new Date().toISOString(),
-            note: copyGroupHealthNotes[groupId]?.trim() ?? "",
-            concernSignature: buildCopyGroupHealthConcernSignature(entry),
-            reviewedBy: user?.username ?? "Operator",
-          },
-          ...(current[groupId]?.history ?? []),
-        ].slice(0, 5),
-      },
-    }));
+    const currentReview = copyGroupAlertReviewsByStoryKey.get(alert.storyKey);
+    saveCopyGroupAlertReviewsMutation.mutate([
+      buildCopyGroupAlertReviewPayload({
+        alert,
+        currentReview,
+        status: currentReview?.status ?? "pending",
+        operatorName: user.username,
+        note: copyGroupAlertNotes[alert.storyKey]?.trim() || currentReview?.note,
+        assignmentReason: currentReview?.operatorName
+          ? "Reassigned shared copy-group alert ownership"
+          : "Claimed shared copy-group alert",
+        reviewedAt: currentReview?.reviewedAt,
+      }),
+    ]);
   };
 
-  const handleClearCopyGroupHealthReview = (groupId: string) => {
-    setCopyGroupHealthReviews((current) => {
-      const next = { ...current };
-      delete next[groupId];
-      return next;
-    });
-  };
+  const handleAcknowledgeCopyGroupAlert = (alert: CopyGroupAlertFeedItem) => {
+    if (!user?.id) {
+      return;
+    }
 
-  const handleToggleCopyGroupHealthSelection = (groupId: string) => {
-    setSelectedCopyGroupHealthGroupIds((current) =>
-      current.includes(groupId)
-        ? current.filter((value) => value !== groupId)
-        : [...current, groupId],
-    );
-  };
-
-  const handleSelectAllVisibleCopyGroupHealthEntries = () => {
-    setSelectedCopyGroupHealthGroupIds(
-      sortedCopyGroupHealthEntries.slice(0, 6).map((entry) => entry.groupId),
-    );
-  };
-
-  const handleSelectStaleCopyGroupHealthEntries = () => {
-    setSelectedCopyGroupHealthGroupIds(
-      sortedCopyGroupHealthEntries
-        .slice(0, 6)
-        .filter((entry) => {
-          const review = copyGroupHealthReviews[entry.groupId];
-          return (
-            !!review &&
-            review.concernSignature !== buildCopyGroupHealthConcernSignature(entry)
-          );
-        })
-        .map((entry) => entry.groupId),
-    );
-  };
-
-  const handleClearCopyGroupHealthSelection = () => {
-    setSelectedCopyGroupHealthGroupIds([]);
-  };
-
-  const handleBulkClearCopyGroupHealthReviews = () => {
-    setCopyGroupHealthReviews((current) => {
-      const next = { ...current };
-      for (const groupId of selectedCopyGroupHealthGroupIds) {
-        delete next[groupId];
-      }
-      return next;
-    });
-    setSelectedCopyGroupHealthGroupIds([]);
-  };
-
-  const handleBulkAcknowledgeCopyGroupHealthReviews = () => {
-    const selectedIds = new Set(selectedCopyGroupHealthGroupIds);
+    const currentReview = copyGroupAlertReviewsByStoryKey.get(alert.storyKey);
     const now = new Date().toISOString();
+    saveCopyGroupAlertReviewsMutation.mutate([
+      buildCopyGroupAlertReviewPayload({
+        alert,
+        currentReview,
+        status: "reviewed",
+        operatorName: currentReview?.operatorName ?? user.username,
+        note: copyGroupAlertNotes[alert.storyKey]?.trim() || currentReview?.note,
+        assignmentReason: "Acknowledged shared copy-group alert",
+        reviewedAt: now,
+      }),
+    ]);
+  };
 
-    setCopyGroupHealthReviews((current) => {
-      const next = { ...current };
-      for (const entry of sortedCopyGroupHealthEntries) {
-        if (!selectedIds.has(entry.groupId)) {
-          continue;
-        }
+  const handleReopenCopyGroupAlert = (alert: CopyGroupAlertFeedItem) => {
+    if (!user?.id) {
+      return;
+    }
 
-        next[entry.groupId] = {
-          acknowledgedAt: now,
-          note: copyGroupHealthNotes[entry.groupId]?.trim() ?? "",
-          concernSignature: buildCopyGroupHealthConcernSignature(entry),
-          reviewedBy: user?.username ?? "Operator",
-          history: [
-            {
-              acknowledgedAt: now,
-              note: copyGroupHealthNotes[entry.groupId]?.trim() ?? "",
-              concernSignature: buildCopyGroupHealthConcernSignature(entry),
-              reviewedBy: user?.username ?? "Operator",
-            },
-            ...(current[entry.groupId]?.history ?? []),
-          ].slice(0, 5),
-        };
-      }
+    const currentReview = copyGroupAlertReviewsByStoryKey.get(alert.storyKey);
+    saveCopyGroupAlertReviewsMutation.mutate([
+      buildCopyGroupAlertReviewPayload({
+        alert,
+        currentReview,
+        status: "pending",
+        operatorName: currentReview?.operatorName ?? user.username,
+        note: copyGroupAlertNotes[alert.storyKey]?.trim() || currentReview?.note,
+        assignmentReason: "Reopened shared copy-group alert",
+      }),
+    ]);
+  };
+  const handleToggleCopyGroupAlertSelection = (storyKey: string) => {
+    setSelectedCopyGroupAlertStoryKeys((current) =>
+      current.includes(storyKey)
+        ? current.filter((value) => value !== storyKey)
+        : [...current, storyKey],
+    );
+  };
 
-      return next;
-    });
+  const handleSelectAllVisibleCopyGroupAlerts = () => {
+    setSelectedCopyGroupAlertStoryKeys(
+      sortedCopyGroupAlertStories.slice(0, 6).map((alert) => alert.storyKey),
+    );
+  };
 
-    setSelectedCopyGroupHealthGroupIds([]);
+  const handleSelectUnownedCopyGroupAlerts = () => {
+    setSelectedCopyGroupAlertStoryKeys(
+      sortedCopyGroupAlertStories
+        .slice(0, 6)
+        .filter((alert) => !copyGroupAlertReviewsByStoryKey.get(alert.storyKey)?.operatorName)
+        .map((alert) => alert.storyKey),
+    );
+  };
+
+  const handleClearCopyGroupAlertSelection = () => {
+    setSelectedCopyGroupAlertStoryKeys([]);
+  };
+
+  const handleBulkTakeCopyGroupAlertOwnership = () => {
+    if (!user?.id || selectedCopyGroupAlertStoryKeys.length === 0) {
+      return;
+    }
+
+    saveCopyGroupAlertReviewsMutation.mutate(
+      sortedCopyGroupAlertStories
+        .filter((alert) => selectedCopyGroupAlertStoryKeys.includes(alert.storyKey))
+        .map((alert) => {
+          const currentReview = copyGroupAlertReviewsByStoryKey.get(alert.storyKey);
+          return buildCopyGroupAlertReviewPayload({
+            alert,
+            currentReview,
+            status: currentReview?.status ?? "pending",
+            operatorName: user.username,
+            note: copyGroupAlertNotes[alert.storyKey]?.trim() || currentReview?.note,
+            assignmentReason: currentReview?.operatorName
+              ? "Reassigned shared copy-group alert ownership"
+              : "Claimed shared copy-group alert",
+            reviewedAt: currentReview?.reviewedAt,
+          });
+        }),
+    );
+    setSelectedCopyGroupAlertStoryKeys([]);
+  };
+
+  const handleBulkAcknowledgeCopyGroupAlerts = () => {
+    if (!user?.id || selectedCopyGroupAlertStoryKeys.length === 0) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    saveCopyGroupAlertReviewsMutation.mutate(
+      sortedCopyGroupAlertStories
+        .filter((alert) => selectedCopyGroupAlertStoryKeys.includes(alert.storyKey))
+        .map((alert) => {
+          const currentReview = copyGroupAlertReviewsByStoryKey.get(alert.storyKey);
+          return buildCopyGroupAlertReviewPayload({
+            alert,
+            currentReview,
+            status: "reviewed",
+            operatorName: currentReview?.operatorName ?? user.username,
+            note: copyGroupAlertNotes[alert.storyKey]?.trim() || currentReview?.note,
+            assignmentReason: "Acknowledged shared copy-group alert",
+            reviewedAt: now,
+          });
+        }),
+    );
+    setSelectedCopyGroupAlertStoryKeys([]);
   };
   const saveActivityPreferencesMutation = useMutation({
     mutationFn: async (settings: {
@@ -896,21 +708,64 @@ export default function Activity() {
       queryClient.setQueryData(["/api/auth/me"], result);
     },
   });
-  const savePositionSyncWorkflowMutation = useMutation({
-    mutationFn: async (reviews: PositionSyncWorkflowSaveInput[]) => {
-      const response = await apiRequest("POST", "/api/position-sync/reviews", {
+  const {
+    copyGroupHealthReviews,
+    copyGroupHealthNotes,
+    setCopyGroupHealthNotes,
+    copyGroupHealthReviewFilter,
+    setCopyGroupHealthReviewFilter,
+    copyGroupHealthRecoveryFilter,
+    setCopyGroupHealthRecoveryFilter,
+    copyGroupHealthBoardView,
+    setCopyGroupHealthBoardView,
+    copyGroupHealthSearch,
+    setCopyGroupHealthSearch,
+    selectedCopyGroupHealthGroupIds,
+    copyGroupHealthBulkResultSummary,
+    reviewedCopyGroupHealthCount,
+    staleCopyGroupHealthReviewCount,
+    unreviewedCopyGroupHealthCount,
+    recurringCopyGroupHealthCount,
+    recoverNowCopyGroupHealthCount,
+    stabilizeSoonCopyGroupHealthCount,
+    resumeCheckCopyGroupHealthCount,
+    stageBeforeUseCopyGroupHealthCount,
+    recoverNowCopyGroupHealthEntries,
+    sortedCopyGroupHealthEntries,
+    handleAcknowledgeCopyGroupHealth,
+    handleClearCopyGroupHealthReview,
+    handleToggleCopyGroupHealthSelection,
+    handleSelectAllVisibleCopyGroupHealthEntries,
+    handleSelectAttentionCopyGroupHealthEntries,
+    handleSelectRecoverNowCopyGroupHealthEntries,
+    handleSelectStaleCopyGroupHealthEntries,
+    handleClearCopyGroupHealthSelection,
+    handleBulkClearCopyGroupHealthReviews,
+    handleBulkAcknowledgeCopyGroupHealthReviews,
+  } = useActivityCopyGroupHealthBoard({
+    user,
+    copyGroupHealthWatchlist,
+    saveActivityPreferences: (settings) => saveActivityPreferencesMutation.mutate(settings),
+  });
+  const saveCopyGroupAlertReviewsMutation = useMutation({
+    mutationFn: async (reviews: CopyGroupAlertReviewEntry[]) => {
+      const response = await apiRequest("POST", "/api/copy-groups/alert-reviews", {
         reviews,
       });
-      return response.json() as Promise<{
-        success: boolean;
-        reviews: PositionSyncWorkflowSaveInput[];
-      }>;
+      return response.json() as Promise<CopyGroupAlertReviewsResponse>;
     },
-    onSuccess: (result, reviews) => {
-      queryClient.setQueryData(
-        user?.id ? ["/api/position-sync/reviews", user.id] : ["/api/position-sync/reviews", "anonymous"],
-        result,
-      );
+    onSuccess: (result) => {
+      queryClient.setQueryData(["/api/copy-groups", "alert-reviews"], result);
+      queryClient.invalidateQueries({ queryKey: ["/api/copy-groups", "alerts"] });
+      toast({
+        title: "Alert Workflow Updated",
+        description: "Shared copy-group alert ownership and review state saved.",
+      });
+    },
+  });
+  const { savePositionSyncWorkflowMutation } = usePositionSyncWorkflowActions({
+    userId: user?.id,
+    onSuccess: (_result, reviews) => {
       const latestStatus = reviews[0]?.status;
       toast({
         title: "Sync Workflow Updated",
@@ -920,52 +775,357 @@ export default function Activity() {
       });
     },
   });
-  const saveRiskFollowUpReviewsMutation = useMutation({
-    mutationFn: async (reviews: RiskFollowUpReviewEntry[]) => {
-      const response = await apiRequest("POST", "/api/risk-follow-up/reviews", {
-        reviews,
-      });
-      return response.json() as Promise<{
-        success: boolean;
-        reviews: RiskFollowUpReviewEntry[];
-      }>;
-    },
-    onSuccess: (result) => {
-      queryClient.setQueryData(
-        user?.id ? ["/api/risk-follow-up/reviews", user.id] : ["/api/risk-follow-up/reviews", "anonymous"],
-        result,
-      );
+  const {
+    repairCandidateFilter,
+    setRepairCandidateFilter,
+    repairCandidateSearch,
+    setRepairCandidateSearch,
+    selectedRepairCandidateKeys,
+    repairCandidateNotes,
+    setRepairCandidateNotes,
+    filteredRepairCandidates,
+    handleToggleRepairCandidateSelection,
+    handleSelectAllVisibleRepairCandidates,
+    handleSelectAutoReadyRepairCandidates,
+    handleClearRepairCandidateSelection,
+    handleBulkReviewRepairCandidates,
+    handleBulkSimulateRepairCandidates,
+    handleBulkTakeRepairCandidateOwnership,
+    handleBulkApproveRepairCandidates,
+    handleSaveRepairCandidateNote,
+  } = useActivitySyncRepairBoard({
+    user,
+    positionSyncRepairCandidates,
+    positionSyncWorkflowState,
+    savePositionSyncWorkflow: (reviews) => savePositionSyncWorkflowMutation.mutate(reviews),
+  });
+  const {
+    queueFilter,
+    setQueueFilter,
+    queueSearch,
+    setQueueSearch,
+    assignmentReasons,
+    setAssignmentReasons,
+    queueAuditFocus,
+    setQueueAuditFocus,
+    queueSort,
+    setQueueSort,
+    syncQueueBoardView,
+    setSyncQueueBoardView,
+    sortedAuditFocusedQueue,
+    overdueSyncEntries,
+    unassignedSyncEntries,
+    reassignedSyncEntries,
+    handleApproveSyncQueueEntry,
+    handleHandOffSyncQueueEntry,
+    handleCompleteSyncQueueEntry,
+    handleTakeOwnership,
+    handleSelectAuditFocus,
+    handleOpenRepairCandidateInQueue,
+  } = useActivitySyncReviewBoard({
+    user,
+    positionSyncQueue,
+    positionSyncWorkflowState,
+    savePositionSyncWorkflow: (reviews) => savePositionSyncWorkflowMutation.mutate(reviews),
+    saveActivityPreferences: (settings) => saveActivityPreferencesMutation.mutate(settings),
+  });
+  const {
+    saveRiskFollowUpReviewsMutation,
+    saveExecutionFollowUpReviewsMutation,
+    saveRithmicReadinessReviewsMutation,
+    recheckExecutionFollowUpItemMutation,
+    recheckRithmicReadinessMutation,
+  } = useFollowUpReviewActions({
+    userId: user?.id,
+    onRiskSuccess: () => {
       toast({
         title: "Risk Queue Updated",
         description: "Shared risk follow-up ownership and review state saved.",
       });
     },
+    onExecutionSuccess: () => {
+      toast({
+        title: "Execution Queue Updated",
+      description: "Shared execution ownership and review state saved.",
+      });
+    },
   });
+
+  const handleTakeRithmicReadinessOwnership = (storyKey: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const item = rithmicReadinessFollowUpItems.find((entry) => entry.storyKey === storyKey);
+    if (!item) {
+      return;
+    }
+
+    const currentReview = rithmicReadinessReviewsByStoryKey.get(storyKey) ?? item.review;
+    const now = new Date().toISOString();
+    saveRithmicReadinessReviewsMutation.mutate([
+      buildRithmicReadinessReviewPayload({
+        storyKey,
+        accountId: item.accountId,
+        currentReview,
+        operatorName: user.username,
+        note: rithmicReadinessNotes[storyKey]?.trim() || currentReview?.note,
+        status: currentReview?.status ?? "pending",
+        assignmentReason: currentReview?.operatorName
+          ? "Reassigned Rithmic readiness ownership"
+          : "Claimed Rithmic readiness follow-up",
+        reviewedAt: now,
+      }),
+    ]);
+  };
+
+  const handleSaveRithmicReadinessNote = (storyKey: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const item = rithmicReadinessFollowUpItems.find((entry) => entry.storyKey === storyKey);
+    if (!item) {
+      return;
+    }
+
+    const currentReview = rithmicReadinessReviewsByStoryKey.get(storyKey) ?? item.review;
+    saveRithmicReadinessReviewsMutation.mutate([
+      buildRithmicReadinessReviewPayload({
+        storyKey,
+        accountId: item.accountId,
+        currentReview,
+        operatorName: currentReview?.operatorName ?? user.username,
+        note: rithmicReadinessNotes[storyKey]?.trim() || undefined,
+        status: currentReview?.status ?? "pending",
+      }),
+    ]);
+  };
+
+  const handleMarkRithmicReadinessReviewed = (storyKey: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const item = rithmicReadinessFollowUpItems.find((entry) => entry.storyKey === storyKey);
+    if (!item) {
+      return;
+    }
+
+    const currentReview = rithmicReadinessReviewsByStoryKey.get(storyKey) ?? item.review;
+    const now = new Date().toISOString();
+    saveRithmicReadinessReviewsMutation.mutate([
+      buildRithmicReadinessReviewPayload({
+        storyKey,
+        accountId: item.accountId,
+        currentReview,
+        operatorName: currentReview?.operatorName ?? user.username,
+        note: rithmicReadinessNotes[storyKey]?.trim() || currentReview?.note,
+        status: "reviewed",
+        assignmentReason: "Reviewed Rithmic readiness alert",
+        reviewedAt: now,
+      }),
+    ]);
+  };
+
+  const handleReopenRithmicReadinessAlert = (storyKey: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const item = rithmicReadinessFollowUpItems.find((entry) => entry.storyKey === storyKey);
+    if (!item) {
+      return;
+    }
+
+    const currentReview = rithmicReadinessReviewsByStoryKey.get(storyKey) ?? item.review;
+    const now = new Date().toISOString();
+    saveRithmicReadinessReviewsMutation.mutate([
+      buildRithmicReadinessReviewPayload({
+        storyKey,
+        accountId: item.accountId,
+        currentReview,
+        operatorName: currentReview?.operatorName ?? user.username,
+        note: rithmicReadinessNotes[storyKey]?.trim() || currentReview?.note,
+        status: "pending",
+        assignmentReason: "Reopened Rithmic readiness alert",
+        reviewedAt: now,
+      }),
+    ]);
+  };
+
+  const handleToggleRithmicReadinessSelection = (storyKey: string) => {
+    setSelectedRithmicReadinessStoryKeys((current) =>
+      current.includes(storyKey)
+        ? current.filter((value) => value !== storyKey)
+        : [...current, storyKey],
+    );
+  };
+
+  const handleSelectAllVisibleRithmicReadinessItems = () => {
+    setSelectedRithmicReadinessStoryKeys(
+      filteredRithmicReadinessFollowUpItems.map((item) => item.storyKey),
+    );
+  };
+
+  const handleSelectUnownedRithmicReadinessItems = () => {
+    setSelectedRithmicReadinessStoryKeys(
+      filteredRithmicReadinessFollowUpItems
+        .filter((item) => !item.review?.operatorName)
+        .map((item) => item.storyKey),
+    );
+  };
+
+  const handleClearRithmicReadinessSelection = () => {
+    setSelectedRithmicReadinessStoryKeys([]);
+  };
+
+  const handleBulkTakeRithmicReadinessOwnership = () => {
+    if (!user?.id || selectedRithmicReadinessStoryKeys.length === 0) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    saveRithmicReadinessReviewsMutation.mutate(
+      filteredRithmicReadinessFollowUpItems
+        .filter((item) => selectedRithmicReadinessStoryKeys.includes(item.storyKey))
+        .map((item) =>
+          buildRithmicReadinessReviewPayload({
+            storyKey: item.storyKey,
+            accountId: item.accountId,
+            currentReview: item.review,
+            operatorName: user.username,
+            note: rithmicReadinessNotes[item.storyKey]?.trim() || item.review?.note,
+            status: item.review?.status ?? "pending",
+            assignmentReason: item.review?.operatorName
+              ? "Reassigned Rithmic readiness ownership"
+              : "Claimed Rithmic readiness follow-up",
+            reviewedAt: now,
+          }),
+        ),
+    );
+    setSelectedRithmicReadinessStoryKeys([]);
+  };
+
+  const handleBulkMarkRithmicReadinessReviewed = () => {
+    if (!user?.id || selectedRithmicReadinessStoryKeys.length === 0) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    saveRithmicReadinessReviewsMutation.mutate(
+      filteredRithmicReadinessFollowUpItems
+        .filter((item) => selectedRithmicReadinessStoryKeys.includes(item.storyKey))
+        .map((item) =>
+          buildRithmicReadinessReviewPayload({
+            storyKey: item.storyKey,
+            accountId: item.accountId,
+            currentReview: item.review,
+            operatorName: item.review?.operatorName ?? user.username,
+            note: rithmicReadinessNotes[item.storyKey]?.trim() || item.review?.note,
+            status: "reviewed",
+            assignmentReason: "Reviewed Rithmic readiness alert",
+            reviewedAt: now,
+          }),
+        ),
+    );
+    setSelectedRithmicReadinessStoryKeys([]);
+  };
+
+  const handleBulkReopenRithmicReadinessItems = () => {
+    if (!user?.id || selectedRithmicReadinessStoryKeys.length === 0) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    saveRithmicReadinessReviewsMutation.mutate(
+      filteredRithmicReadinessFollowUpItems
+        .filter((item) => selectedRithmicReadinessStoryKeys.includes(item.storyKey))
+        .map((item) =>
+          buildRithmicReadinessReviewPayload({
+            storyKey: item.storyKey,
+            accountId: item.accountId,
+            currentReview: item.review,
+            operatorName: item.review?.operatorName ?? user.username,
+            note: rithmicReadinessNotes[item.storyKey]?.trim() || item.review?.note,
+            status: "pending",
+            assignmentReason: "Reopened Rithmic readiness alert",
+            reviewedAt: now,
+          }),
+        ),
+    );
+    setSelectedRithmicReadinessStoryKeys([]);
+  };
+
+  const handleRithmicReadinessRecheck = async (storyKey: string) => {
+    const item = rithmicReadinessFollowUpItems.find((entry) => entry.storyKey === storyKey);
+    if (!item) {
+      return;
+    }
+
+    try {
+      const result = await recheckRithmicReadinessMutation.mutateAsync(item.accountId);
+      toast({
+        title: "Rithmic Readiness Rechecked",
+        description: result.readiness.ready
+          ? `${result.readiness.accountName} is ready after the latest saved-account check.`
+          : `${result.readiness.accountName} refreshed. ${result.readiness.blockers[0] ?? "Reconnect proof still needs follow-up."}`,
+      });
+    } catch (error) {
+      toast({
+        title: "Rithmic Re-check Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleBulkRecheckRithmicReadinessItems = async () => {
+    const selectedItems = filteredRithmicReadinessFollowUpItems.filter((item) =>
+      selectedRithmicReadinessStoryKeys.includes(item.storyKey),
+    );
+    if (selectedItems.length === 0) {
+      return;
+    }
+
+    try {
+      await Promise.all(
+        selectedItems.map((item) => recheckRithmicReadinessMutation.mutateAsync(item.accountId)),
+      );
+      setSelectedRithmicReadinessStoryKeys([]);
+      toast({
+        title: "Rithmic Readiness Rechecked",
+        description: `${selectedItems.length} saved account${selectedItems.length === 1 ? "" : "s"} refreshed for reconnect proof.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Bulk Rithmic Re-check Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleTakeRiskFollowUpOwnership = (accountId: string) => {
     if (!user?.id) {
       return;
     }
 
-    const currentReview = (riskFollowUpReviewData?.reviews ?? []).find((entry) => entry.accountId === accountId);
+    const currentReview = riskReviewsByAccountId.get(accountId);
     const now = new Date().toISOString();
 
     saveRiskFollowUpReviewsMutation.mutate([
-      {
+      buildRiskFollowUpReviewPayload({
         accountId,
-        status: currentReview?.status ?? "pending",
-        note: riskFollowUpNotes[accountId]?.trim() || currentReview?.note,
+        currentReview,
         operatorName: user.username,
-        operatorHistory: appendRiskFollowUpOperatorAssignment(
-          currentReview?.operatorHistory,
-          user.username,
-          now,
-          currentReview?.operatorName
-            ? "Reassigned risk follow-up ownership"
-            : "Claimed unassigned risk follow-up",
-        ),
-        reviewedAt: currentReview?.reviewedAt,
-      },
+        note: riskFollowUpNotes[accountId]?.trim() || currentReview?.note,
+        status: currentReview?.status ?? "pending",
+        assignmentReason: currentReview?.operatorName
+          ? "Reassigned risk follow-up ownership"
+          : "Claimed unassigned risk follow-up",
+        reviewedAt: now,
+      }),
     ]);
   };
 
@@ -974,16 +1134,15 @@ export default function Activity() {
       return;
     }
 
-    const currentReview = (riskFollowUpReviewData?.reviews ?? []).find((entry) => entry.accountId === accountId);
+    const currentReview = riskReviewsByAccountId.get(accountId);
     saveRiskFollowUpReviewsMutation.mutate([
-      {
+      buildRiskFollowUpReviewPayload({
         accountId,
-        status: currentReview?.status ?? "pending",
-        note: riskFollowUpNotes[accountId]?.trim() || undefined,
+        currentReview,
         operatorName: currentReview?.operatorName ?? user.username,
-        operatorHistory: currentReview?.operatorHistory,
-        reviewedAt: currentReview?.reviewedAt,
-      },
+        note: riskFollowUpNotes[accountId]?.trim() || undefined,
+        status: currentReview?.status ?? "pending",
+      }),
     ]);
   };
 
@@ -992,22 +1151,18 @@ export default function Activity() {
       return;
     }
 
-    const currentReview = (riskFollowUpReviewData?.reviews ?? []).find((entry) => entry.accountId === accountId);
+    const currentReview = riskReviewsByAccountId.get(accountId);
     const now = new Date().toISOString();
     saveRiskFollowUpReviewsMutation.mutate([
-      {
+      buildRiskFollowUpReviewPayload({
         accountId,
-        status: "reviewed",
-        note: riskFollowUpNotes[accountId]?.trim() || currentReview?.note,
+        currentReview,
         operatorName: currentReview?.operatorName ?? user.username,
-        operatorHistory: appendRiskFollowUpOperatorAssignment(
-          currentReview?.operatorHistory,
-          currentReview?.operatorName ?? user.username,
-          now,
-          "Reviewed risk follow-up item",
-        ),
+        note: riskFollowUpNotes[accountId]?.trim() || currentReview?.note,
+        status: "reviewed",
+        assignmentReason: "Reviewed risk follow-up item",
         reviewedAt: now,
-      },
+      }),
     ]);
   };
 
@@ -1016,21 +1171,18 @@ export default function Activity() {
       return;
     }
 
-    const currentReview = (riskFollowUpReviewData?.reviews ?? []).find((entry) => entry.accountId === accountId);
+    const currentReview = riskReviewsByAccountId.get(accountId);
     const now = new Date().toISOString();
     saveRiskFollowUpReviewsMutation.mutate([
-      {
+      buildRiskFollowUpReviewPayload({
         accountId,
-        status: "pending",
-        note: riskFollowUpNotes[accountId]?.trim() || currentReview?.note,
+        currentReview,
         operatorName: currentReview?.operatorName ?? user.username,
-        operatorHistory: appendRiskFollowUpOperatorAssignment(
-          currentReview?.operatorHistory,
-          user.username,
-          now,
-          "Reopened risk follow-up item",
-        ),
-      },
+        note: riskFollowUpNotes[accountId]?.trim() || currentReview?.note,
+        status: "pending",
+        assignmentReason: "Reopened risk follow-up item",
+        reviewedAt: now,
+      }),
     ]);
   };
 
@@ -1067,21 +1219,19 @@ export default function Activity() {
     saveRiskFollowUpReviewsMutation.mutate(
       filteredRiskFollowUpItems
         .filter((item) => selectedRiskFollowUpAccountIds.includes(item.accountId))
-        .map((item) => ({
-          accountId: item.accountId,
-          status: item.review?.status ?? "pending",
-          note: riskFollowUpNotes[item.accountId]?.trim() || item.review?.note,
-          operatorName: user.username,
-          operatorHistory: appendRiskFollowUpOperatorAssignment(
-            item.review?.operatorHistory,
-            user.username,
-            now,
-            item.review?.operatorName
+        .map((item) =>
+          buildRiskFollowUpReviewPayload({
+            accountId: item.accountId,
+            currentReview: item.review,
+            operatorName: user.username,
+            note: riskFollowUpNotes[item.accountId]?.trim() || item.review?.note,
+            status: item.review?.status ?? "pending",
+            assignmentReason: item.review?.operatorName
               ? "Reassigned risk follow-up ownership"
               : "Claimed unassigned risk follow-up",
-          ),
-          reviewedAt: item.review?.reviewedAt,
-        })),
+            reviewedAt: now,
+          }),
+        ),
     );
     setSelectedRiskFollowUpAccountIds([]);
   };
@@ -1095,19 +1245,17 @@ export default function Activity() {
     saveRiskFollowUpReviewsMutation.mutate(
       filteredRiskFollowUpItems
         .filter((item) => selectedRiskFollowUpAccountIds.includes(item.accountId))
-        .map((item) => ({
-          accountId: item.accountId,
-          status: "reviewed",
-          note: riskFollowUpNotes[item.accountId]?.trim() || item.review?.note,
-          operatorName: item.review?.operatorName ?? user.username,
-          operatorHistory: appendRiskFollowUpOperatorAssignment(
-            item.review?.operatorHistory,
-            item.review?.operatorName ?? user.username,
-            now,
-            "Reviewed risk follow-up item",
-          ),
-          reviewedAt: now,
-        })),
+        .map((item) =>
+          buildRiskFollowUpReviewPayload({
+            accountId: item.accountId,
+            currentReview: item.review,
+            operatorName: item.review?.operatorName ?? user.username,
+            note: riskFollowUpNotes[item.accountId]?.trim() || item.review?.note,
+            status: "reviewed",
+            assignmentReason: "Reviewed risk follow-up item",
+            reviewedAt: now,
+          }),
+        ),
     );
     setSelectedRiskFollowUpAccountIds([]);
   };
@@ -1121,183 +1269,285 @@ export default function Activity() {
     saveRiskFollowUpReviewsMutation.mutate(
       filteredRiskFollowUpItems
         .filter((item) => selectedRiskFollowUpAccountIds.includes(item.accountId))
-        .map((item) => ({
-          accountId: item.accountId,
-          status: "pending",
-          note: riskFollowUpNotes[item.accountId]?.trim() || item.review?.note,
-          operatorName: item.review?.operatorName ?? user.username,
-          operatorHistory: appendRiskFollowUpOperatorAssignment(
-            item.review?.operatorHistory,
-            user.username,
-            now,
-            "Reopened risk follow-up item",
-          ),
-        })),
+        .map((item) =>
+          buildRiskFollowUpReviewPayload({
+            accountId: item.accountId,
+            currentReview: item.review,
+            operatorName: item.review?.operatorName ?? user.username,
+            note: riskFollowUpNotes[item.accountId]?.trim() || item.review?.note,
+            status: "pending",
+            assignmentReason: "Reopened risk follow-up item",
+            reviewedAt: now,
+          }),
+        ),
     );
     setSelectedRiskFollowUpAccountIds([]);
   };
-
-  useEffect(() => {
-    if (!user?.id || !activityPreferencesHydrated) {
-      return;
-    }
-
-    const persistedQueueSort = normalizeQueueSort(user.activityQueueSort);
-    const persistedQueueAuditFocus = normalizeQueueAuditFocus(user.activityQueueAuditFocus);
-
-    if (
-      queueSort === persistedQueueSort &&
-      queueAuditFocus === persistedQueueAuditFocus
-    ) {
-      return;
-    }
-
-    saveActivityPreferencesMutation.mutate({
-      activityQueueSort: queueSort,
-      activityQueueAuditFocus: queueAuditFocus,
-    });
-  }, [
-    activityPreferencesHydrated,
-    queueAuditFocus,
-    queueSort,
-    saveActivityPreferencesMutation,
-    user?.activityQueueAuditFocus,
-    user?.activityQueueSort,
-    user?.id,
-  ]);
-
-  useEffect(() => {
-    if (!user?.id || !copyGroupHealthPreferencesHydrated) {
-      return;
-    }
-
-    const persistedFilter = normalizeCopyGroupHealthReviewFilter(
-      user.copyGroupHealthReviewFilter,
+  const handleToggleExecutionFollowUpSelection = (historyId: string) => {
+    setSelectedExecutionFollowUpHistoryIds((current) =>
+      current.includes(historyId)
+        ? current.filter((id) => id !== historyId)
+        : [...current, historyId],
     );
-    const persistedReviewsJson = user.copyGroupHealthReviewsJson ?? null;
-    const nextReviewsJson = JSON.stringify(copyGroupHealthReviews);
+  };
 
-    if (
-      copyGroupHealthReviewFilter === persistedFilter &&
-      nextReviewsJson === (persistedReviewsJson ?? "{}")
-    ) {
+  const handleSelectAllVisibleExecutionFollowUpItems = () => {
+    setSelectedExecutionFollowUpHistoryIds(
+      filteredExecutionFollowUpItems.map((item) => item.historyId),
+    );
+  };
+
+  const handleSelectFailedExecutionFollowUpItems = () => {
+    setSelectedExecutionFollowUpHistoryIds(
+      filteredExecutionFollowUpItems
+        .filter((item) => item.category === "failed")
+        .map((item) => item.historyId),
+    );
+  };
+
+  const handleClearExecutionFollowUpSelection = () => {
+    setSelectedExecutionFollowUpHistoryIds([]);
+  };
+
+  const handleExecutionFollowUpRecheck = async (historyId: string) => {
+    try {
+      await recheckExecutionFollowUpItemMutation.mutateAsync(historyId);
+      toast({
+        title: "Execution Rechecked",
+        description: "The latest stored lifecycle state was refreshed for this execution.",
+      });
+    } catch (error) {
+      toast({
+        title: "Execution Recheck Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleTakeExecutionFollowUpOwnership = (historyId: string) => {
+    if (!user?.id) {
       return;
     }
 
-    saveActivityPreferencesMutation.mutate({
-      copyGroupHealthReviewFilter,
-      copyGroupHealthReviewsJson: nextReviewsJson,
-    });
-  }, [
-    copyGroupHealthPreferencesHydrated,
-    copyGroupHealthReviewFilter,
-    copyGroupHealthReviews,
-    saveActivityPreferencesMutation,
-    user?.copyGroupHealthReviewFilter,
-    user?.copyGroupHealthReviewsJson,
-    user?.id,
-  ]);
-
-  const handleApproveSyncQueueEntry = (entry: (typeof filteredPositionSyncQueue)[number]) => {
-    savePositionSyncWorkflowMutation.mutate([
-      {
-        groupId: entry.groupId,
-        followerAccountId: entry.followerAccountId,
-        status: "approved",
-        note: entry.note,
-        operatorName: entry.operatorName,
-        reviewedAt: entry.reviewedAt,
-        simulatedAt: entry.simulatedAt,
-        approvedAt: new Date().toISOString(),
-      },
+    const currentReview = executionReviewsByHistoryId.get(historyId);
+    const now = new Date().toISOString();
+    saveExecutionFollowUpReviewsMutation.mutate([
+      buildExecutionFollowUpReviewPayload({
+        historyId,
+        currentReview,
+        operatorName: user.username,
+        note: executionFollowUpNotes[historyId]?.trim() || currentReview?.note,
+        status: currentReview?.status ?? "pending",
+        assignmentReason: currentReview?.operatorName
+          ? "Reassigned execution follow-up ownership"
+          : "Claimed execution follow-up",
+        reviewedAt: now,
+      }),
     ]);
   };
 
-  const handleHandOffSyncQueueEntry = (entry: (typeof filteredPositionSyncQueue)[number]) => {
-    const handedOffAt = new Date().toISOString();
-    const reason =
-      assignmentReasons[entry.key]?.trim() ||
-      "Assigned for manual execution";
-    savePositionSyncWorkflowMutation.mutate([
-      {
-        groupId: entry.groupId,
-        followerAccountId: entry.followerAccountId,
-        status: "handed_off",
-        note: entry.note,
-        operatorName: user?.username,
-        operatorHistory: appendPositionSyncOperatorAssignment(
-          entry.operatorHistory,
-          user?.username,
-          handedOffAt,
-          reason,
+  const handleSaveExecutionFollowUpNote = (historyId: string) => {
+    if (!user?.id) {
+      return;
+    }
+
+    const currentReview = executionReviewsByHistoryId.get(historyId);
+    saveExecutionFollowUpReviewsMutation.mutate([
+      buildExecutionFollowUpReviewPayload({
+        historyId,
+        currentReview,
+        operatorName: currentReview?.operatorName ?? user.username,
+        note: executionFollowUpNotes[historyId]?.trim() || undefined,
+        status: currentReview?.status ?? "pending",
+      }),
+    ]);
+  };
+
+  const handleExecutionFollowUpReview = async (historyId: string) => {
+    try {
+      if (!user?.id) {
+        return;
+      }
+
+      const currentReview = executionReviewsByHistoryId.get(historyId);
+      const note = executionFollowUpNotes[historyId]?.trim();
+      const now = new Date().toISOString();
+      await saveExecutionFollowUpReviewsMutation.mutateAsync([
+        buildExecutionFollowUpReviewPayload({
+          historyId,
+          currentReview,
+          operatorName: currentReview?.operatorName ?? user.username,
+          note: note && note.length > 0 ? note : currentReview?.note,
+          status: "reviewed",
+          assignmentReason: "Reviewed execution follow-up item",
+          reviewedAt: now,
+        }),
+      ]);
+      setExecutionFollowUpNotes((current) => {
+        const next = { ...current };
+        delete next[historyId];
+        return next;
+      });
+      toast({
+        title: "Execution Reviewed",
+        description: "That failed execution is now marked as reviewed across the shared operator surfaces.",
+      });
+    } catch (error) {
+      toast({
+        title: "Execution Review Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleBulkRecheckExecutionFollowUpItems = async () => {
+    const selectedItems = filteredExecutionFollowUpItems.filter((item) =>
+      selectedExecutionFollowUpHistoryIds.includes(item.historyId),
+    );
+    if (selectedItems.length === 0) {
+      return;
+    }
+
+    try {
+      await Promise.all(selectedItems.map((item) => recheckExecutionFollowUpItemMutation.mutateAsync(item.historyId)));
+      setSelectedExecutionFollowUpHistoryIds([]);
+      toast({
+        title: "Execution Queue Rechecked",
+        description: `${selectedItems.length} execution item${selectedItems.length === 1 ? "" : "s"} refreshed from stored lifecycle history.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Bulk Recheck Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleBulkTakeExecutionFollowUpOwnership = () => {
+    if (!user?.id || selectedExecutionFollowUpHistoryIds.length === 0) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    saveExecutionFollowUpReviewsMutation.mutate(
+      filteredExecutionFollowUpItems
+        .filter((item) => selectedExecutionFollowUpHistoryIds.includes(item.historyId))
+        .map((item) =>
+          buildExecutionFollowUpReviewPayload({
+            historyId: item.historyId,
+            currentReview: {
+              historyId: item.historyId,
+              status: item.reviewStatus ?? "pending",
+              note: item.reviewNote,
+              operatorName: item.operatorName,
+              operatorHistory: item.operatorHistory,
+              reviewedAt: item.reviewedAt,
+            },
+            operatorName: user.username,
+            note: executionFollowUpNotes[item.historyId]?.trim() || item.reviewNote,
+            status: item.reviewStatus ?? "pending",
+            assignmentReason: item.operatorName
+              ? "Reassigned execution follow-up ownership"
+              : "Claimed execution follow-up",
+            reviewedAt: now,
+          }),
         ),
-        reviewedAt: entry.reviewedAt,
-        simulatedAt: entry.simulatedAt,
-        approvedAt: entry.approvedAt,
-        handedOffAt,
-      },
-    ]);
+    );
+    setSelectedExecutionFollowUpHistoryIds([]);
   };
 
-  const handleCompleteSyncQueueEntry = (entry: (typeof filteredPositionSyncQueue)[number]) => {
-    const completedManuallyAt = new Date().toISOString();
-    const reason =
-      assignmentReasons[entry.key]?.trim() ||
-      "Completed manual follow-through";
-    savePositionSyncWorkflowMutation.mutate([
-      {
-        groupId: entry.groupId,
-        followerAccountId: entry.followerAccountId,
-        status: "completed_manually",
-        note: entry.note,
-        operatorName: user?.username ?? entry.operatorName,
-        operatorHistory: appendPositionSyncOperatorAssignment(
-          entry.operatorHistory,
-          user?.username ?? entry.operatorName,
-          completedManuallyAt,
-          reason,
+  const handleBulkReopenExecutionFollowUpItems = () => {
+    if (!user?.id || selectedExecutionFollowUpHistoryIds.length === 0) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    saveExecutionFollowUpReviewsMutation.mutate(
+      filteredExecutionFollowUpItems
+        .filter((item) => selectedExecutionFollowUpHistoryIds.includes(item.historyId))
+        .map((item) =>
+          buildExecutionFollowUpReviewPayload({
+            historyId: item.historyId,
+            currentReview: {
+              historyId: item.historyId,
+              status: item.reviewStatus ?? "pending",
+              note: item.reviewNote,
+              operatorName: item.operatorName,
+              operatorHistory: item.operatorHistory,
+              reviewedAt: item.reviewedAt,
+            },
+            operatorName: item.operatorName ?? user.username,
+            note: executionFollowUpNotes[item.historyId]?.trim() || item.reviewNote,
+            status: "pending",
+            assignmentReason: "Reopened execution follow-up item",
+            reviewedAt: now,
+          }),
         ),
-        reviewedAt: entry.reviewedAt,
-        simulatedAt: entry.simulatedAt,
-        approvedAt: entry.approvedAt,
-        handedOffAt: entry.handedOffAt,
-        completedManuallyAt,
-      },
-    ]);
+    );
+    setSelectedExecutionFollowUpHistoryIds([]);
   };
 
-  const handleTakeOwnership = (entry: (typeof filteredPositionSyncQueue)[number]) => {
-    const reason =
-      assignmentReasons[entry.key]?.trim() ||
-      (entry.operatorName ? "Reassigned ownership" : "Claimed unassigned follow-up");
-    savePositionSyncWorkflowMutation.mutate([
-      {
-        groupId: entry.groupId,
-        followerAccountId: entry.followerAccountId,
-        status: entry.status,
-        note: entry.note,
-        operatorName: user?.username,
-        operatorHistory: appendPositionSyncOperatorAssignment(
-          entry.operatorHistory,
-          user?.username,
-          new Date().toISOString(),
-          reason,
+  const handleBulkReviewExecutionFollowUpItems = async () => {
+    if (!user?.id) {
+      return;
+    }
+
+    const selectedItems = filteredExecutionFollowUpItems.filter(
+      (item) =>
+        selectedExecutionFollowUpHistoryIds.includes(item.historyId) &&
+        item.category === "failed" &&
+        item.reviewStatus !== "reviewed",
+    );
+    if (selectedItems.length === 0) {
+      return;
+    }
+
+    try {
+      const now = new Date().toISOString();
+      await Promise.all(
+        selectedItems.map((item) =>
+          saveExecutionFollowUpReviewsMutation.mutateAsync([
+            buildExecutionFollowUpReviewPayload({
+              historyId: item.historyId,
+              currentReview: {
+                historyId: item.historyId,
+                status: item.reviewStatus ?? "pending",
+                note: item.reviewNote,
+                operatorName: item.operatorName,
+                operatorHistory: item.operatorHistory,
+                reviewedAt: item.reviewedAt,
+              },
+              operatorName: item.operatorName ?? user.username,
+              note: executionFollowUpNotes[item.historyId]?.trim() || item.reviewNote,
+              status: "reviewed",
+              assignmentReason: "Reviewed execution follow-up item",
+              reviewedAt: now,
+            }),
+          ]),
         ),
-        reviewedAt: entry.reviewedAt,
-        simulatedAt: entry.simulatedAt,
-        approvedAt: entry.approvedAt,
-        handedOffAt: entry.handedOffAt,
-        completedManuallyAt: entry.completedManuallyAt,
-      },
-    ]);
-  };
-
-  const handleSelectAuditFocus = (
-    nextFocus: "all" | "overdue" | "unassigned" | "reassigned",
-    nextFilter: PositionSyncQueueFilter = "all",
-  ) => {
-    setQueueAuditFocus(nextFocus);
-    setQueueFilter(nextFilter);
+      );
+      setSelectedExecutionFollowUpHistoryIds([]);
+      setExecutionFollowUpNotes((current) => {
+        const next = { ...current };
+        for (const item of selectedItems) {
+          delete next[item.historyId];
+        }
+        return next;
+      });
+      toast({
+        title: "Execution Failures Reviewed",
+        description: `${selectedItems.length} failed execution item${selectedItems.length === 1 ? "" : "s"} marked reviewed.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Bulk Review Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -1326,6 +1576,11 @@ export default function Activity() {
           <p className="mt-2 text-2xl font-semibold text-amber-300">{unreadEstimate}</p>
           <p className="mt-1 text-sm text-zinc-400">operational alerts and follow-up items</p>
         </div>
+        <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 p-4">
+          <p className="text-[11px] uppercase tracking-[0.24em] text-rose-100">Alert Stories</p>
+          <p className="mt-2 text-2xl font-semibold text-white">{copyGroupAlertStories.length}</p>
+          <p className="mt-1 text-sm text-rose-100/80">shared copy-group alert stories feeding recovery work</p>
+        </div>
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
           <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Sync Reviews</p>
           <p className="mt-2 text-2xl font-semibold text-cyan-200">{reviewedSyncCount + simulatedSyncCount}</p>
@@ -1334,354 +1589,109 @@ export default function Activity() {
           </p>
         </div>
         <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4">
-          <p className="text-[11px] uppercase tracking-[0.24em] text-amber-200">Needs Follow-Up</p>
-          <p className="mt-2 text-2xl font-semibold text-white">{attentionSyncCount}</p>
+          <p className="text-[11px] uppercase tracking-[0.24em] text-amber-200">Shared Operator Work</p>
+          <p className="mt-2 text-2xl font-semibold text-white">{operatorWorkSummary.overdue}</p>
           <p className="mt-1 text-sm text-amber-100">
-            Approved or handed-off sync items that have been waiting more than 30 minutes
+            {operatorWorkSummary.headline}
           </p>
         </div>
         <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4">
-          <p className="text-[11px] uppercase tracking-[0.24em] text-cyan-100">Unassigned Follow-Up</p>
-          <p className="mt-2 text-2xl font-semibold text-white">{unassignedSyncCount}</p>
+          <p className="text-[11px] uppercase tracking-[0.24em] text-cyan-100">Ownership Gaps</p>
+          <p className="mt-2 text-2xl font-semibold text-white">{operatorWorkSummary.unassigned}</p>
           <p className="mt-1 text-sm text-cyan-100">
-            Approved or handed-off sync items that still do not have an operator owner
+            {operatorWorkSummary.detail}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4">
+          <p className="text-[11px] uppercase tracking-[0.24em] text-sky-100">Sync Repair Plan</p>
+          <p className="mt-2 text-2xl font-semibold text-white">{positionSyncRepairSummary.autoReadyCount}</p>
+          <p className="mt-1 text-sm text-sky-100">
+            {positionSyncRepairSummary.headline}. {positionSyncRepairSummary.detail}
           </p>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(10,12,18,0.98),rgba(8,10,16,0.98))] p-5">
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Copy Group Health</p>
-            <h2 className="mt-2 text-2xl font-semibold text-white">Operational watchlist</h2>
-            <p className="mt-1 text-sm text-zinc-400">{copyGroupPulse.detail}</p>
-          </div>
-          <div
-            className={`rounded-2xl border px-4 py-3 text-sm ${
-              copyGroupPulse.tone === "danger"
-                ? "border-rose-400/20 bg-rose-400/10 text-rose-100"
-                : copyGroupPulse.tone === "warn"
-                  ? "border-amber-400/20 bg-amber-400/10 text-amber-100"
-                  : copyGroupPulse.tone === "muted"
-                    ? "border-white/10 bg-white/[0.03] text-zinc-300"
-                    : "border-emerald-400/20 bg-emerald-400/10 text-emerald-100"
-            }`}
-          >
-            {copyGroupPulse.headline}
-          </div>
-        </div>
+      <ActivityCopyGroupAlertBoard
+        copyGroupAlertStories={copyGroupAlertStories}
+        recentCopyGroupAlerts={recentCopyGroupAlerts}
+        sortedCopyGroupAlertStories={sortedCopyGroupAlertStories}
+        newCopyGroupAlertCount={newCopyGroupAlertCount}
+        unownedCopyGroupAlertCount={unownedCopyGroupAlertCount}
+        myCopyGroupAlertCount={myCopyGroupAlertCount}
+        reviewedCopyGroupAlertCount={reviewedCopyGroupAlertCount}
+        staleCopyGroupAlertCount={staleCopyGroupAlertCount}
+        copyGroupAlertSearch={copyGroupAlertSearch}
+        onCopyGroupAlertSearchChange={setCopyGroupAlertSearch}
+        copyGroupAlertFilter={copyGroupAlertFilter}
+        onCopyGroupAlertFilterChange={setCopyGroupAlertFilter}
+        selectedCopyGroupAlertStoryKeys={selectedCopyGroupAlertStoryKeys}
+        copyGroupAlertNotes={copyGroupAlertNotes}
+        copyGroupAlertReviewsByStoryKey={copyGroupAlertReviewsByStoryKey}
+        formatTimestamp={formatTimestamp}
+        isSaving={saveCopyGroupAlertReviewsMutation.isPending}
+        onToggleCopyGroupAlertSelection={handleToggleCopyGroupAlertSelection}
+        onSelectAllVisibleCopyGroupAlerts={handleSelectAllVisibleCopyGroupAlerts}
+        onSelectUnownedCopyGroupAlerts={handleSelectUnownedCopyGroupAlerts}
+        onClearCopyGroupAlertSelection={handleClearCopyGroupAlertSelection}
+        onBulkTakeCopyGroupAlertOwnership={handleBulkTakeCopyGroupAlertOwnership}
+        onBulkAcknowledgeCopyGroupAlerts={handleBulkAcknowledgeCopyGroupAlerts}
+        onCopyGroupAlertNoteChange={(storyKey, value) =>
+          setCopyGroupAlertNotes((current) => ({
+            ...current,
+            [storyKey]: value,
+          }))
+        }
+        onTakeCopyGroupAlertOwnership={handleTakeCopyGroupAlertOwnership}
+        onAcknowledgeCopyGroupAlert={handleAcknowledgeCopyGroupAlert}
+        onReopenCopyGroupAlert={handleReopenCopyGroupAlert}
+        getCopyGroupAlertFreshnessLabel={getCopyGroupAlertFreshnessLabel}
+      />
 
-        <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-4">
-          <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 p-4">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-rose-200">Needs Attention</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{copyGroupHealthWatchlist.counts.attention}</p>
-            <p className="mt-1 text-sm text-rose-100/80">Unhealthy or emergency-stopped groups</p>
-          </div>
-          <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-amber-200">On Watch</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{copyGroupHealthWatchlist.counts.degraded}</p>
-            <p className="mt-1 text-sm text-amber-100/80">Degraded groups or follower readiness drift</p>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Paused</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{copyGroupHealthWatchlist.counts.paused}</p>
-            <p className="mt-1 text-sm text-zinc-400">Groups not actively routing right now</p>
-          </div>
-          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-100">Reviewed</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{reviewedCopyGroupHealthCount}</p>
-            <p className="mt-1 text-sm text-emerald-100/80">Groups already acknowledged by the operator</p>
-          </div>
-          <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-amber-100">Stale Reviews</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{staleCopyGroupHealthReviewCount}</p>
-            <p className="mt-1 text-sm text-amber-100/80">Acknowledgements that no longer match the current issue</p>
-          </div>
-          <div className="rounded-2xl border border-violet-300/20 bg-violet-300/10 p-4">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-violet-100">Recurring Groups</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{recurringCopyGroupHealthCount}</p>
-            <p className="mt-1 text-sm text-violet-100/80">Groups reviewed multiple times for the same issue in the last 24 hours</p>
-          </div>
-          <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-cyan-100">Followers Offline</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{copyGroupHealthWatchlist.counts.disconnectedFollowers}</p>
-            <p className="mt-1 text-sm text-cyan-100/80">Follower connections not ready across all groups</p>
-          </div>
-        </div>
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          <Input
-            value={copyGroupHealthSearch}
-            onChange={(event) => setCopyGroupHealthSearch(event.target.value)}
-            placeholder="Search groups, issues, notes, or reviewers"
-            className="min-w-[280px] border-white/10 bg-white/[0.03] text-white placeholder:text-zinc-500"
-          />
-          {(["compact", "detailed"] as const).map((view) => (
-            <button
-              key={view}
-              type="button"
-              className={`rounded-full border px-3 py-1.5 text-sm ${
-                copyGroupHealthBoardView === view
-                  ? "border-cyan-400/30 bg-cyan-400/15 text-cyan-100"
-                  : "border-white/10 bg-white/[0.03] text-zinc-200"
-              }`}
-              onClick={() =>
-                setCopyGroupHealthBoardView(
-                  normalizeCopyGroupHealthBoardView(view),
-                )
-              }
-            >
-              {view === "compact" ? "Compact view" : "Detailed view"}
-            </button>
-          ))}
-          {sortedCopyGroupHealthEntries.length > 0 && (
-            <>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="border-white/10 bg-white/[0.03] text-zinc-200 hover:bg-white/[0.06]"
-                onClick={handleSelectAllVisibleCopyGroupHealthEntries}
-              >
-                Select visible
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="border-amber-300/20 bg-amber-300/10 text-amber-100 hover:bg-amber-300/15"
-                onClick={handleSelectStaleCopyGroupHealthEntries}
-              >
-                Select stale only
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="border-white/10 bg-white/[0.03] text-zinc-200 hover:bg-white/[0.06]"
-                onClick={handleClearCopyGroupHealthSelection}
-                disabled={selectedCopyGroupHealthGroupIds.length === 0}
-              >
-                Clear selection
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="border-emerald-400/20 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"
-                onClick={handleBulkAcknowledgeCopyGroupHealthReviews}
-                disabled={selectedCopyGroupHealthGroupIds.length === 0}
-              >
-                Re-acknowledge selected
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="border-amber-300/20 bg-amber-300/10 text-amber-100 hover:bg-amber-300/15"
-                onClick={handleBulkClearCopyGroupHealthReviews}
-                disabled={selectedCopyGroupHealthGroupIds.length === 0}
-              >
-                Clear selected reviews
-              </Button>
-            </>
-          )}
-          {(["all", "unreviewed", "reviewed", "stale", "recurring"] as const).map((filter) => (
-            <button
-              key={filter}
-              type="button"
-              className={`rounded-full border px-3 py-1.5 text-sm ${
-                copyGroupHealthReviewFilter === filter
-                  ? "border-cyan-400/30 bg-cyan-400/15 text-cyan-100"
-                  : "border-white/10 bg-white/[0.03] text-zinc-200"
-              }`}
-              onClick={() => setCopyGroupHealthReviewFilter(filter)}
-            >
-              {filter === "all"
-                ? `All (${copyGroupHealthWatchlist.entries.length})`
-                : filter === "unreviewed"
-                  ? `Unreviewed (${unreviewedCopyGroupHealthCount})`
-                  : filter === "reviewed"
-                    ? `Reviewed (${reviewedCopyGroupHealthCount - staleCopyGroupHealthReviewCount})`
-                    : filter === "stale"
-                      ? `Stale Reviews (${staleCopyGroupHealthReviewCount})`
-                      : `Recurring (${recurringCopyGroupHealthCount})`}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-5 grid grid-cols-1 gap-3 xl:grid-cols-3">
-          {sortedCopyGroupHealthEntries.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-zinc-400 xl:col-span-3">
-              No copy groups match the current review filter right now.
-            </div>
-          ) : (
-            sortedCopyGroupHealthEntries.slice(0, 6).map((entry) => {
-              const review = copyGroupHealthReviews[entry.groupId];
-              const concernSignature = buildCopyGroupHealthConcernSignature(entry);
-              const reviewIsStale =
-                !!review &&
-                review.concernSignature !== concernSignature;
-              const repeatedReviewCount = countRecentMatchingHealthReviews(
-                review,
-                concernSignature,
-              );
-
-              return (
-              <div key={entry.groupId} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <label className="flex items-center gap-2 text-xs text-zinc-400">
-                    <input
-                      type="checkbox"
-                      checked={selectedCopyGroupHealthGroupIds.includes(entry.groupId)}
-                      onChange={() => handleToggleCopyGroupHealthSelection(entry.groupId)}
-                      className="h-4 w-4 rounded border-white/20 bg-transparent"
-                    />
-                    Select
-                  </label>
-                </div>
-                {review ? (
-                  <div
-                    className={`mb-3 rounded-xl border px-3 py-2 text-xs ${
-                      reviewIsStale
-                        ? "border-amber-300/20 bg-amber-300/10 text-amber-100"
-                        : "border-emerald-400/20 bg-emerald-400/10 text-emerald-100"
-                    }`}
-                  >
-                    {reviewIsStale ? "Review needs refresh." : "Reviewed on "}
-                    {!reviewIsStale ? formatTimestamp(review.acknowledgedAt) : " The current issue changed after acknowledgement."}
-                    {review.note ? ` - ${review.note}` : ""}
-                  </div>
-                ) : null}
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-white">{entry.groupName}</p>
-                    <p className="mt-1 text-xs text-zinc-500">{entry.followerReadinessLabel}</p>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    {repeatedReviewCount >= 2 && (
-                      <span className="rounded-full border border-violet-300/30 bg-violet-300/10 px-3 py-1 text-xs text-violet-100">
-                        Reviewed {repeatedReviewCount} times in 24h
-                      </span>
-                    )}
-                    {copyGroupHealthReviews[entry.groupId] &&
-                      copyGroupHealthReviews[entry.groupId].concernSignature !==
-                        concernSignature && (
-                        <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-xs text-amber-100">
-                          Review stale
-                        </span>
-                      )}
-                    <span
-                      className={`rounded-full border px-3 py-1 text-xs ${
-                        entry.tone === "danger"
-                          ? "border-rose-400/30 bg-rose-400/15 text-rose-100"
-                          : entry.tone === "warn"
-                            ? "border-amber-400/30 bg-amber-400/15 text-amber-100"
-                            : "border-white/10 bg-white/[0.03] text-zinc-300"
-                      }`}
-                    >
-                      {entry.concernLabel}
-                    </span>
-                  </div>
-                </div>
-                <p className="mt-3 text-sm text-zinc-300">{entry.detail}</p>
-                {copyGroupHealthBoardView === "detailed" ? (
-                  <>
-                    {entry.latestRecoveryActionLabel && (
-                      <p className="mt-3 text-xs text-cyan-200">
-                        Latest recovery action: {entry.latestRecoveryActionLabel}
-                      </p>
-                    )}
-                    {entry.lastStableSignalLabel && (
-                      <p className="mt-2 text-xs text-zinc-500">
-                        {entry.lastStableSignalLabel}
-                      </p>
-                    )}
-                    {entry.timeInConcernStateLabel && (
-                      <p className="mt-2 text-xs text-amber-100/90">
-                        Time in current warning state: {entry.timeInConcernStateLabel}
-                      </p>
-                    )}
-                    {copyGroupHealthReviews[entry.groupId] && (
-                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-zinc-500">
-                        <span>
-                          Last touched by: {copyGroupHealthReviews[entry.groupId].reviewedBy ?? "Operator"}
-                        </span>
-                        <span>
-                          Last reviewed at: {formatTimestamp(copyGroupHealthReviews[entry.groupId].acknowledgedAt)}
-                        </span>
-                      </div>
-                    )}
-                    {(copyGroupHealthReviews[entry.groupId]?.history?.length ?? 0) > 0 && (
-                      <div className="mt-3 rounded-xl border border-white/8 bg-black/10 px-3 py-3">
-                        <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">
-                          Review Timeline
-                        </p>
-                        <div className="mt-2 space-y-2">
-                          {copyGroupHealthReviews[entry.groupId].history?.slice(0, 3).map((reviewStamp, index) => (
-                            <div
-                              key={`${entry.groupId}-review-history-${index}`}
-                              className="border-l border-white/10 pl-3 text-xs text-zinc-400"
-                            >
-                              <p className="text-zinc-200">
-                                {reviewStamp.reviewedBy ?? "Operator"} on {formatTimestamp(reviewStamp.acknowledgedAt)}
-                              </p>
-                              {reviewStamp.note && (
-                                <p className="mt-1 text-zinc-500">{reviewStamp.note}</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <p className="mt-3 text-xs text-zinc-500">
-                    Compact view keeps the watchlist focused. Switch to detailed view for recovery context and review history.
-                  </p>
-                )}
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-500">
-                  <span>Runtime: {entry.status.replaceAll("_", " ")}</span>
-                  <span>Health: {entry.healthStatus}</span>
-                </div>
-                <Input
-                  value={copyGroupHealthNotes[entry.groupId] ?? copyGroupHealthReviews[entry.groupId]?.note ?? ""}
-                  onChange={(event) =>
-                    setCopyGroupHealthNotes((current) => ({
-                      ...current,
-                      [entry.groupId]: event.target.value,
-                    }))
-                  }
-                  placeholder="Operator note"
-                  className="mt-3 border-white/10 bg-white/[0.03] text-white placeholder:text-zinc-500"
-                />
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="border-emerald-400/20 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"
-                    onClick={() => handleAcknowledgeCopyGroupHealth(entry.groupId)}
-                  >
-                    {copyGroupHealthReviews[entry.groupId] ? "Update review" : "Acknowledge"}
-                  </Button>
-                  {copyGroupHealthReviews[entry.groupId] && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="border-white/10 bg-white/[0.03] text-zinc-200 hover:bg-white/[0.06]"
-                      onClick={() => handleClearCopyGroupHealthReview(entry.groupId)}
-                    >
-                      Clear review
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )})
-          )}
-        </div>
-      </div>
+      <ActivityCopyGroupHealthBoard
+        copyGroupPulse={copyGroupPulse}
+        copyGroupHealthWatchlist={copyGroupHealthWatchlist}
+        reviewedCopyGroupHealthCount={reviewedCopyGroupHealthCount}
+        staleCopyGroupHealthReviewCount={staleCopyGroupHealthReviewCount}
+        recurringCopyGroupHealthCount={recurringCopyGroupHealthCount}
+        unreviewedCopyGroupHealthCount={unreviewedCopyGroupHealthCount}
+        recoverNowCopyGroupHealthCount={recoverNowCopyGroupHealthCount}
+        stabilizeSoonCopyGroupHealthCount={stabilizeSoonCopyGroupHealthCount}
+        resumeCheckCopyGroupHealthCount={resumeCheckCopyGroupHealthCount}
+        stageBeforeUseCopyGroupHealthCount={stageBeforeUseCopyGroupHealthCount}
+        copyGroupHealthSearch={copyGroupHealthSearch}
+        onCopyGroupHealthSearchChange={setCopyGroupHealthSearch}
+        copyGroupHealthBoardView={copyGroupHealthBoardView}
+        onCopyGroupHealthBoardViewChange={setCopyGroupHealthBoardView}
+        copyGroupHealthReviewFilter={copyGroupHealthReviewFilter}
+        onCopyGroupHealthReviewFilterChange={setCopyGroupHealthReviewFilter}
+        copyGroupHealthRecoveryFilter={copyGroupHealthRecoveryFilter}
+        onCopyGroupHealthRecoveryFilterChange={setCopyGroupHealthRecoveryFilter}
+        sortedCopyGroupHealthEntries={sortedCopyGroupHealthEntries}
+        recoverNowCopyGroupHealthEntries={recoverNowCopyGroupHealthEntries}
+        selectedCopyGroupHealthGroupIds={selectedCopyGroupHealthGroupIds}
+        copyGroupHealthReviews={copyGroupHealthReviews}
+        copyGroupHealthNotes={copyGroupHealthNotes}
+        copyGroupHealthBulkResultSummary={copyGroupHealthBulkResultSummary}
+        formatTimestamp={formatTimestamp}
+        buildCopyGroupHealthConcernSignature={buildCopyGroupHealthConcernSignature}
+        countRecentMatchingHealthReviews={countRecentMatchingHealthReviews}
+        onToggleCopyGroupHealthSelection={handleToggleCopyGroupHealthSelection}
+        onSelectAllVisibleCopyGroupHealthEntries={handleSelectAllVisibleCopyGroupHealthEntries}
+        onSelectAttentionCopyGroupHealthEntries={handleSelectAttentionCopyGroupHealthEntries}
+        onSelectRecoverNowCopyGroupHealthEntries={handleSelectRecoverNowCopyGroupHealthEntries}
+        onSelectStaleCopyGroupHealthEntries={handleSelectStaleCopyGroupHealthEntries}
+        onClearCopyGroupHealthSelection={handleClearCopyGroupHealthSelection}
+        onBulkClearCopyGroupHealthReviews={handleBulkClearCopyGroupHealthReviews}
+        onBulkAcknowledgeCopyGroupHealthReviews={handleBulkAcknowledgeCopyGroupHealthReviews}
+        onCopyGroupHealthNoteChange={(groupId, value) =>
+          setCopyGroupHealthNotes((current) => ({
+            ...current,
+            [groupId]: value,
+          }))
+        }
+        onAcknowledgeCopyGroupHealth={handleAcknowledgeCopyGroupHealth}
+        onClearCopyGroupHealthReview={handleClearCopyGroupHealthReview}
+      />
 
       <div className="flex flex-wrap gap-2">
         <button
@@ -1703,637 +1713,200 @@ export default function Activity() {
         </div>
       ) : null}
 
-      <div className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(12,15,22,0.98),rgba(8,10,16,0.98))] p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Risk Follow-Up</p>
-            <h2 className="mt-2 text-2xl font-semibold text-white">Shared risk review queue</h2>
-            <p className="mt-1 text-sm text-zinc-400">
-              Work breached, warning, and pending-risk accounts with shared ownership and review notes.
-            </p>
-          </div>
-          <div className="flex flex-col gap-3 lg:w-[360px]">
-            <Input
-              value={riskFollowUpSearch}
-              onChange={(event) => setRiskFollowUpSearch(event.target.value)}
-              placeholder="Search by account, issue, owner, or note"
-              className="border-white/10 bg-white/[0.03] text-white placeholder:text-zinc-500"
-            />
-            <div className="flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border border-rose-400/20 bg-rose-400/10 px-3 py-1 text-rose-100">
-                Reviewed {reviewedRiskFollowUpCount}
-              </span>
-              <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-cyan-100">
-                Owned {ownedRiskFollowUpCount}
-              </span>
-              <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-amber-100">
-                Unowned {unownedRiskFollowUpCount}
-              </span>
-              <span className="rounded-full border border-violet-400/20 bg-violet-400/10 px-3 py-1 text-violet-100">
-                Reassigned {reassignedRiskFollowUpCount}
-              </span>
-            </div>
-          </div>
-        </div>
+      <ActivityRiskFollowUpBoard
+        riskFollowUpSearch={riskFollowUpSearch}
+        onRiskFollowUpSearchChange={setRiskFollowUpSearch}
+        riskFollowUpFilter={riskFollowUpFilter}
+        onRiskFollowUpFilterChange={setRiskFollowUpFilter}
+        riskFollowUpItems={riskFollowUpItems}
+        filteredRiskFollowUpItems={filteredRiskFollowUpItems}
+        reviewedRiskFollowUpCount={reviewedRiskFollowUpCount}
+        ownedRiskFollowUpCount={ownedRiskFollowUpCount}
+        unownedRiskFollowUpCount={unownedRiskFollowUpCount}
+        reassignedRiskFollowUpCount={reassignedRiskFollowUpCount}
+        selectedRiskFollowUpAccountIds={selectedRiskFollowUpAccountIds}
+        riskFollowUpNotes={riskFollowUpNotes}
+        formatTimestamp={formatTimestamp}
+        onToggleSelection={handleToggleRiskFollowUpSelection}
+        onSelectVisible={handleSelectAllVisibleRiskFollowUpItems}
+        onSelectUnowned={handleSelectUnownedRiskFollowUpItems}
+        onClearSelection={handleClearRiskFollowUpSelection}
+        onBulkTakeOwnership={handleBulkTakeRiskFollowUpOwnership}
+        onBulkMarkReviewed={handleBulkMarkRiskFollowUpReviewed}
+        onBulkReopen={handleBulkReopenRiskFollowUpItems}
+        onNoteChange={(accountId, value) =>
+          setRiskFollowUpNotes((current) => ({
+            ...current,
+            [accountId]: value,
+          }))
+        }
+        onTakeOwnership={handleTakeRiskFollowUpOwnership}
+        onSaveNote={handleSaveRiskFollowUpNote}
+        onToggleReviewed={(accountId, reviewed) =>
+          reviewed
+            ? handleReopenRiskFollowUpItem(accountId)
+            : handleMarkRiskFollowUpReviewed(accountId)
+        }
+      />
 
-        <div className="mt-5 grid grid-cols-1 gap-3 xl:grid-cols-2">
-          <div className="xl:col-span-2 flex flex-wrap gap-2">
-            {(["all", "open", "reviewed", "owned", "unowned", "reassigned"] as const).map((filter) => (
-              <button
-                key={filter}
-                type="button"
-                className={`rounded-full border px-3 py-1.5 text-sm ${
-                  riskFollowUpFilter === filter
-                    ? "border-cyan-400/30 bg-cyan-400/15 text-cyan-100"
-                    : "border-white/10 bg-white/[0.03] text-zinc-200"
-                }`}
-                onClick={() => setRiskFollowUpFilter(filter)}
-              >
-                {filter === "all"
-                  ? `All (${riskFollowUpItems.length})`
-                  : filter === "open"
-                    ? `Open (${riskFollowUpItems.length - reviewedRiskFollowUpCount})`
-                    : filter === "reviewed"
-                      ? `Reviewed (${reviewedRiskFollowUpCount})`
-                      : filter === "owned"
-                        ? `Owned (${ownedRiskFollowUpCount})`
-                        : filter === "unowned"
-                          ? `Unowned (${unownedRiskFollowUpCount})`
-                          : `Reassigned (${reassignedRiskFollowUpCount})`}
-              </button>
-            ))}
-            {filteredRiskFollowUpItems.length > 0 && (
-              <>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="border-white/10 bg-white/[0.03] text-zinc-200 hover:bg-white/[0.06]"
-                  onClick={handleSelectAllVisibleRiskFollowUpItems}
-                >
-                  Select visible
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="border-amber-400/20 bg-amber-400/10 text-amber-100 hover:bg-amber-400/15"
-                  onClick={handleSelectUnownedRiskFollowUpItems}
-                >
-                  Select unowned
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="border-white/10 bg-white/[0.03] text-zinc-200 hover:bg-white/[0.06]"
-                  onClick={handleClearRiskFollowUpSelection}
-                  disabled={selectedRiskFollowUpAccountIds.length === 0}
-                >
-                  Clear selection
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="border-cyan-400/20 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/15"
-                  onClick={handleBulkTakeRiskFollowUpOwnership}
-                  disabled={selectedRiskFollowUpAccountIds.length === 0}
-                >
-                  Take ownership of selected
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="border-emerald-400/20 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"
-                  onClick={handleBulkMarkRiskFollowUpReviewed}
-                  disabled={selectedRiskFollowUpAccountIds.length === 0}
-                >
-                  Mark selected reviewed
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="border-amber-300/20 bg-amber-300/10 text-amber-100 hover:bg-amber-300/15"
-                  onClick={handleBulkReopenRiskFollowUpItems}
-                  disabled={selectedRiskFollowUpAccountIds.length === 0}
-                >
-                  Reopen selected
-                </Button>
-              </>
-            )}
-          </div>
-          {filteredRiskFollowUpItems.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-zinc-400 xl:col-span-2">
-              No risk follow-up items match the current search right now.
-            </div>
-          ) : (
-            filteredRiskFollowUpItems.map((item) => (
-              <div key={item.accountId} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <label className="flex items-center gap-2 text-xs text-zinc-400">
-                    <input
-                      type="checkbox"
-                      checked={selectedRiskFollowUpAccountIds.includes(item.accountId)}
-                      onChange={() => handleToggleRiskFollowUpSelection(item.accountId)}
-                      className="h-4 w-4 rounded border-white/20 bg-transparent"
-                    />
-                    Select
-                  </label>
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-white">{item.accountName}</p>
-                    <p className="mt-1 text-xs text-zinc-500">{item.headline}</p>
-                    <p className="mt-2 text-sm text-zinc-400">{item.detail}</p>
-                  </div>
-                  <span
-                    className={`rounded-full border px-3 py-1 text-xs ${
-                      item.tone === "danger"
-                        ? "border-rose-400/30 bg-rose-400/15 text-rose-100"
-                        : item.tone === "warn"
-                          ? "border-amber-400/30 bg-amber-400/15 text-amber-100"
-                          : "border-white/10 bg-white/[0.03] text-zinc-300"
-                    }`}
-                  >
-                    {item.status === "BREACHED" ? "Hold" : item.status === "WARN" ? "Review" : "Pending"}
-                  </span>
-                </div>
+      <ActivityExecutionFollowUpBoard
+        executionFollowUpSearch={executionFollowUpSearch}
+        onExecutionFollowUpSearchChange={setExecutionFollowUpSearch}
+        executionFollowUpFilter={executionFollowUpFilter}
+        onExecutionFollowUpFilterChange={setExecutionFollowUpFilter}
+        executionFollowUpItems={executionFollowUpItems}
+        filteredExecutionFollowUpItems={filteredExecutionFollowUpItems}
+        reviewedExecutionFollowUpCount={reviewedExecutionFollowUpCount}
+        failedExecutionFollowUpCount={failedExecutionFollowUpCount}
+        staleExecutionFollowUpCount={staleExecutionFollowUpCount}
+        partialExecutionFollowUpCount={partialExecutionFollowUpCount}
+        activeExecutionFollowUpCount={activeExecutionFollowUpCount}
+        selectedExecutionFollowUpHistoryIds={selectedExecutionFollowUpHistoryIds}
+        executionFollowUpNotes={executionFollowUpNotes}
+        formatTimestamp={formatTimestamp}
+        isRechecking={recheckExecutionFollowUpItemMutation.isPending}
+        isSaving={saveExecutionFollowUpReviewsMutation.isPending}
+        onToggleSelection={handleToggleExecutionFollowUpSelection}
+        onSelectVisible={handleSelectAllVisibleExecutionFollowUpItems}
+        onSelectFailed={handleSelectFailedExecutionFollowUpItems}
+        onClearSelection={handleClearExecutionFollowUpSelection}
+        onBulkTakeOwnership={handleBulkTakeExecutionFollowUpOwnership}
+        onBulkRecheck={handleBulkRecheckExecutionFollowUpItems}
+        onBulkReview={handleBulkReviewExecutionFollowUpItems}
+        onBulkReopen={handleBulkReopenExecutionFollowUpItems}
+        onNoteChange={(historyId, value) =>
+          setExecutionFollowUpNotes((current) => ({
+            ...current,
+            [historyId]: value,
+          }))
+        }
+        onTakeOwnership={handleTakeExecutionFollowUpOwnership}
+        onSaveNote={handleSaveExecutionFollowUpNote}
+        onRecheck={handleExecutionFollowUpRecheck}
+        onReview={handleExecutionFollowUpReview}
+      />
 
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-500">
-                  <span>Recommended action: {item.recommendedAction}</span>
-                  {item.notificationTimestamp && (
-                    <span>Alerted at: {formatTimestamp(item.notificationTimestamp)}</span>
-                  )}
-                </div>
+      <ActivityRithmicReadinessBoard
+        rithmicReadinessSearch={rithmicReadinessSearch}
+        onRithmicReadinessSearchChange={setRithmicReadinessSearch}
+        rithmicReadinessFilter={rithmicReadinessFilter}
+        onRithmicReadinessFilterChange={setRithmicReadinessFilter}
+        rithmicReadinessItems={rithmicReadinessFollowUpItems}
+        filteredRithmicReadinessItems={filteredRithmicReadinessFollowUpItems}
+        reviewedRithmicReadinessCount={reviewedRithmicReadinessCount}
+        ownedRithmicReadinessCount={ownedRithmicReadinessCount}
+        unownedRithmicReadinessCount={unownedRithmicReadinessCount}
+        reassignedRithmicReadinessCount={reassignedRithmicReadinessCount}
+        selectedRithmicReadinessStoryKeys={selectedRithmicReadinessStoryKeys}
+        rithmicReadinessNotes={rithmicReadinessNotes}
+        formatTimestamp={formatTimestamp}
+        isSaving={saveRithmicReadinessReviewsMutation.isPending}
+        isRechecking={recheckRithmicReadinessMutation.isPending}
+        recheckingAccountId={recheckRithmicReadinessMutation.variables}
+        onToggleSelection={handleToggleRithmicReadinessSelection}
+        onSelectVisible={handleSelectAllVisibleRithmicReadinessItems}
+        onSelectUnowned={handleSelectUnownedRithmicReadinessItems}
+        onClearSelection={handleClearRithmicReadinessSelection}
+        onBulkTakeOwnership={handleBulkTakeRithmicReadinessOwnership}
+        onBulkRecheck={handleBulkRecheckRithmicReadinessItems}
+        onBulkMarkReviewed={handleBulkMarkRithmicReadinessReviewed}
+        onBulkReopen={handleBulkReopenRithmicReadinessItems}
+        onNoteChange={(storyKey, value) =>
+          setRithmicReadinessNotes((current) => ({
+            ...current,
+            [storyKey]: value,
+          }))
+        }
+        onTakeOwnership={handleTakeRithmicReadinessOwnership}
+        onSaveNote={handleSaveRithmicReadinessNote}
+        onRecheck={handleRithmicReadinessRecheck}
+        onToggleReviewed={(storyKey, reviewed) =>
+          reviewed
+            ? handleReopenRithmicReadinessAlert(storyKey)
+            : handleMarkRithmicReadinessReviewed(storyKey)
+        }
+      />
 
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-400">
-                  {item.review?.operatorName && (
-                    <span>Operator owner: {item.review.operatorName}</span>
-                  )}
-                  {(item.review?.operatorHistory?.length ?? 0) > 0 && (
-                    <span>Ownership changes: {item.review?.operatorHistory?.length}</span>
-                  )}
-                  {item.review?.reviewedAt && (
-                    <span>Reviewed at: {formatTimestamp(item.review.reviewedAt)}</span>
-                  )}
-                </div>
+      <ActivityOperatorAuditBoard
+        queueAuditFocus={queueAuditFocus}
+        overdueSyncEntries={overdueSyncEntries}
+        unassignedSyncEntries={unassignedSyncEntries}
+        reassignedSyncEntries={reassignedSyncEntries}
+        onSelectAuditFocus={handleSelectAuditFocus}
+      />
 
-                {(item.review?.operatorHistory?.length ?? 0) > 0 && (
-                  <div className="mt-3 rounded-xl border border-white/8 bg-black/10 px-3 py-3">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">
-                      Ownership Timeline
-                    </p>
-                    <div className="mt-2 space-y-2">
-                      {item.review?.operatorHistory?.slice(-3).reverse().map((assignment, index) => (
-                        <div
-                          key={`${item.accountId}-risk-owner-${index}`}
-                          className="border-l border-white/10 pl-3 text-xs text-zinc-400"
-                        >
-                          <p className="text-zinc-200">
-                            {assignment.operatorName} on {formatTimestamp(assignment.assignedAt)}
-                          </p>
-                          {assignment.reason && (
-                            <p className="mt-1 text-zinc-500">{assignment.reason}</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+      <ActivitySyncRepairBoard
+        repairCandidateSearch={repairCandidateSearch}
+        onRepairCandidateSearchChange={setRepairCandidateSearch}
+        repairCandidateFilter={repairCandidateFilter}
+        onRepairCandidateFilterChange={setRepairCandidateFilter}
+        positionSyncRepairCandidates={positionSyncRepairCandidates}
+        positionSyncRepairSummary={positionSyncRepairSummary}
+        positionSyncRepairBoardSummary={positionSyncRepairBoardSummary}
+        filteredRepairCandidates={filteredRepairCandidates}
+        selectedRepairCandidateKeys={selectedRepairCandidateKeys}
+        repairCandidateNotes={repairCandidateNotes}
+        positionSyncWorkflowState={positionSyncWorkflowState}
+        isSaving={savePositionSyncWorkflowMutation.isPending}
+        formatTimestamp={formatTimestamp}
+        onToggleSelection={handleToggleRepairCandidateSelection}
+        onSelectVisible={handleSelectAllVisibleRepairCandidates}
+        onSelectAutoReady={handleSelectAutoReadyRepairCandidates}
+        onClearSelection={handleClearRepairCandidateSelection}
+        onBulkReview={handleBulkReviewRepairCandidates}
+        onBulkSimulate={handleBulkSimulateRepairCandidates}
+        onBulkTakeOwnership={handleBulkTakeRepairCandidateOwnership}
+        onBulkApprove={handleBulkApproveRepairCandidates}
+        onRepairCandidateNoteChange={(key, value) =>
+          setRepairCandidateNotes((current) => ({
+            ...current,
+            [key]: value,
+          }))
+        }
+        onSaveNote={handleSaveRepairCandidateNote}
+        onOpenInQueue={(entry) =>
+          handleOpenRepairCandidateInQueue({
+            ...entry,
+            note: repairCandidateNotes[entry.key]?.trim() || positionSyncWorkflowState[entry.key]?.note,
+          })
+        }
+      />
 
-                <Input
-                  value={riskFollowUpNotes[item.accountId] ?? item.review?.note ?? ""}
-                  onChange={(event) =>
-                    setRiskFollowUpNotes((current) => ({
-                      ...current,
-                      [item.accountId]: event.target.value,
-                    }))
-                  }
-                  placeholder="Shared risk note"
-                  className="mt-3 border-white/10 bg-white/[0.03] text-white placeholder:text-zinc-500"
-                />
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="border-white/10 bg-white/[0.03] text-zinc-200 hover:bg-white/[0.06]"
-                    onClick={() => handleTakeRiskFollowUpOwnership(item.accountId)}
-                  >
-                    Take ownership
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="border-cyan-400/20 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/15"
-                    onClick={() => handleSaveRiskFollowUpNote(item.accountId)}
-                  >
-                    Save note
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className={
-                      item.review?.status === "reviewed"
-                        ? "border-white/10 bg-white/[0.03] text-zinc-200 hover:bg-white/[0.06]"
-                        : "border-emerald-400/20 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"
-                    }
-                    onClick={() =>
-                      item.review?.status === "reviewed"
-                        ? handleReopenRiskFollowUpItem(item.accountId)
-                        : handleMarkRiskFollowUpReviewed(item.accountId)
-                    }
-                  >
-                    {item.review?.status === "reviewed" ? "Reopen" : "Mark reviewed"}
-                  </Button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(12,15,22,0.98),rgba(8,10,16,0.98))] p-5">
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Operator Audit</p>
-            <h2 className="mt-2 text-2xl font-semibold text-white">Manual sync ownership watchlist</h2>
-            <p className="mt-1 text-sm text-zinc-400">
-              Review overdue follow-up, unassigned work, and items that have already changed hands.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-3">
-          <button
-            type="button"
-            className={`rounded-2xl border p-4 text-left ${
-              queueAuditFocus === "overdue"
-                ? "border-amber-300/40 bg-amber-300/15"
-                : "border-amber-400/20 bg-amber-400/10"
-            }`}
-            onClick={() => handleSelectAuditFocus(queueAuditFocus === "overdue" ? "all" : "overdue")}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-white">Overdue</p>
-              <span className="rounded-full border border-amber-400/30 px-2.5 py-1 text-xs text-amber-100">
-                {overdueSyncEntries.length}
-              </span>
-            </div>
-            <div className="mt-3 space-y-3">
-              {overdueSyncEntries.length === 0 ? (
-                <p className="text-sm text-amber-100/80">No overdue manual sync items right now.</p>
-              ) : (
-                overdueSyncEntries.slice(0, 3).map((entry) => (
-                  <div key={`${entry.key}-overdue`} className="rounded-xl border border-white/8 bg-black/10 px-3 py-3">
-                    <p className="text-sm font-medium text-white">{entry.groupName}</p>
-                    <p className="mt-1 text-xs text-zinc-400">{entry.followerName}</p>
-                    <p className="mt-2 text-xs text-amber-100">{entry.attentionLabel}</p>
-                    <p className="mt-1 text-xs text-zinc-500">{entry.ageMinutes} minutes in current stage</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </button>
-
-          <button
-            type="button"
-            className={`rounded-2xl border p-4 text-left ${
-              queueAuditFocus === "unassigned"
-                ? "border-cyan-300/40 bg-cyan-300/15"
-                : "border-cyan-400/20 bg-cyan-400/10"
-            }`}
-            onClick={() => handleSelectAuditFocus(queueAuditFocus === "unassigned" ? "all" : "unassigned")}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-white">Unassigned</p>
-              <span className="rounded-full border border-cyan-400/30 px-2.5 py-1 text-xs text-cyan-100">
-                {unassignedSyncEntries.length}
-              </span>
-            </div>
-            <div className="mt-3 space-y-3">
-              {unassignedSyncEntries.length === 0 ? (
-                <p className="text-sm text-cyan-100/80">Every active manual sync item has an owner.</p>
-              ) : (
-                unassignedSyncEntries.slice(0, 3).map((entry) => (
-                  <div key={`${entry.key}-unassigned`} className="rounded-xl border border-white/8 bg-black/10 px-3 py-3">
-                    <p className="text-sm font-medium text-white">{entry.groupName}</p>
-                    <p className="mt-1 text-xs text-zinc-400">{entry.followerName}</p>
-                    <p className="mt-2 text-xs text-cyan-100">
-                      {entry.status === "approved" ? "Ready for ownership claim" : "Needs operator completion owner"}
-                    </p>
-                    <p className="mt-1 text-xs text-zinc-500">{entry.ageMinutes} minutes since last workflow change</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </button>
-
-          <button
-            type="button"
-            className={`rounded-2xl border p-4 text-left ${
-              queueAuditFocus === "reassigned"
-                ? "border-violet-300/40 bg-violet-300/15"
-                : "border-violet-400/20 bg-violet-400/10"
-            }`}
-            onClick={() => handleSelectAuditFocus(queueAuditFocus === "reassigned" ? "all" : "reassigned")}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-white">Reassigned</p>
-              <span className="rounded-full border border-violet-400/30 px-2.5 py-1 text-xs text-violet-100">
-                {reassignedSyncEntries.length}
-              </span>
-            </div>
-            <div className="mt-3 space-y-3">
-              {reassignedSyncEntries.length === 0 ? (
-                <p className="text-sm text-violet-100/80">No ownership changes have been logged yet.</p>
-              ) : (
-                reassignedSyncEntries.slice(0, 3).map((entry) => (
-                  <div key={`${entry.key}-reassigned`} className="rounded-xl border border-white/8 bg-black/10 px-3 py-3">
-                    <p className="text-sm font-medium text-white">{entry.groupName}</p>
-                    <p className="mt-1 text-xs text-zinc-400">{entry.followerName}</p>
-                    <p className="mt-2 text-xs text-violet-100">
-                      {entry.reassignmentCount} ownership change{entry.reassignmentCount === 1 ? "" : "s"}
-                    </p>
-                    {entry.latestAssignmentReason && (
-                      <p className="mt-1 text-xs text-zinc-500">{entry.latestAssignmentReason}</p>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(10,12,18,0.98),rgba(8,10,16,0.98))] p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Sync Review Queue</p>
-            <h2 className="mt-2 text-2xl font-semibold text-white">Shared review and simulation queue</h2>
-            <p className="mt-1 text-sm text-zinc-400">
-              Track review progress from first check through operator handoff and manual completion.
-            </p>
-          </div>
-          <div className="flex flex-col gap-3 lg:w-[360px]">
-            <Input
-              value={queueSearch}
-              onChange={(event) => setQueueSearch(event.target.value)}
-              placeholder="Search by group, follower, note, or symbol"
-              className="border-white/10 bg-white/[0.03] text-white placeholder:text-zinc-500"
-            />
-            <div className="flex flex-wrap gap-2">
-              {(["recent", "age", "owner", "reassignments"] as const).map((sort) => (
-                <button
-                  key={sort}
-                  type="button"
-                  className={`rounded-full border px-3 py-1.5 text-sm ${
-                    queueSort === sort
-                      ? "border-emerald-400/30 bg-emerald-400/15 text-emerald-100"
-                      : "border-white/10 bg-white/[0.03] text-zinc-200"
-                  }`}
-                  onClick={() => setQueueSort(sort)}
-                >
-                  {sort === "recent"
-                    ? "Newest"
-                    : sort === "age"
-                      ? "Oldest First"
-                      : sort === "owner"
-                        ? "Owner"
-                        : "Reassignments"}
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {queueAuditFocus !== "all" && (
-                <button
-                  type="button"
-                  className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-sm text-amber-100"
-                  onClick={() => setQueueAuditFocus("all")}
-                >
-                  {queueAuditFocus === "overdue"
-                    ? "Audit: Overdue"
-                    : queueAuditFocus === "unassigned"
-                      ? "Audit: Unassigned"
-                      : "Audit: Reassigned"}
-                </button>
-              )}
-              {(["all", "reviewed", "simulated", "approved", "handed_off", "completed_manually"] as const).map((filter) => (
-                <button
-                  key={filter}
-                  type="button"
-                  className={`rounded-full border px-3 py-1.5 text-sm ${
-                    queueFilter === filter
-                      ? "border-cyan-400/30 bg-cyan-400/15 text-cyan-100"
-                      : "border-white/10 bg-white/[0.03] text-zinc-200"
-                  }`}
-                  onClick={() => setQueueFilter(filter)}
-                >
-                  {filter === "all"
-                    ? `All (${positionSyncQueue.length})`
-                    : filter === "reviewed"
-                      ? `Reviewed (${reviewedSyncCount})`
-                      : filter === "simulated"
-                        ? `Simulated (${simulatedSyncCount})`
-                        : filter === "approved"
-                          ? `Approved (${approvedSyncCount})`
-                          : filter === "handed_off"
-                            ? `Handed Off (${handedOffSyncCount})`
-                            : `Completed (${completedManuallySyncCount})`}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-5 grid grid-cols-1 gap-3 xl:grid-cols-2">
-          {sortedAuditFocusedQueue.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-zinc-400 xl:col-span-2">
-              No sync review items match the current filters yet.
-            </div>
-          ) : (
-            sortedAuditFocusedQueue.map((entry) => (
-              <div key={entry.key} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-white">{entry.groupName}</p>
-                    <p className="mt-1 text-xs text-zinc-500">{entry.followerName}</p>
-                    <p className="mt-2 text-sm text-zinc-400">{entry.summary}</p>
-                  </div>
-                  <span
-                    className={`rounded-full border px-3 py-1 text-xs ${getPositionSyncStatusTone(entry.status)}`}
-                  >
-                    {getPositionSyncStatusLabel(entry.status)}
-                  </span>
-                </div>
-
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-400">
-                  <span>{entry.adjustmentCount} adjustment{entry.adjustmentCount === 1 ? "" : "s"}</span>
-                  <span>{entry.ageMinutes} min in current stage</span>
-                  {entry.topAdjustments.length > 0 && (
-                    <span>Symbols: {entry.topAdjustments.join(", ")}</span>
-                  )}
-                </div>
-
-                {entry.note && (
-                  <p className="mt-3 rounded-xl border border-white/8 bg-black/10 px-3 py-2 text-xs text-zinc-300">
-                    Review note: {entry.note}
-                  </p>
-                )}
-                {entry.operatorName ? (
-                  <p className="mt-3 text-xs text-zinc-400">
-                    Operator owner: {entry.operatorName}
-                  </p>
-                ) : (
-                  <p className="mt-3 text-xs text-amber-200">
-                    Operator owner: Unassigned
-                  </p>
-                )}
-                {entry.reassignmentCount > 0 && (
-                  <p className="mt-2 text-xs text-zinc-500">
-                    Ownership changes: {entry.reassignmentCount}
-                  </p>
-                )}
-                {entry.latestAssignmentReason && (
-                  <p className="mt-2 text-xs text-zinc-500">
-                    Latest ownership reason: {entry.latestAssignmentReason}
-                  </p>
-                )}
-                {(entry.operatorHistory?.length ?? 0) > 0 && (
-                  <div className="mt-3 rounded-xl border border-white/8 bg-black/10 px-3 py-3">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">
-                      Ownership Timeline
-                    </p>
-                    <div className="mt-2 space-y-2">
-                      {entry.operatorHistory?.map((assignment, index) => (
-                        <div
-                          key={`${entry.key}-assignment-${index}`}
-                          className="border-l border-white/10 pl-3 text-xs text-zinc-400"
-                        >
-                          <p className="text-zinc-200">
-                            {assignment.operatorName} on {formatTimestamp(assignment.assignedAt)}
-                          </p>
-                          {assignment.reason && (
-                            <p className="mt-1 text-zinc-500">{assignment.reason}</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {entry.needsAttention && entry.attentionLabel && (
-                  <p className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
-                    Needs follow-up: {entry.attentionLabel}
-                  </p>
-                )}
-
-                {(entry.status === "approved" || entry.status === "handed_off") && (
-                  <Input
-                    value={assignmentReasons[entry.key] ?? ""}
-                    onChange={(event) =>
-                      setAssignmentReasons((current) => ({
-                        ...current,
-                        [entry.key]: event.target.value,
-                      }))
-                    }
-                    placeholder="Optional ownership reason"
-                    className="mt-3 border-white/10 bg-white/[0.03] text-white placeholder:text-zinc-500"
-                  />
-                )}
-
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {(entry.status === "reviewed" || entry.status === "simulated") && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="border-emerald-400/20 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/15"
-                      onClick={() => handleApproveSyncQueueEntry(entry)}
-                      disabled={savePositionSyncWorkflowMutation.isPending}
-                    >
-                      {savePositionSyncWorkflowMutation.isPending ? "Saving..." : "Approve for manual execution"}
-                    </Button>
-                  )}
-                  {entry.status === "approved" && (
-                    <>
-                      {!entry.operatorName && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="border-cyan-400/20 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/15"
-                          onClick={() => handleTakeOwnership(entry)}
-                          disabled={savePositionSyncWorkflowMutation.isPending}
-                        >
-                          {savePositionSyncWorkflowMutation.isPending ? "Saving..." : "Take ownership"}
-                        </Button>
-                      )}
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="border-amber-400/20 bg-amber-400/10 text-amber-100 hover:bg-amber-400/15"
-                        onClick={() => handleHandOffSyncQueueEntry(entry)}
-                        disabled={savePositionSyncWorkflowMutation.isPending}
-                      >
-                        {savePositionSyncWorkflowMutation.isPending ? "Saving..." : "Hand off for manual execution"}
-                      </Button>
-                      <span className="text-xs text-emerald-300">
-                        Ready for operator-led manual execution review.
-                      </span>
-                    </>
-                  )}
-                  {entry.status === "handed_off" && (
-                    <>
-                      {!entry.operatorName && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="border-cyan-400/20 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/15"
-                          onClick={() => handleTakeOwnership(entry)}
-                          disabled={savePositionSyncWorkflowMutation.isPending}
-                        >
-                          {savePositionSyncWorkflowMutation.isPending ? "Saving..." : "Take ownership"}
-                        </Button>
-                      )}
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="border-emerald-400/20 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"
-                        onClick={() => handleCompleteSyncQueueEntry(entry)}
-                        disabled={savePositionSyncWorkflowMutation.isPending}
-                      >
-                        {savePositionSyncWorkflowMutation.isPending ? "Saving..." : "Mark completed manually"}
-                      </Button>
-                      <span className="text-xs text-amber-200">
-                        Assigned to an operator for manual follow-through.
-                      </span>
-                    </>
-                  )}
-                  {entry.status === "completed_manually" && (
-                    <span className="text-xs text-emerald-300">
-                      Manual execution follow-through has been logged.
-                    </span>
-                  )}
-                </div>
-
-                <p className="mt-3 text-xs text-zinc-500">
-                  {getPositionSyncStatusTimestamp(entry) ?? "Timestamp unavailable"}
-                </p>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
+      <ActivitySyncReviewBoard
+        queueSearch={queueSearch}
+        onQueueSearchChange={setQueueSearch}
+        syncQueueBoardView={syncQueueBoardView}
+        onSyncQueueBoardViewChange={setSyncQueueBoardView}
+        queueSort={queueSort}
+        onQueueSortChange={setQueueSort}
+        queueAuditFocus={queueAuditFocus}
+        onClearQueueAuditFocus={() => setQueueAuditFocus("all")}
+        queueFilter={queueFilter}
+        onQueueFilterChange={setQueueFilter}
+        positionSyncQueue={positionSyncQueue}
+        sortedAuditFocusedQueue={sortedAuditFocusedQueue}
+        reviewedSyncCount={reviewedSyncCount}
+        simulatedSyncCount={simulatedSyncCount}
+        approvedSyncCount={approvedSyncCount}
+        handedOffSyncCount={handedOffSyncCount}
+        completedManuallySyncCount={completedManuallySyncCount}
+        assignmentReasons={assignmentReasons}
+        isSaving={savePositionSyncWorkflowMutation.isPending}
+        formatTimestamp={formatTimestamp}
+        getPositionSyncStatusLabel={getPositionSyncStatusLabel}
+        getPositionSyncStatusTone={getPositionSyncStatusTone}
+        getPositionSyncStatusTimestamp={getPositionSyncStatusTimestamp}
+        onAssignmentReasonChange={(key, value) =>
+          setAssignmentReasons((current) => ({
+            ...current,
+            [key]: value,
+          }))
+        }
+        onApprove={handleApproveSyncQueueEntry}
+        onTakeOwnership={handleTakeOwnership}
+        onHandOff={handleHandOffSyncQueueEntry}
+        onComplete={handleCompleteSyncQueueEntry}
+      />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <LiveActivityFeed

@@ -85,3 +85,57 @@ export function toPositionSyncWorkflowState(
     ]),
   );
 }
+
+interface BuildPositionSyncWorkflowUpdateInput {
+  groupId: string;
+  followerAccountId: string;
+  currentEntry?: PositionSyncWorkflowEntry;
+  nextStatus: PositionSyncWorkflowSaveInput["status"];
+  timestamp?: string;
+  note?: string;
+  operatorName?: string;
+  assignmentReason?: string;
+  appendOperatorAssignment?: boolean;
+}
+
+export function buildPositionSyncWorkflowUpdate(
+  input: BuildPositionSyncWorkflowUpdateInput,
+): PositionSyncWorkflowSaveInput {
+  const timestamp = input.timestamp;
+
+  return {
+    groupId: input.groupId,
+    followerAccountId: input.followerAccountId,
+    status: input.nextStatus,
+    note: input.note ?? input.currentEntry?.note,
+    operatorName: input.operatorName ?? input.currentEntry?.operatorName,
+    operatorHistory: input.appendOperatorAssignment
+      ? appendPositionSyncOperatorAssignment(
+          input.currentEntry?.operatorHistory,
+          input.operatorName ?? input.currentEntry?.operatorName,
+          timestamp ?? new Date().toISOString(),
+          input.assignmentReason,
+        )
+      : input.currentEntry?.operatorHistory,
+    reviewedAt:
+      input.nextStatus === "reviewed" && timestamp
+        ? timestamp
+        : input.currentEntry?.reviewedAt,
+    simulatedAt:
+      input.nextStatus === "simulated" && timestamp
+        ? timestamp
+        : input.currentEntry?.simulatedAt,
+    approvedAt:
+      input.nextStatus === "approved" && timestamp
+        ? timestamp
+        : input.currentEntry?.approvedAt,
+    handedOffAt:
+      input.nextStatus === "handed_off" && timestamp
+        ? timestamp
+        : input.currentEntry?.handedOffAt,
+    completedManuallyAt:
+      input.nextStatus === "completed_manually" && timestamp
+        ? timestamp
+        : input.currentEntry?.completedManuallyAt,
+  };
+}

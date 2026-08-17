@@ -3,18 +3,22 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { AccountCard } from "@/components/account-card";
 import { AddAccountDialog } from "@/components/add-account-dialog";
 import { BrokerSettingsDialog } from "@/components/broker-settings-dialog";
-import { RiskSettingsDialog, type RiskSettings, DEFAULT_RISK_SETTINGS } from "@/components/risk-settings-dialog";
+import { RiskSettingsDialog, type RiskSettings } from "@/components/risk-settings-dialog";
 import { DisconnectAccountAlert } from "@/components/disconnect-account-alert";
 import { EmptyState } from "@/components/empty-state";
 import { AccountGroupsView } from "@/components/account-groups";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { useAccountsPositionSyncReview } from "@/hooks/use-accounts-position-sync-review";
+import { useAccountsPagePreferences } from "@/hooks/use-accounts-page-preferences";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, getQueryFn, queryClient } from "@/lib/queryClient";
 import type { AccountCreatePayload } from "@/lib/account-create-payload";
 import {
   connectAccount,
   disconnectAccount,
+  revalidateRithmicReadiness,
   updateAccountConnectionInQueryData,
 } from "@/lib/account-connection-api";
 import {
@@ -30,8 +34,10 @@ import {
 } from "@/lib/account-risk";
 import {
   buildPositionSyncReview,
+  describePositionSyncSimulationGuidance,
   describePositionSyncOverview,
   sortPositionSyncGroups,
+  summarizePositionSyncRepairOpportunities,
 } from "@/lib/position-sync";
 import {
   buildPositionSyncWorkflowKey,
@@ -51,6 +57,14 @@ import {
   prepareAccountRuntimeViewModels,
 } from "@/lib/account-runtime-view";
 import {
+  buildRithmicReadinessViewItems,
+  getRithmicAccounts,
+  getRithmicReadinessBannerLabel,
+  getRithmicReadinessBannerToneClass,
+  summarizeRithmicReadiness,
+  type RithmicReadinessResponse,
+} from "@/lib/rithmic-readiness";
+import {
   LIVE_QUERY_POLL_MS,
   LIVE_QUERY_STALE_MS,
   SESSION_STATUS_POLL_MS,
@@ -58,8 +72,6 @@ import {
 import type { AccountsRuntimeOverviewResponse } from "@/lib/runtime-overview";
 import { ShieldAlert, Loader2, LayoutGrid, List, Table2, Settings, Globe, Layers } from "lucide-react";
 import type { Account } from "@shared/schema";
-
-type ViewMode = 'grid' | 'list' | 'table' | 'groups';
 
 interface AuthMeResponse {
   success: boolean;
@@ -93,60 +105,18 @@ type HttpError = Error & {
 
 export default function Accounts() {
   const { toast } = useToast();
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [addGroupTrigger, setAddGroupTrigger] = useState(0);
-  const [sessionMasterAccountId, setSessionMasterAccountId] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem('copy-session-master-account-id');
-    } catch {
-      return null;
-    }
-  });
-  const [globalSettings, setGlobalSettings] = useState<RiskSettings>(() => {
-    try {
-      const saved = localStorage.getItem('global-risk-settings-v1');
-      return saved ? { ...DEFAULT_RISK_SETTINGS, ...JSON.parse(saved) } : { ...DEFAULT_RISK_SETTINGS };
-    } catch {
-      return { ...DEFAULT_RISK_SETTINGS };
-    }
-  });
   const [disconnectAlert, setDisconnectAlert] = useState<{
     open: boolean;
     accountId: string;
     accountName: string;
   }>({ open: false, accountId: '', accountName: '' });
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('accounts-view-mode');
-      if (saved) {
-        setViewMode(saved as ViewMode);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('accounts-view-mode', viewMode);
-    }
-  }, [viewMode]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    if (sessionMasterAccountId) {
-      localStorage.setItem('copy-session-master-account-id', sessionMasterAccountId);
-    } else {
-      localStorage.removeItem('copy-session-master-account-id');
-    }
-  }, [sessionMasterAccountId]);
-
   const { data: accountsData, isLoading } = useQuery<{ success: boolean; accounts: Account[] }>({
     queryKey: ['/api/accounts'],
   });
   const accounts = accountsData?.accounts || [];
+  const rithmicAccounts = getRithmicAccounts(accounts);
   const hasConnectedAccounts = accounts.some((account) => account.isConnected);
   const { data: authData } = useQuery<AuthMeResponse | null>({
     queryKey: ['/api/auth/me'],
@@ -222,15 +192,55 @@ export default function Accounts() {
     enabled: !!authData?.user?.id && hasConnectedAccounts,
     staleTime: LIVE_QUERY_STALE_MS,
   });
+  const { data: rithmicReadinessData } = useQuery<RithmicReadinessResponse[] | null>({
+    queryKey: authData?.user?.id
+      ? ['/api/accounts/rithmic-readiness', authData.user.id, rithmicAccounts.map((account) => account.id).join(',')]
+      : ['/api/accounts/rithmic-readiness', 'anonymous'],
+    queryFn: async () => {
+      const responses = await Promise.all(
+        rithmicAccounts.map(async (account) => {
+          const res = await fetch(`/api/accounts/${account.id}/rithmic-readiness`, {
+            credentials: 'include',
+          });
+
+          if (!res.ok) {
+            const text = (await res.text()) || res.statusText;
+            throw new Error(`${res.status}: ${text}`);
+          }
+
+          return res.json() as Promise<RithmicReadinessResponse>;
+        }),
+      );
+
+      return responses;
+    },
+    enabled: !!authData?.user?.id && rithmicAccounts.length > 0,
+    refetchInterval: LIVE_QUERY_POLL_MS,
+    refetchIntervalInBackground: false,
+    staleTime: LIVE_QUERY_STALE_MS,
+  });
   const tradeCopyStatus = tradeCopyStatusData?.data;
   const connectedAccounts = accounts.filter((account) => account.isConnected);
-  const activeSessionMasterAccountId = tradeCopyStatus?.masterAccountId ?? sessionMasterAccountId;
+  const {
+    viewMode,
+    setViewMode,
+    setSessionMasterAccountId,
+    activeSessionMasterAccountId,
+    globalSettings,
+    saveGlobalSettings,
+  } = useAccountsPagePreferences({
+    connectedAccountIds: connectedAccounts.map((account) => account.id),
+    serverMasterAccountId: tradeCopyStatus?.masterAccountId,
+  });
   const positionSnapshotData: PositionSnapshotResponse | null = runtimeOverviewData?.positionSnapshot ?? null;
   const accountLiveMetricsById = buildAccountLiveMetricsById(positionSnapshotData?.accounts ?? []);
   const accountBalanceMetricsById = buildAccountBalanceMetricsById(runtimeOverviewData?.accountLiveMetrics.accounts ?? []);
   const accountRiskOverview = runtimeOverviewData?.accountRiskOverview;
   const accountRiskById = buildAccountRiskById(accountRiskOverview?.accounts ?? []);
   const positionSyncOverview = runtimeOverviewData?.positionSyncOverview ?? null;
+  const rithmicReadinessItems = rithmicReadinessData?.map((response) => response.readiness) ?? [];
+  const rithmicReadinessSummary = summarizeRithmicReadiness(rithmicReadinessItems);
+  const rithmicReadinessViewItems = buildRithmicReadinessViewItems(rithmicReadinessItems);
   const positionSyncWorkflowState = positionSyncWorkflowData?.reviews
     ? toPositionSyncWorkflowState(positionSyncWorkflowData.reviews)
     : {};
@@ -238,32 +248,14 @@ export default function Accounts() {
   const refreshTradeCopyStatusQuery = () => queryClient.invalidateQueries({ queryKey: ['/api/trade-copy/status'] });
   const refreshAccountsRuntimeOverviewQuery = () =>
     queryClient.invalidateQueries({ queryKey: ['/api/runtime/accounts-overview'] });
+  const refreshRithmicReadinessQuery = () =>
+    queryClient.invalidateQueries({ queryKey: ['/api/accounts/rithmic-readiness'] });
   const refreshAccountSessionData = () => {
     refreshAccountsQuery();
     refreshTradeCopyStatusQuery();
     refreshAccountsRuntimeOverviewQuery();
+    refreshRithmicReadinessQuery();
   };
-
-  useEffect(() => {
-    if (tradeCopyStatus?.masterAccountId) {
-      setSessionMasterAccountId(tradeCopyStatus.masterAccountId);
-      return;
-    }
-
-    if (connectedAccounts.length === 0) {
-      setSessionMasterAccountId(null);
-      return;
-    }
-
-    if (
-      sessionMasterAccountId &&
-      connectedAccounts.some((account) => account.id === sessionMasterAccountId)
-    ) {
-      return;
-    }
-
-    setSessionMasterAccountId(connectedAccounts[0]?.id ?? null);
-  }, [connectedAccounts, sessionMasterAccountId, tradeCopyStatus?.masterAccountId]);
 
   const addAccountMutation = useMutation({
     mutationFn: async (accountData: any) => {
@@ -309,6 +301,12 @@ export default function Accounts() {
         ['/api/accounts'],
         (current) => updateAccountConnectionInQueryData(current, accountId, false),
       );
+      refreshAccountSessionData();
+    },
+  });
+  const revalidateRithmicReadinessMutation = useMutation({
+    mutationFn: (accountId: string) => revalidateRithmicReadiness(accountId),
+    onSuccess: () => {
       refreshAccountSessionData();
     },
   });
@@ -623,8 +621,7 @@ export default function Accounts() {
   };
 
   const handleGlobalSettingsUpdate = (settings: RiskSettings) => {
-    setGlobalSettings(settings);
-    try { localStorage.setItem('global-risk-settings-v1', JSON.stringify(settings)); } catch {}
+    saveGlobalSettings(settings);
     toast({ title: "Global Defaults Saved", description: "All accounts on 'Global' mode now use these limits." });
   };
 
@@ -861,8 +858,31 @@ export default function Accounts() {
   const safeRiskCount = accountRiskOverview?.summary.safeAccounts ?? 0;
   const pendingRiskCount = accountRiskOverview?.summary.unavailableAccounts ?? 0;
   const positionSyncPulse = describePositionSyncOverview(positionSyncOverview);
+  const positionSyncRepairSummary = summarizePositionSyncRepairOpportunities(positionSyncOverview);
   const topPositionSyncGroups = sortPositionSyncGroups(positionSyncOverview?.groups ?? []).slice(0, 3);
   const positionSyncReviewGroups = buildPositionSyncReview(positionSyncOverview?.groups ?? []).slice(0, 2);
+  const {
+    positionSyncReviewNotes,
+    setPositionSyncReviewNotes,
+    positionSyncAssignmentReasons,
+    setPositionSyncAssignmentReasons,
+    savePositionSyncWorkflowMutation,
+    handleApprovePositionSyncEntry,
+    handleTakePositionSyncOwnership,
+    handleHandOffPositionSyncEntry,
+    handleCompletePositionSyncEntry,
+  } = useAccountsPositionSyncReview({
+    userId: authData?.user?.id,
+    username: authData?.user?.username,
+    positionSyncWorkflowState,
+    onWorkflowSaved: refreshAccountsRuntimeOverviewQuery,
+    onWorkflowSaveSuccess: (count) => {
+      toast({
+        title: 'Sync Workflow Updated',
+        description: `${count} position sync item${count === 1 ? '' : 's'} saved to the shared operator workflow.`,
+      });
+    },
+  });
   const renderSessionMasterButton = (
     account: Account,
     options?: {
@@ -1265,6 +1285,102 @@ export default function Accounts() {
         </div>
       </div>
 
+      {rithmicAccounts.length > 0 ? (
+        <div
+          className={`panel-surface rounded-[1.4rem] p-4 flex flex-col gap-3 ${getRithmicReadinessBannerToneClass(rithmicReadinessSummary.actionRequiredCount)}`}
+          data-testid="rithmic-readiness-summary"
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.24em] opacity-70">Rithmic Readiness</p>
+              <p className="mt-1 text-lg font-semibold">
+                {getRithmicReadinessBannerLabel(rithmicReadinessSummary)}
+              </p>
+              <p className="mt-1 text-sm opacity-80">
+                Saved-account checks for reconnect readiness and conformance login evidence.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline" className="border-current/20 bg-transparent text-current">
+                {rithmicReadinessSummary.connectedSessionCount}/{rithmicReadinessSummary.total} sessions active
+              </Badge>
+              <Badge variant="outline" className="border-current/20 bg-transparent text-current">
+                {rithmicReadinessSummary.needsReconnectProofCount} reconnect proofs stale
+              </Badge>
+              <Badge variant="outline" className="border-current/20 bg-transparent text-current">
+                {rithmicReadinessSummary.missingMetadataCount} missing login evidence
+              </Badge>
+            </div>
+          </div>
+
+          {rithmicReadinessViewItems.length > 0 ? (
+            <div className="grid gap-2 lg:grid-cols-2">
+              {rithmicReadinessViewItems.map((item) => (
+                <div
+                  key={item.accountId}
+                  className="rounded-[1rem] border border-current/15 bg-black/10 p-3"
+                  data-testid={`rithmic-readiness-card-${item.accountId}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="font-medium text-white">{item.accountName}</p>
+                      <p className="mt-1 text-xs opacity-75">
+                        {item.environment.toUpperCase()} • {item.systemName} • {item.exchange ?? "Exchange missing"}
+                      </p>
+                    </div>
+                    <Badge variant={item.ready ? "default" : "secondary"}>{item.statusLabel}</Badge>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge variant="outline" className="border-current/20 bg-transparent text-current">
+                      {item.sessionActive ? "Session active" : "Session offline"}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className={
+                        item.reconnectBadgeTone === "ok"
+                          ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-100"
+                          : "border-amber-400/20 bg-amber-400/10 text-amber-100"
+                      }
+                    >
+                      {item.reconnectBadgeLabel}
+                    </Badge>
+                  </div>
+                  <p className="mt-3 text-xs opacity-80">
+                    {item.sessionLabel}
+                  </p>
+                  <p className="mt-2 text-xs opacity-75">Reconnect drift: {item.reconnectLabel}</p>
+                  {item.blockers.length > 0 ? (
+                    <div className="mt-2 space-y-1 text-xs opacity-90">
+                      {item.blockers.slice(0, 2).map((blocker) => (
+                        <p key={blocker}>• {blocker}</p>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="mt-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => revalidateRithmicReadinessMutation.mutate(item.accountId)}
+                      disabled={revalidateRithmicReadinessMutation.isPending}
+                      data-testid={`button-rithmic-revalidate-${item.accountId}`}
+                    >
+                      {revalidateRithmicReadinessMutation.isPending &&
+                      revalidateRithmicReadinessMutation.variables === item.accountId
+                        ? "Re-checking..."
+                        : "Re-check readiness"}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm opacity-80">
+              Checking saved Rithmic accounts now.
+            </p>
+          )}
+        </div>
+      ) : null}
+
       <div className="panel-surface rounded-[1.4rem] p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -1281,6 +1397,9 @@ export default function Accounts() {
               {positionSyncPulse.headline}
             </p>
             <p className="text-xs text-muted-foreground mt-1">{positionSyncPulse.detail}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {positionSyncRepairSummary.headline}. {positionSyncRepairSummary.detail}
+            </p>
           </div>
           <Badge
             variant="outline"
@@ -1306,6 +1425,11 @@ export default function Accounts() {
 
         {topPositionSyncGroups.length > 0 && (
           <div className="flex flex-wrap gap-2">
+            {positionSyncRepairSummary.totalCandidates > 0 && (
+              <Badge variant="outline" className="border-cyan-400/30 text-cyan-300">
+                {positionSyncRepairSummary.autoReadyCount} auto-ready, {positionSyncRepairSummary.manualReviewCount} manual
+              </Badge>
+            )}
             {topPositionSyncGroups.map((group) => (
               <Badge
                 key={group.groupId}
@@ -1361,6 +1485,16 @@ export default function Accounts() {
                         <div>
                           <p className="text-sm font-medium">{follower.followerName}</p>
                           <p className="mt-1 text-xs text-muted-foreground">{follower.summary}</p>
+                          {follower.repairRecommendation && (
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              {follower.repairRecommendation.reason}
+                            </p>
+                          )}
+                          {follower.repairRecommendation && (
+                            <p className="mt-1 text-xs text-white/60">
+                              {describePositionSyncSimulationGuidance(follower.repairRecommendation.complexity)}
+                            </p>
+                          )}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           {workflowEntry?.status === 'approved' && (
@@ -1400,6 +1534,32 @@ export default function Accounts() {
                               ? `${follower.adjustmentCount} adjustment${follower.adjustmentCount === 1 ? '' : 's'}`
                               : 'Waiting'}
                           </Badge>
+                          {follower.repairRecommendation && (
+                            <Badge
+                              variant="outline"
+                              className={
+                                follower.repairRecommendation.tone === 'ok'
+                                  ? 'border-emerald-400/30 text-emerald-300'
+                                  : 'border-amber-400/30 text-amber-300'
+                              }
+                            >
+                              {follower.repairRecommendation.label}
+                            </Badge>
+                          )}
+                          {follower.repairRecommendation && (
+                            <Badge
+                              variant="outline"
+                              className={
+                                follower.repairRecommendation.complexity === 'high'
+                                  ? 'border-red-400/30 text-red-300'
+                                  : follower.repairRecommendation.complexity === 'medium'
+                                    ? 'border-amber-400/30 text-amber-200'
+                                    : 'border-cyan-400/30 text-cyan-200'
+                              }
+                            >
+                              {follower.repairRecommendation.complexityLabel}
+                            </Badge>
+                          )}
                         </div>
                       </div>
 
@@ -1421,6 +1581,30 @@ export default function Accounts() {
                           )}
                         </div>
                       )}
+                      <div className="mt-3 space-y-3">
+                        <Textarea
+                          value={positionSyncReviewNotes[workflowKey] ?? workflowEntry?.note ?? ''}
+                          onChange={(event) =>
+                            setPositionSyncReviewNotes((current) => ({
+                              ...current,
+                              [workflowKey]: event.target.value,
+                            }))
+                          }
+                          placeholder="Shared sync review note"
+                          className="min-h-[72px] border-white/10 bg-white/[0.03] text-sm text-white placeholder:text-muted-foreground"
+                        />
+                        <Textarea
+                          value={positionSyncAssignmentReasons[workflowKey] ?? ''}
+                          onChange={(event) =>
+                            setPositionSyncAssignmentReasons((current) => ({
+                              ...current,
+                              [workflowKey]: event.target.value,
+                            }))
+                          }
+                          placeholder="Optional ownership or handoff reason"
+                          className="min-h-[56px] border-white/10 bg-white/[0.03] text-sm text-white placeholder:text-muted-foreground"
+                        />
+                      </div>
                       {workflowEntry?.note && (
                         <p className="mt-3 text-xs text-muted-foreground">
                           Review note: {workflowEntry.note}
@@ -1488,6 +1672,76 @@ export default function Accounts() {
                           Simulated on {new Date(workflowEntry.simulatedAt).toLocaleString()}.
                         </p>
                       )}
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="border-emerald-400/30 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"
+                          onClick={() =>
+                            handleApprovePositionSyncEntry({
+                              groupId: group.groupId,
+                              followerAccountId: follower.followerAccountId,
+                              workflowKey,
+                              workflowEntry,
+                            })
+                          }
+                          disabled={savePositionSyncWorkflowMutation.isPending}
+                        >
+                          {savePositionSyncWorkflowMutation.isPending ? 'Saving...' : 'Approve'}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="border-white/10 bg-white/[0.03] text-white hover:bg-white/[0.06]"
+                          onClick={() =>
+                            handleTakePositionSyncOwnership({
+                              groupId: group.groupId,
+                              followerAccountId: follower.followerAccountId,
+                              workflowKey,
+                              workflowEntry,
+                            })
+                          }
+                          disabled={savePositionSyncWorkflowMutation.isPending}
+                        >
+                          {savePositionSyncWorkflowMutation.isPending ? 'Saving...' : 'Take ownership'}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="border-amber-400/30 bg-amber-400/10 text-amber-100 hover:bg-amber-400/15"
+                          onClick={() =>
+                            handleHandOffPositionSyncEntry({
+                              groupId: group.groupId,
+                              followerAccountId: follower.followerAccountId,
+                              workflowKey,
+                              workflowEntry,
+                            })
+                          }
+                          disabled={savePositionSyncWorkflowMutation.isPending}
+                        >
+                          {savePositionSyncWorkflowMutation.isPending ? 'Saving...' : 'Hand off'}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="border-cyan-400/30 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/15"
+                          onClick={() =>
+                            handleCompletePositionSyncEntry({
+                              groupId: group.groupId,
+                              followerAccountId: follower.followerAccountId,
+                              workflowKey,
+                              workflowEntry,
+                            })
+                          }
+                          disabled={savePositionSyncWorkflowMutation.isPending}
+                        >
+                          {savePositionSyncWorkflowMutation.isPending ? 'Saving...' : 'Mark completed manually'}
+                        </Button>
+                      </div>
                     </div>
                     );
                   })}

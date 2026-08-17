@@ -1,0 +1,40 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+test("dashboard wires saved-session Rithmic readiness follow-up into the summary rail", () => {
+  const source = readFileSync("client/src/pages/dashboard.tsx", "utf8");
+
+  assert.match(source, /DashboardRithmicReadinessPanel/);
+  assert.match(source, /useNotifications/);
+  assert.match(source, /useFollowUpReviewData/);
+  assert.match(source, /buildRithmicReadinessViewItems/);
+  assert.match(source, /getRithmicAccounts/);
+  assert.match(source, /rithmicReadinessReviewData/);
+  assert.match(source, /rithmicReadinessReviewsByStoryKey/);
+  assert.match(source, /hasRithmicAccounts/);
+  assert.match(source, /\/api\/accounts\/\$\{account\.id\}\/rithmic-readiness/);
+  assert.match(source, /rithmicReadinessByAccountId/);
+  assert.match(source, /visibleRithmicReadinessFollowUpItems/);
+  assert.match(source, /rithmicReadinessFollowUpSummary/);
+  assert.match(source, /rithmicReadinessFollowUpItems/);
+  assert.match(source, /reviewedRithmicReadinessCount/);
+  assert.match(source, /ownedRithmicReadinessCount/);
+  assert.match(source, /unownedRithmicReadinessCount/);
+  assert.match(source, /reassignedRithmicReadinessCount/);
+  assert.match(source, /saveRithmicReadinessReviewsMutation/);
+  assert.match(source, /recheckRithmicReadinessMutation/);
+  assert.match(source, /buildRithmicReadinessReviewPayload/);
+  assert.match(source, /handleRithmicReadinessTakeOwnership/);
+  assert.match(source, /handleRithmicReadinessSaveNote/);
+  assert.match(source, /handleRithmicReadinessReview/);
+  assert.match(source, /handleRithmicReadinessReopen/);
+  assert.match(source, /handleRithmicReadinessRecheck/);
+  assert.match(source, /isRecheckingAllRithmicReadiness/);
+  assert.match(source, /handleRithmicReadinessRecheckAll/);
+  assert.match(source, /onRecheckAll=\{handleRithmicReadinessRecheckAll\}/);
+  assert.match(source, /Rithmic Readiness Rechecked/);
+  assert.match(source, /Rithmic Re-check Failed/);
+  assert.match(source, /Rithmic Readiness Batch Rechecked/);
+  assert.match(source, /Rithmic Batch Re-check Failed/);
+});

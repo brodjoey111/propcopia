@@ -164,10 +164,12 @@ test("buildPositionSyncOverview summarizes group-level sync state", () => {
   assert.equal(result.summary.totalGroups, 1);
   assert.equal(result.summary.outOfSyncGroups, 1);
   assert.equal(result.summary.outOfSyncFollowers, 1);
+  assert.equal(result.summary.disabledFollowers, 0);
   assert.equal(result.groups[0]?.status, "OUT_OF_SYNC");
   assert.equal(result.groups[0]?.followers[0]?.status, "IN_SYNC");
   assert.equal(result.groups[0]?.followers[1]?.status, "OUT_OF_SYNC");
   assert.equal(result.groups[0]?.followers[1]?.adjustmentCount, 1);
+  assert.equal(result.groups[0]?.disabledFollowers, 0);
 });
 
 test("filterPositionSyncOverviewByGroupId narrows the response and recalculates summary totals", () => {
@@ -307,6 +309,79 @@ test("filterPositionSyncOverviewByGroupId narrows the response and recalculates 
   assert.equal(filtered.summary.inSyncGroups, 1);
   assert.equal(filtered.summary.outOfSyncGroups, 0);
   assert.equal(filtered.summary.outOfSyncFollowers, 0);
+  assert.equal(filtered.summary.disabledFollowers, 0);
   assert.equal(filtered.groups.length, 1);
   assert.equal(filtered.groups[0]?.groupId, "group-2");
+});
+
+test("buildPositionSyncOverview keeps disabled followers out of repair counts while surfacing their state", () => {
+  const accounts = [
+    createAccount({ id: "master-1", name: "Master", accountType: "master" }),
+    createAccount({ id: "follower-1", name: "Follower 1" }),
+    createAccount({ id: "follower-2", name: "Follower 2" }),
+  ];
+  const registeredGroups: RegisteredCopyGroup[] = [
+    {
+      group: {
+        groupId: "group-disabled",
+        userId: "user-1",
+        name: "Disabled Group",
+        masterAccountId: "master-1",
+        followerAccountIds: ["follower-1", "follower-2"],
+        groupSettings: { enabled: true },
+        riskSettings: { onRiskBreach: "PAUSE" },
+        executionSettings: {
+          mode: "SIMULATED",
+          maxRetries: 0,
+          retryDelayMs: 1000,
+          orderTimeoutMs: 5000,
+          flattenOnEmergencyStop: false,
+        },
+        createdAt: "2026-08-11T15:00:00.000Z",
+        updatedAt: "2026-08-11T15:00:00.000Z",
+      },
+      followers: [
+        {
+          groupId: "group-disabled",
+          followerAccountId: "follower-1",
+          enabled: false,
+          createdAt: "2026-08-11T15:00:00.000Z",
+          updatedAt: "2026-08-11T15:00:00.000Z",
+        },
+        {
+          groupId: "group-disabled",
+          followerAccountId: "follower-2",
+          enabled: true,
+          createdAt: "2026-08-11T15:00:00.000Z",
+          updatedAt: "2026-08-11T15:00:00.000Z",
+        },
+      ],
+    },
+  ];
+
+  const result = buildPositionSyncOverview({
+    userAccounts: accounts,
+    registeredGroups,
+    positionSnapshot: {
+      ...createPositionSnapshotResult(),
+      accounts: createPositionSnapshotResult().accounts.map((snapshot) =>
+        snapshot.accountId === "follower-2"
+          ? {
+              ...snapshot,
+              positions: [{ symbol: "ESU6", quantity: 2, side: "LONG" as const }],
+            }
+          : snapshot,
+      ),
+    },
+  });
+
+  assert.equal(result.summary.totalGroups, 1);
+  assert.equal(result.summary.inSyncGroups, 1);
+  assert.equal(result.summary.outOfSyncFollowers, 0);
+  assert.equal(result.summary.unavailableFollowers, 0);
+  assert.equal(result.summary.disabledFollowers, 1);
+  assert.equal(result.groups[0]?.disabledFollowers, 1);
+  assert.equal(result.groups[0]?.followers[0]?.status, "DISABLED");
+  assert.equal(result.groups[0]?.followers[1]?.status, "IN_SYNC");
+  assert.match(result.groups[0]?.summary ?? "", /disabled/i);
 });

@@ -278,3 +278,154 @@ test('payload object is delivered unchanged to the handler', () => {
 
   assert.equal(received, payload);
 });
+
+test('copy-group activity payload includes observability details for downstream subscribers', () => {
+  const bus = new EventBus<PropCopiaEventMap>();
+  let receivedMessage = '';
+  let receivedTotalEvents = 0;
+
+  bus.subscribe('copy_group.activity_recorded', (event) => {
+    receivedMessage = event.activity.message;
+    receivedTotalEvents = event.observability.totalEvents;
+  });
+
+  bus.publish('copy_group.activity_recorded', {
+    group: {
+      groupId: 'group-1',
+      userId: 'user-1',
+      name: 'Main Group',
+      masterAccountId: 'master-1',
+      followerAccountIds: ['follower-1'],
+      groupSettings: { enabled: true },
+      riskSettings: { onRiskBreach: 'PAUSE' },
+      executionSettings: {
+        mode: 'LIVE',
+        maxRetries: 0,
+        retryDelayMs: 1000,
+        orderTimeoutMs: 5000,
+        flattenOnEmergencyStop: false,
+      },
+      createdAt: '2026-08-02T14:00:00.000Z',
+      updatedAt: '2026-08-02T14:00:00.000Z',
+    },
+    runtime: {
+      groupId: 'group-1',
+      status: 'RUNNING',
+      startedAt: '2026-08-02T14:00:00.000Z',
+      isKillSwitchActive: false,
+      masterConnected: true,
+      connectedFollowerCount: 1,
+      totalFollowerCount: 1,
+    },
+    activity: {
+      eventId: 'event-1',
+      groupId: 'group-1',
+      timestamp: '2026-08-02T14:01:00.000Z',
+      severity: 'WARN',
+      category: 'HEALTH',
+      message: 'Follower reconnecting.',
+    },
+    observability: {
+      groupId: 'group-1',
+      recentActivity: [],
+      totalEvents: 4,
+      infoEventCount: 2,
+      warningEventCount: 1,
+      errorEventCount: 1,
+      restartRecoveryCount: 0,
+      categoryCounts: {
+        lifecycle: 2,
+        trade: 0,
+        rule: 0,
+        intent: 0,
+        execution: 0,
+        health: 2,
+      },
+      lifecycleCounts: {
+        started: 1,
+        paused: 0,
+        resumed: 0,
+        stopped: 0,
+        emergencyStopped: 0,
+      },
+      lastEventAt: '2026-08-02T14:01:00.000Z',
+      lastLifecycleAt: '2026-08-02T14:00:00.000Z',
+      lastLifecycleMessage: 'Copy group Main Group started.',
+      lastErrorAt: '2026-08-02T13:59:00.000Z',
+      lastErrorMessage: 'Follower disconnected.',
+      lastRestartRecoveryAt: undefined,
+      lastRestartRecoveryMessage: undefined,
+    },
+  });
+
+  assert.equal(receivedMessage, 'Follower reconnecting.');
+  assert.equal(receivedTotalEvents, 4);
+});
+
+test('copy-group health-changed payload preserves previous and next health state', () => {
+  const bus = new EventBus<PropCopiaEventMap>();
+  let previousStatus = '';
+  let nextStatus = '';
+
+  bus.subscribe('copy_group.health_changed', (event) => {
+    previousStatus = event.previousStatus;
+    nextStatus = event.health.status;
+  });
+
+  bus.publish('copy_group.health_changed', {
+    group: {
+      groupId: 'group-1',
+      userId: 'user-1',
+      name: 'Main Group',
+      masterAccountId: 'master-1',
+      followerAccountIds: ['follower-1'],
+      groupSettings: { enabled: true },
+      riskSettings: { onRiskBreach: 'PAUSE' },
+      executionSettings: {
+        mode: 'LIVE',
+        maxRetries: 0,
+        retryDelayMs: 1000,
+        orderTimeoutMs: 5000,
+        flattenOnEmergencyStop: false,
+      },
+      createdAt: '2026-08-02T14:00:00.000Z',
+      updatedAt: '2026-08-02T14:00:00.000Z',
+    },
+    runtime: {
+      groupId: 'group-1',
+      status: 'RUNNING',
+      startedAt: '2026-08-02T14:00:00.000Z',
+      isKillSwitchActive: false,
+      masterConnected: true,
+      connectedFollowerCount: 1,
+      totalFollowerCount: 1,
+    },
+    previousStatus: 'DEGRADED',
+    health: {
+      groupId: 'group-1',
+      status: 'HEALTHY',
+      masterConnection: {
+        ok: true,
+        message: 'Master connected',
+      },
+      followerConnections: {
+        ok: true,
+        message: 'Connected followers: 1/1',
+      },
+      executionPipeline: {
+        ok: true,
+        message: 'Execution pipeline ready',
+      },
+      intentPipeline: {
+        ok: true,
+        message: 'Intent pipeline ready',
+      },
+      warnings: [],
+      errors: [],
+      checkedAt: '2026-08-02T14:01:00.000Z',
+    },
+  });
+
+  assert.equal(previousStatus, 'DEGRADED');
+  assert.equal(nextStatus, 'HEALTHY');
+});

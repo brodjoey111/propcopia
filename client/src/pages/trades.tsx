@@ -57,6 +57,11 @@ export default function Trades() {
   const lifecycleOverview = describeTradeLifecycleOverview(records);
   const lifecycleStageCards = buildTradeLifecycleStageCards(records);
   const journeyRows = buildTradeJourneyRows(records, 5);
+  const reviewedExecutionCount = rows.filter((row) => row.detail.reviewStatus === "reviewed").length;
+  const ownedExecutionCount = rows.filter((row) => !!row.detail.operatorName).length;
+  const reassignedExecutionCount = rows.filter(
+    (row) => (row.detail.operatorHistory?.length ?? 0) > 1,
+  ).length;
 
   const summaryCards = [
     {
@@ -299,6 +304,20 @@ export default function Trades() {
                     ? "No live execution records yet."
                     : `Showing ${summary.total} recent lifecycle records from the server history store.`}
                 </p>
+                <p className="mt-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  Shared operator audit
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-emerald-100">
+                    Reviewed {reviewedExecutionCount}
+                  </span>
+                  <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-cyan-100">
+                    Owned {ownedExecutionCount}
+                  </span>
+                  <span className="rounded-full border border-violet-400/20 bg-violet-400/10 px-3 py-1 text-violet-100">
+                    Reassigned {reassignedExecutionCount}
+                  </span>
+                </div>
               </div>
               {error ? (
                 <p className="text-sm text-rose-300">
@@ -470,6 +489,51 @@ export default function Trades() {
                                         {row.detail.reviewNote ?? "No note captured"}
                                       </p>
                                     </div>
+                                  </div>
+                                ) : null}
+                                {row.detail.operatorName || (row.detail.operatorHistory?.length ?? 0) > 0 ? (
+                                  <div>
+                                    <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Operator Audit</p>
+                                    <div className="mt-2 space-y-2 text-sm text-slate-300">
+                                      <p>
+                                        <span className="text-muted-foreground">Operator owner:</span>{" "}
+                                        {row.detail.operatorName ?? "Unassigned"}
+                                      </p>
+                                      {(row.detail.operatorHistory?.length ?? 0) > 1 ? (
+                                        <p>
+                                          <span className="text-muted-foreground">Ownership changes:</span>{" "}
+                                          {(row.detail.operatorHistory?.length ?? 0) - 1}
+                                        </p>
+                                      ) : null}
+                                      {row.detail.operatorHistory?.[row.detail.operatorHistory.length - 1]?.reason ? (
+                                        <p>
+                                          <span className="text-muted-foreground">Latest ownership reason:</span>{" "}
+                                          {row.detail.operatorHistory[row.detail.operatorHistory.length - 1]?.reason}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                    {(row.detail.operatorHistory?.length ?? 0) > 0 ? (
+                                      <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/50 p-3">
+                                        <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                                          Ownership Timeline
+                                        </p>
+                                        <div className="mt-2 space-y-2">
+                                          {row.detail.operatorHistory?.slice().reverse().map((assignment, index) => (
+                                            <div
+                                              key={`${row.id}-assignment-${index}`}
+                                              className="border-l border-white/10 pl-3 text-xs text-slate-300"
+                                            >
+                                              <p className="text-white/80">
+                                                {assignment.operatorName} on {new Date(assignment.assignedAt).toLocaleString()}.
+                                              </p>
+                                              {assignment.reason ? (
+                                                <p className="mt-1 text-muted-foreground">{assignment.reason}</p>
+                                              ) : null}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : null}
                                   </div>
                                 ) : null}
                               </div>

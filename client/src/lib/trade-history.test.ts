@@ -147,12 +147,28 @@ test("toTradeHistoryRows carries reviewed failure notes into the expanded detail
       reviewStatus: "reviewed",
       reviewNote: "Checked broker logs and left for retry review",
       reviewedAt: "2026-08-11T14:05:00.000Z",
+      operatorName: "joseph",
+      operatorHistory: [
+        {
+          operatorName: "mark",
+          assignedAt: "2026-08-11T14:02:00.000Z",
+          reason: "Picked up failed execution",
+        },
+        {
+          operatorName: "joseph",
+          assignedAt: "2026-08-11T14:04:00.000Z",
+          reason: "Took over broker review",
+        },
+      ],
     }),
   ])[0];
 
   assert.equal(row.detail.reviewStatus, "reviewed");
   assert.equal(row.detail.reviewNote, "Checked broker logs and left for retry review");
   assert.equal(row.detail.reviewedAt, "2026-08-11T14:05:00.000Z");
+  assert.equal(row.detail.operatorName, "joseph");
+  assert.equal(row.detail.operatorHistory?.length, 2);
+  assert.equal(row.detail.operatorHistory?.[1]?.reason, "Took over broker review");
 });
 
 test("toTradeHistoryRows builds partial-fill progress details for expanded record view", () => {
@@ -190,6 +206,22 @@ test("toTradeHistoryRows builds partial-fill progress details for expanded recor
       "Filled:pending",
     ],
   );
+});
+
+test("toTradeHistoryRows uses the latest partial-fill update as its activity timestamp", () => {
+  const row = toTradeHistoryRows([
+    createRecord({
+      lifecycleStatus: "PARTIALLY_FILLED",
+      filledAt: undefined,
+      acknowledgedAt: "2026-08-04T12:00:02.000Z",
+      updatedAt: "2026-08-04T12:00:08.000Z",
+      partialFillCount: 1,
+      filledQuantity: 1,
+      remainingQuantity: 1,
+    }),
+  ])[0];
+
+  assert.equal(row.timestamp, "2026-08-04T12:00:08.000Z");
 });
 
 test("summarizeTradeHistory counts current lifecycle buckets", () => {

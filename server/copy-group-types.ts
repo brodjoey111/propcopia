@@ -139,9 +139,29 @@ export interface CopyGroupObservability {
   infoEventCount: number;
   warningEventCount: number;
   errorEventCount: number;
+  restartRecoveryCount: number;
+  categoryCounts: {
+    lifecycle: number;
+    trade: number;
+    rule: number;
+    intent: number;
+    execution: number;
+    health: number;
+  };
+  lifecycleCounts: {
+    started: number;
+    paused: number;
+    resumed: number;
+    stopped: number;
+    emergencyStopped: number;
+  };
   lastEventAt?: string;
+  lastLifecycleAt?: string;
+  lastLifecycleMessage?: string;
   lastErrorAt?: string;
   lastErrorMessage?: string;
+  lastRestartRecoveryAt?: string;
+  lastRestartRecoveryMessage?: string;
 }
 
 export interface CopyGroupHealth {

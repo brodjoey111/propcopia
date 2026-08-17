@@ -202,6 +202,7 @@ function createFakeBrokerAdapter() {
 function createFillStreamingBrokerAdapter() {
   let connected = false;
   let onFill: ((fill: any) => void) | null = null;
+  const submittedOrders: BrokerOrderRequest[] = [];
 
   return {
     adapter: {
@@ -221,11 +222,13 @@ function createFillStreamingBrokerAdapter() {
           brokerAccountIds: ['rithmic-fill-account'],
         };
       },
-      async submitOrder() {
+      async submitOrder(request: BrokerOrderRequest) {
+        submittedOrders.push(request);
         return {
           accepted: true,
           status: 'SENT',
           submittedAt: '2026-08-04T13:00:00.000Z',
+          brokerOrderId: `offline-order-${submittedOrders.length}`,
         } satisfies BrokerOrderResult;
       },
       async cancelOrder() {},
@@ -242,6 +245,9 @@ function createFillStreamingBrokerAdapter() {
     },
     emitFill(fill: any) {
       onFill?.(fill);
+    },
+    get submittedOrders() {
+      return submittedOrders;
     },
   };
 }
@@ -1355,4 +1361,98 @@ test('follower execution fill stream rolls repeated fills from partial to final 
   assert.equal(executionManager.getExecutionState(execution.intentId)?.remainingQuantity, 0);
   assert.equal(executionManager.getExecutionState(execution.intentId)?.filledAt, '2026-08-04T13:00:06.000Z');
   assert.equal(executionManager.getExecutionState(execution.intentId)?.fillId, 'follower-partial-2');
+});
+
+test('offline master-to-follower simulation completes submission, partial fill, and final fill', async () => {
+  const tradeIntentManager = new TradeIntentManager();
+  const engine = new TradeCopyEngine('demo', tradeIntentManager);
+  const followerBroker = createFillStreamingBrokerAdapter();
+  const masterBroker = createFakeRithmicMasterApi();
+
+  (engine as any).createFollowerBrokerAdapter = () => followerBroker.adapter;
+  await engine.addFollowerAccount(
+    createFollowerAccount('offline-follower', {
+      platform: 'Rithmic',
+      rithmicAccountId: 'rithmic-fill-account',
+      rithmicSystemName: 'Rithmic Test',
+    }),
+    {
+      kind: 'rithmic',
+      environment: 'test',
+      username: 'offline-user',
+      password: 'offline-password',
+      exchange: 'CME',
+      systemName: 'Rithmic Test',
+    },
+  );
+  engine.setRithmicMasterBrokerAccountId('offline-master-account');
+  await engine.connectRithmicMasterAccount('offline-master', masterBroker.api as any);
+
+  masterBroker.emitFill({
+    accountId: 'offline-master-account',
+    symbol: 'ES',
+    side: 'BUY',
+    quantity: 2,
+    price: 6400.25,
+    timestamp: Date.parse('2026-08-17T13:00:00.000Z'),
+    fillId: 'offline-master-fill-1',
+  });
+
+  const executionManager = getExecutionManager(engine);
+  await waitFor(() => executionManager.getAllExecutions()[0]?.status === 'COMPLETED');
+  const execution = executionManager.getAllExecutions()[0];
+
+  assert.equal(followerBroker.submittedOrders.length, 1);
+  assert.deepEqual(
+    {
+      accountId: followerBroker.submittedOrders[0]?.accountId,
+      symbol: followerBroker.submittedOrders[0]?.symbol,
+      side: followerBroker.submittedOrders[0]?.side,
+      quantity: followerBroker.submittedOrders[0]?.quantity,
+      orderType: followerBroker.submittedOrders[0]?.orderType,
+    },
+    {
+      accountId: 'rithmic-fill-account',
+      symbol: 'ES',
+      side: 'BUY',
+      quantity: 2,
+      orderType: 'MARKET',
+    },
+  );
+  assert.equal(tradeIntentManager.getIntent(execution.intentId)?.status, 'SENT');
+
+  followerBroker.emitFill({
+    accountId: 'rithmic-fill-account',
+    brokerKey: 'follower-ws:offline-follower',
+    brokerOrderId: execution.brokerOrderId,
+    symbol: 'ES',
+    side: 'BUY',
+    fillId: 'offline-partial-fill-1',
+    filledAt: '2026-08-17T13:00:01.000Z',
+    filledQuantity: 1,
+    averageFillPrice: 6400.5,
+  });
+
+  assert.equal(tradeIntentManager.getIntent(execution.intentId)?.status, 'ACKNOWLEDGED');
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.filledQuantity, 1);
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.remainingQuantity, 1);
+
+  followerBroker.emitFill({
+    accountId: 'rithmic-fill-account',
+    brokerKey: 'follower-ws:offline-follower',
+    brokerOrderId: execution.brokerOrderId,
+    symbol: 'ES',
+    side: 'BUY',
+    fillId: 'offline-final-fill-1',
+    filledAt: '2026-08-17T13:00:02.000Z',
+    filledQuantity: 1,
+    averageFillPrice: 6400.75,
+  });
+
+  assert.equal(tradeIntentManager.getIntent(execution.intentId)?.status, 'FILLED');
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.filledQuantity, 2);
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.remainingQuantity, 0);
+  assert.equal(executionManager.getExecutionState(execution.intentId)?.fillId, 'offline-final-fill-1');
+
+  await engine.disconnect();
 });

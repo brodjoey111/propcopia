@@ -1,4 +1,10 @@
-import type { CopyGroup, CopyGroupRuntimeState } from './copy-group-types';
+import type {
+  CopyGroup,
+  CopyGroupActivity,
+  CopyGroupHealth,
+  CopyGroupObservability,
+  CopyGroupRuntimeState,
+} from './copy-group-types';
 import type { TradeIntent } from './trade-intent-types';
 import type { TradeSide } from './trading-domain';
 
@@ -140,6 +146,20 @@ export interface CopyGroupEmergencyStoppedEvent {
   reason?: string;
 }
 
+export interface CopyGroupActivityRecordedEvent {
+  group: CopyGroup;
+  runtime: CopyGroupRuntimeState;
+  activity: CopyGroupActivity;
+  observability: CopyGroupObservability;
+}
+
+export interface CopyGroupHealthChangedEvent {
+  group: CopyGroup;
+  runtime: CopyGroupRuntimeState;
+  previousStatus: CopyGroupHealth['status'];
+  health: CopyGroupHealth;
+}
+
 export interface PropCopiaEventMap {
   'trade.master_fill_received': MasterFillReceivedEvent;
   'rule.allowed': RuleAllowedEvent;
@@ -158,4 +178,6 @@ export interface PropCopiaEventMap {
   'copy_group.paused': CopyGroupPausedEvent;
   'copy_group.resumed': CopyGroupResumedEvent;
   'copy_group.emergency_stopped': CopyGroupEmergencyStoppedEvent;
+  'copy_group.activity_recorded': CopyGroupActivityRecordedEvent;
+  'copy_group.health_changed': CopyGroupHealthChangedEvent;
 }

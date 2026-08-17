@@ -22,6 +22,7 @@ import OpenAI from "openai";
 import { TradeCopyEngine } from "./trade-copy-engine";
 import { updateAccountConnectionState } from "./account-connection-service";
 import { copyGroupManager } from "./copy-group-manager";
+import { runCopyGroupLifecycleAction } from "./copy-group-lifecycle-action";
 import { resolveRithmicSystemName } from "./rithmic-system-name";
 import { findBestMatchingRithmicAccount } from "./rithmic-account-reconciliation";
 import {
@@ -42,6 +43,8 @@ import { buildNotifications } from "./notifications-service";
 import { buildPositionSnapshots } from "./position-snapshot-service";
 import { clearRuntimeSnapshotCache, getOrCreateRuntimeSnapshot } from "./runtime-snapshot-cache";
 import { evaluateAccountRisk } from "./account-risk-service";
+import { buildRithmicReadiness } from "./rithmic-readiness-service";
+import { RithmicReconnectValidationStore } from "./rithmic-reconnect-validation";
 import {
   buildAccountsRuntimeOverview,
   buildDashboardRuntimeOverview,
@@ -51,16 +54,22 @@ import {
   copyGroupActivityStore,
   mergeCopyGroupActivity,
 } from "./copy-group-activity-store";
+import { copyGroupAlertStore } from "./copy-group-alert-store";
 import type { CopyGroupActivity } from "./copy-group-types";
+import { buildCopyGroupObservability } from "./copy-group-activity-journal";
 import { copyGroupRegistrationStore } from "./copy-group-registration-store";
+import { copyGroupAlertReviewStore } from "./copy-group-alert-review-store";
 import { positionSyncReviewStore } from "./position-sync-review-store";
 import { riskFollowUpReviewStore } from "./risk-follow-up-review-store";
+import { executionFollowUpReviewStore } from "./execution-follow-up-review-store";
+import { rithmicReadinessReviewStore } from "./rithmic-readiness-review-store";
 import { z } from "zod";
 
 const RUNTIME_SNAPSHOT_TTL_MS = 3_000;
 const tradovateInstances = new Map<string, TradovateAPI>();
 const tradeifyInstances = new Map<string, TradeifyAPI>();
 const rithmicInstances = new Map<string, RithmicAPI>();
+const rithmicReconnectValidationStore = new RithmicReconnectValidationStore();
 const tradeCopyEngines = new Map<string, TradeCopyEngine>();
 
 const tradeHistoryStatuses = new Set<TradeHistoryLifecycleStatus>([
@@ -224,6 +233,7 @@ async function loadDashboardRuntimeOverviewForUser(userId: string) {
     userId,
     registeredGroups.map((registeredGroup) => registeredGroup.group.groupId),
   );
+  const executionFollowUpReviews = await executionFollowUpReviewStore.listReviews(userId);
 
   return buildDashboardRuntimeOverview({
     userAccounts,
@@ -231,6 +241,7 @@ async function loadDashboardRuntimeOverviewForUser(userId: string) {
     getRunningGroups: () => copyGroupManager.getRunningGroups(),
     getRuntime: (groupId) => copyGroupManager.getRuntime(groupId),
     getRecentActivity: (groupId) => activityByGroupId[groupId] ?? [],
+    executionFollowUpReviews,
     positionSnapshotDependencies: {
       tradovateInstances,
       tradeifyInstances,
@@ -299,6 +310,45 @@ const upsertRiskFollowUpReviewsSchema = z.object({
   reviews: z.array(
     z.object({
       accountId: z.string().min(1),
+      status: z.enum(["pending", "reviewed"]),
+      note: z.string().optional(),
+      operatorName: z.string().optional(),
+      operatorHistory: z.array(
+        z.object({
+          operatorName: z.string().min(1),
+          assignedAt: z.string().datetime(),
+          reason: z.string().optional(),
+        }),
+      ).optional(),
+      reviewedAt: z.string().datetime().optional(),
+    }),
+  ).min(1),
+});
+
+const upsertCopyGroupAlertReviewsSchema = z.object({
+  reviews: z.array(
+    z.object({
+      storyKey: z.string().min(1),
+      groupId: z.string().min(1),
+      status: z.enum(["pending", "reviewed"]),
+      note: z.string().optional(),
+      operatorName: z.string().optional(),
+      operatorHistory: z.array(
+        z.object({
+          operatorName: z.string().min(1),
+          assignedAt: z.string().datetime(),
+          reason: z.string().optional(),
+        }),
+      ).optional(),
+      reviewedAt: z.string().datetime().optional(),
+    }),
+  ).min(1),
+});
+
+const upsertExecutionFollowUpReviewsSchema = z.object({
+  reviews: z.array(
+    z.object({
+      historyId: z.string().min(1),
       status: z.enum(["pending", "reviewed"]),
       note: z.string().optional(),
       operatorName: z.string().optional(),
@@ -536,6 +586,7 @@ function serializeAuthenticatedUser(user: Awaited<ReturnType<typeof storage.getU
 export function registerRoutes(app: Express): Server {
   const server = createServer(app);
   copyGroupManager.setActivityRecorder((input) => copyGroupActivityStore.recordActivity(input));
+  copyGroupManager.setStateRecorder((input) => persistRegisteredGroupState(input.groupId));
 
   app.get("/api/dashboard", DashboardController.getDashboard);
 
@@ -622,6 +673,121 @@ export function registerRoutes(app: Express): Server {
     });
   });
 
+  app.get("/api/copy-groups/alerts", async (req, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Not authenticated",
+      });
+    }
+
+    await ensurePersistedCopyGroupsLoaded(req.session.userId);
+
+    const registeredGroups = copyGroupManager
+      .getAllGroups()
+      .filter((registeredGroup) => registeredGroup.group.userId === req.session.userId);
+    const groupIds = registeredGroups.map((registeredGroup) => registeredGroup.group.groupId);
+
+    return res.json({
+      success: true,
+      activeStories: copyGroupAlertStore.listActiveStories({
+        userId: req.session.userId,
+        groupIds,
+        limit: 12,
+      }),
+      recentAlerts: copyGroupAlertStore.listRecent({
+        userId: req.session.userId,
+        groupIds,
+        limit: 24,
+      }),
+      generatedAt: new Date().toISOString(),
+    });
+  });
+
+  app.get("/api/copy-groups/alert-reviews", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const reviews = await copyGroupAlertReviewStore.listReviews(req.session.userId);
+      return res.json({
+        success: true,
+        reviews,
+      });
+    } catch (error) {
+      console.error("Error loading copy-group alert reviews:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.post("/api/copy-groups/alert-reviews", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const parsed = upsertCopyGroupAlertReviewsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid copy-group alert review payload",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const availableStories = copyGroupAlertStore.listRecent({
+        userId: req.session.userId,
+        limit: 250,
+      });
+
+      for (const review of parsed.data.reviews) {
+        const matchingStory = availableStories.find(
+          (story) => story.storyKey === review.storyKey && story.groupId === review.groupId,
+        );
+        if (!matchingStory) {
+          return res.status(404).json({
+            success: false,
+            message: `Copy-group alert story not found: ${review.storyKey}`,
+          });
+        }
+      }
+
+      await copyGroupAlertReviewStore.saveReviews(
+        req.session.userId,
+        parsed.data.reviews.map((review) => ({
+          storyKey: review.storyKey,
+          groupId: review.groupId,
+          status: review.status,
+          note: review.note?.trim() || undefined,
+          operatorName: review.operatorName?.trim() || undefined,
+          operatorHistory: review.operatorHistory,
+          reviewedAt: review.reviewedAt,
+        })),
+      );
+
+      return res.json({
+        success: true,
+        reviews: await copyGroupAlertReviewStore.listReviews(req.session.userId),
+      });
+    } catch (error) {
+      console.error("Error saving copy-group alert reviews:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
   app.get("/api/copy-groups/:groupId", async (req, res) => {
     if (!req.session?.userId) {
       return res.status(401).json({
@@ -670,11 +836,17 @@ export function registerRoutes(app: Express): Server {
     }
 
     const activityByGroupId = await getMergedCopyGroupActivityByGroupId(req.session.userId, [groupId]);
+    const mergedActivity = activityByGroupId[groupId] ?? [];
 
     return res.json({
       success: true,
       groupId,
-      activity: activityByGroupId[groupId] ?? [],
+      activity: mergedActivity,
+      observability: buildCopyGroupObservability(
+        groupId,
+        mergedActivity,
+        copyGroupManager.getObservability(groupId),
+      ),
     });
   });
 
@@ -704,6 +876,10 @@ export function registerRoutes(app: Express): Server {
 
       const accountIds = userAccounts.map((account) => account.id);
       const accountNameById = new Map(userAccounts.map((account) => [account.id, account.name]));
+      const executionFollowUpReviews = await executionFollowUpReviewStore.listReviews(req.session.userId);
+      const executionFollowUpReviewsByHistoryId = new Map(
+        executionFollowUpReviews.map((review) => [review.historyId, review]),
+      );
       const records = tradeHistoryStore.listRecent({
         accountIds,
         limit,
@@ -715,6 +891,11 @@ export function registerRoutes(app: Express): Server {
         success: true,
         records: records.map((record) => ({
           ...record,
+          reviewStatus: executionFollowUpReviewsByHistoryId.get(record.historyId)?.status ?? record.reviewStatus,
+          reviewNote: executionFollowUpReviewsByHistoryId.get(record.historyId)?.note ?? record.reviewNote,
+          reviewedAt: executionFollowUpReviewsByHistoryId.get(record.historyId)?.reviewedAt ?? record.reviewedAt,
+          operatorName: executionFollowUpReviewsByHistoryId.get(record.historyId)?.operatorName,
+          operatorHistory: executionFollowUpReviewsByHistoryId.get(record.historyId)?.operatorHistory,
           masterAccountName: record.masterAccountId
             ? (accountNameById.get(record.masterAccountId) ?? null)
             : null,
@@ -1150,6 +1331,158 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  app.get("/api/execution-follow-up/reviews", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const reviews = await executionFollowUpReviewStore.listReviews(req.session.userId);
+      return res.json({
+        success: true,
+        reviews,
+      });
+    } catch (error) {
+      console.error("Error loading execution follow-up reviews:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.get("/api/rithmic-readiness/reviews", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const reviews = await rithmicReadinessReviewStore.listReviews(req.session.userId);
+      return res.json({
+        success: true,
+        reviews,
+      });
+    } catch (error) {
+      console.error("Error loading Rithmic readiness reviews:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.post("/api/rithmic-readiness/reviews", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const reviews = Array.isArray(req.body?.reviews) ? req.body.reviews : null;
+      if (!reviews) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid Rithmic readiness review payload",
+        });
+      }
+
+      await rithmicReadinessReviewStore.saveReviews(req.session.userId, reviews);
+      const savedReviews = await rithmicReadinessReviewStore.listReviews(req.session.userId);
+      clearRuntimeSnapshotCache(req.session.userId);
+
+      return res.json({
+        success: true,
+        reviews: savedReviews,
+      });
+    } catch (error) {
+      console.error("Error saving Rithmic readiness reviews:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.post("/api/execution-follow-up/reviews", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const parsed = upsertExecutionFollowUpReviewsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid execution follow-up review payload",
+          issues: parsed.error.flatten(),
+        });
+      }
+
+      const userAccounts = await db
+        .select({ id: accounts.id })
+        .from(accounts)
+        .where(eq(accounts.userId, req.session.userId));
+      const ownedAccountIds = new Set(userAccounts.map((account) => account.id));
+
+      for (const review of parsed.data.reviews) {
+        const record = tradeHistoryStore.get(review.historyId);
+        if (!record) {
+          return res.status(404).json({
+            success: false,
+            message: `Execution history not found: ${review.historyId}`,
+          });
+        }
+
+        const belongsToUser =
+          ownedAccountIds.has(record.followerAccountId) ||
+          (record.masterAccountId ? ownedAccountIds.has(record.masterAccountId) : false);
+
+        if (!belongsToUser) {
+          return res.status(404).json({
+            success: false,
+            message: `Execution history not found: ${review.historyId}`,
+          });
+        }
+      }
+
+      await executionFollowUpReviewStore.saveReviews(
+        req.session.userId,
+        parsed.data.reviews.map((review) => ({
+          historyId: review.historyId,
+          status: review.status,
+          note: review.note?.trim() || undefined,
+          operatorName: review.operatorName?.trim() || undefined,
+          operatorHistory: review.operatorHistory,
+          reviewedAt: review.reviewedAt,
+        })),
+      );
+
+      clearRuntimeSnapshotCache(req.session.userId);
+
+      return res.json({
+        success: true,
+        reviews: await executionFollowUpReviewStore.listReviews(req.session.userId),
+      });
+    } catch (error) {
+      console.error("Error saving execution follow-up reviews:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
   app.post("/api/runtime/dashboard-overview/recheck/:historyId", async (req, res) => {
     try {
       if (!req.session?.userId) {
@@ -1356,16 +1689,27 @@ export function registerRoutes(app: Express): Server {
             registeredGroups.map((registeredGroup) => registeredGroup.group.groupId),
           );
           const positionSyncReviews = await positionSyncReviewStore.listReviews(req.session.userId!);
+          const executionFollowUpReviews = await executionFollowUpReviewStore.listReviews(req.session.userId!);
+          const rithmicReadinessReviews = await rithmicReadinessReviewStore.listReviews(req.session.userId!);
 
           return buildNotifications({
             userAccounts,
             registeredGroups,
             getRecentActivity: (groupId) => activityByGroupId[groupId] ?? [],
+            getObservability: (groupId) => copyGroupManager.getRuntime(groupId)?.observability,
+            copyGroupAlertStories: copyGroupAlertStore.listActiveStories({
+              userId: req.session.userId!,
+              groupIds: registeredGroups.map((registeredGroup) => registeredGroup.group.groupId),
+            }),
             positionSnapshotDependencies: {
               tradovateInstances,
               tradeifyInstances,
             },
+            rithmicInstances,
+            rithmicReconnectValidationStore,
+            rithmicReadinessReviews,
             positionSyncReviews,
+            executionFollowUpReviews,
           });
         },
       });
@@ -1538,11 +1882,15 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      await copyGroupManager.start(groupId);
-      await persistRegisteredGroupState(groupId);
+      const runtime = await runCopyGroupLifecycleAction({
+        action: "start",
+        groupId,
+        manager: copyGroupManager,
+        persistState: persistRegisteredGroupState,
+      });
       return res.json({
         success: true,
-        runtime: copyGroupManager.getRuntime(groupId),
+        runtime,
       });
     } catch (error) {
       return res.status(400).json({
@@ -1579,11 +1927,15 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      await copyGroupManager.stop(groupId);
-      await persistRegisteredGroupState(groupId);
+      const runtime = await runCopyGroupLifecycleAction({
+        action: "stop",
+        groupId,
+        manager: copyGroupManager,
+        persistState: persistRegisteredGroupState,
+      });
       return res.json({
         success: true,
-        runtime: copyGroupManager.getRuntime(groupId),
+        runtime,
       });
     } catch (error) {
       return res.status(400).json({
@@ -1620,11 +1972,15 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      copyGroupManager.pause(groupId);
-      await persistRegisteredGroupState(groupId);
+      const runtime = await runCopyGroupLifecycleAction({
+        action: "pause",
+        groupId,
+        manager: copyGroupManager,
+        persistState: persistRegisteredGroupState,
+      });
       return res.json({
         success: true,
-        runtime: copyGroupManager.getRuntime(groupId),
+        runtime,
       });
     } catch (error) {
       return res.status(400).json({
@@ -1661,11 +2017,15 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      copyGroupManager.resume(groupId);
-      await persistRegisteredGroupState(groupId);
+      const runtime = await runCopyGroupLifecycleAction({
+        action: "resume",
+        groupId,
+        manager: copyGroupManager,
+        persistState: persistRegisteredGroupState,
+      });
       return res.json({
         success: true,
-        runtime: copyGroupManager.getRuntime(groupId),
+        runtime,
       });
     } catch (error) {
       return res.status(400).json({
@@ -1702,11 +2062,16 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      await copyGroupManager.emergencyStop(groupId, reason);
-      await persistRegisteredGroupState(groupId);
+      const runtime = await runCopyGroupLifecycleAction({
+        action: "emergency-stop",
+        groupId,
+        reason,
+        manager: copyGroupManager,
+        persistState: persistRegisteredGroupState,
+      });
       return res.json({
         success: true,
-        runtime: copyGroupManager.getRuntime(groupId),
+        runtime,
       });
     } catch (error) {
       return res.status(400).json({
@@ -2080,6 +2445,130 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  app.get("/api/accounts/:id/rithmic-readiness", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const { id } = req.params;
+      const [existing] = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, id), eq(accounts.userId, req.session.userId)));
+
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          message: "Account not found",
+        });
+      }
+
+      if (existing.platform !== "Rithmic") {
+        return res.status(400).json({
+          success: false,
+          message: "Rithmic readiness is only available for Rithmic accounts.",
+        });
+      }
+
+      const instance = existing.rithmicUsername ? rithmicInstances.get(existing.rithmicUsername) : undefined;
+      const reconnectValidation = rithmicReconnectValidationStore.get(existing.id);
+      const readiness = buildRithmicReadiness(existing, instance, reconnectValidation);
+
+      return res.json({
+        success: true,
+        readiness,
+      });
+    } catch (error) {
+      console.error("Error loading Rithmic readiness:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
+  app.post("/api/accounts/:id/rithmic-readiness/revalidate", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authenticated",
+        });
+      }
+
+      const { id } = req.params;
+      let [existing] = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, id), eq(accounts.userId, req.session.userId)));
+
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          message: "Account not found",
+        });
+      }
+
+      if (existing.platform !== "Rithmic") {
+        return res.status(400).json({
+          success: false,
+          message: "Rithmic readiness is only available for Rithmic accounts.",
+        });
+      }
+
+      if (!existing.rithmicUsername || !existing.rithmicPassword) {
+        return res.status(400).json({
+          success: false,
+          message: "Rithmic credentials are missing for this saved account.",
+        });
+      }
+
+      const rithmicAPI = new RithmicAPI({
+        username: existing.rithmicUsername,
+        password: existing.rithmicPassword,
+        environment: (existing.rithmicEnvironment as "test" | "live") ?? "test",
+        systemName: resolveRithmicSystemName(existing),
+      });
+      const connectionTest = await rithmicAPI.authenticate();
+
+      if (!connectionTest.success) {
+        await rithmicAPI.disconnect();
+        return res.status(400).json({
+          success: false,
+          message: connectionTest.message,
+        });
+      }
+
+      rithmicInstances.set(existing.rithmicUsername, rithmicAPI);
+      existing = await refreshRithmicAccountIdentity(existing, req.session.userId, rithmicAPI, {
+        allowDiscoveryFailure: true,
+      });
+      rithmicReconnectValidationStore.markValidated(existing.id, {
+        validatedAt: new Date().toISOString(),
+        source: "saved_connect",
+      });
+
+      const reconnectValidation = rithmicReconnectValidationStore.get(existing.id);
+      const readiness = buildRithmicReadiness(existing, rithmicAPI, reconnectValidation);
+
+      return res.json({
+        success: true,
+        message: "Rithmic readiness revalidated successfully.",
+        readiness,
+      });
+    } catch (error) {
+      console.error("Error revalidating Rithmic readiness:", error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  });
+
   app.get("/api/tradovate/accounts/:username", async (req, res) => {
     try {
       const { username } = req.params;
@@ -2254,6 +2743,10 @@ export function registerRoutes(app: Express): Server {
         existing = await refreshRithmicAccountIdentity(existing, req.session.userId, rithmicAPI, {
           allowDiscoveryFailure: true,
         });
+        rithmicReconnectValidationStore.markValidated(existing.id, {
+          validatedAt: new Date().toISOString(),
+          source: "saved_connect",
+        });
       }
 
       const updated = await updateAccountConnectionState({
@@ -2350,6 +2843,7 @@ export function registerRoutes(app: Express): Server {
           rithmicInstances.delete(existing.rithmicUsername);
         }
       }
+      rithmicReconnectValidationStore.clear(existing.id);
 
       const updated = await updateAccountConnectionState({
         accountId: id,

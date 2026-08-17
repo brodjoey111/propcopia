@@ -1,6 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { updateAccountConnectionInQueryData } from "./account-connection-api.ts";
+
+const accountConnectionApiSource = fs.readFileSync(new URL("./account-connection-api.ts", import.meta.url), "utf8");
+
+test("revalidateRithmicReadiness posts to the saved readiness revalidate endpoint", () => {
+  assert.match(
+    accountConnectionApiSource,
+    /apiRequest\("POST", `\/api\/accounts\/\$\{accountId\}\/rithmic-readiness\/revalidate`\)/,
+  );
+});
 
 test("updateAccountConnectionInQueryData marks the targeted account connected", () => {
   const result = updateAccountConnectionInQueryData(

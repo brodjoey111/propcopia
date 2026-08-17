@@ -109,6 +109,47 @@ function getAssignedAccountIds(
     .map(([accountId]) => accountId);
 }
 
+export function buildCopyGroupRuntimeState(
+  input: Pick<PersistedTradingGroup, "id" | "isActive" | "runtimePreference"> & {
+    totalFollowerCount: number;
+    nowIso: string;
+  },
+): CopyGroupSyncPayload["runtimeState"] {
+  if (input.runtimePreference === "emergency_stopped") {
+    return {
+      groupId: input.id,
+      status: "EMERGENCY_STOPPED",
+      isKillSwitchActive: true,
+      masterConnected: false,
+      connectedFollowerCount: 0,
+      totalFollowerCount: input.totalFollowerCount,
+      emergencyStoppedAt: input.nowIso,
+    };
+  }
+
+  if (input.runtimePreference === "paused" || !input.isActive) {
+    return {
+      groupId: input.id,
+      status: "PAUSED",
+      isKillSwitchActive: false,
+      masterConnected: false,
+      connectedFollowerCount: 0,
+      totalFollowerCount: input.totalFollowerCount,
+      pausedAt: input.nowIso,
+    };
+  }
+
+  return {
+    groupId: input.id,
+    status: "STOPPED",
+    isKillSwitchActive: false,
+    masterConnected: false,
+    connectedFollowerCount: 0,
+    totalFollowerCount: input.totalFollowerCount,
+    stoppedAt: input.nowIso,
+  };
+}
+
 export function buildCopyGroupSyncPlan(
   input: BuildCopyGroupSyncPlanInput,
 ): {
@@ -193,36 +234,13 @@ export function buildCopyGroupSyncPlan(
           updatedAt: nowIso,
         };
       }),
-      runtimeState:
-        group.runtimePreference === "emergency_stopped"
-          ? {
-              groupId: group.id,
-              status: "EMERGENCY_STOPPED",
-              isKillSwitchActive: true,
-              masterConnected: false,
-              connectedFollowerCount: 0,
-              totalFollowerCount: followerAccountIds.length,
-              emergencyStoppedAt: nowIso,
-            }
-          : group.runtimePreference === "paused" || !group.isActive
-            ? {
-                groupId: group.id,
-                status: "PAUSED",
-                isKillSwitchActive: false,
-                masterConnected: false,
-                connectedFollowerCount: 0,
-                totalFollowerCount: followerAccountIds.length,
-                pausedAt: nowIso,
-              }
-            : {
-                groupId: group.id,
-                status: "STOPPED",
-                isKillSwitchActive: false,
-                masterConnected: false,
-                connectedFollowerCount: 0,
-                totalFollowerCount: followerAccountIds.length,
-                stoppedAt: nowIso,
-              },
+      runtimeState: buildCopyGroupRuntimeState({
+        id: group.id,
+        isActive: group.isActive,
+        runtimePreference: group.runtimePreference,
+        totalFollowerCount: followerAccountIds.length,
+        nowIso,
+      }),
     });
   }
 

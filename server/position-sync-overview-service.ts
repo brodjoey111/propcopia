@@ -26,6 +26,7 @@ export interface PositionSyncGroupOverviewItem {
   followerCount: number;
   outOfSyncFollowers: number;
   unavailableFollowers: number;
+  disabledFollowers: number;
   followers: PositionSyncFollowerOverviewItem[];
 }
 
@@ -38,6 +39,7 @@ export interface PositionSyncOverviewResult {
     unavailableGroups: number;
     outOfSyncFollowers: number;
     unavailableFollowers: number;
+    disabledFollowers: number;
   };
   groups: PositionSyncGroupOverviewItem[];
 }
@@ -63,6 +65,10 @@ export function filterPositionSyncOverviewByGroupId(
         (sum, group) => sum + group.unavailableFollowers,
         0,
       ),
+      disabledFollowers: groups.reduce(
+        (sum, group) => sum + group.disabledFollowers,
+        0,
+      ),
     },
     groups,
   };
@@ -73,13 +79,16 @@ function summarizeGroupSyncStatus(input: {
   followerPlans: PositionSyncPlan[];
 }): Pick<
   PositionSyncGroupOverviewItem,
-  "status" | "summary" | "outOfSyncFollowers" | "unavailableFollowers"
+  "status" | "summary" | "outOfSyncFollowers" | "unavailableFollowers" | "disabledFollowers"
 > {
   const outOfSyncFollowers = input.followerPlans.filter(
     (plan) => plan.status === "OUT_OF_SYNC",
   ).length;
   const unavailableFollowers = input.followerPlans.filter(
     (plan) => plan.status === "UNAVAILABLE",
+  ).length;
+  const disabledFollowers = input.followerPlans.filter(
+    (plan) => plan.status === "DISABLED",
   ).length;
 
   if (!input.masterAvailable) {
@@ -88,6 +97,7 @@ function summarizeGroupSyncStatus(input: {
       summary: "Master positions are not available yet.",
       outOfSyncFollowers,
       unavailableFollowers,
+      disabledFollowers,
     };
   }
 
@@ -97,24 +107,53 @@ function summarizeGroupSyncStatus(input: {
       summary: "No followers assigned to this group yet.",
       outOfSyncFollowers: 0,
       unavailableFollowers: 0,
+      disabledFollowers: 0,
     };
   }
 
   if (outOfSyncFollowers > 0) {
     return {
       status: "OUT_OF_SYNC",
-      summary: `${outOfSyncFollowers} follower${outOfSyncFollowers === 1 ? "" : "s"} need position adjustments.`,
+      summary:
+        disabledFollowers > 0
+          ? `${outOfSyncFollowers} follower${outOfSyncFollowers === 1 ? "" : "s"} need position adjustments, and ${disabledFollowers} ${disabledFollowers === 1 ? "is" : "are"} disabled.`
+          : `${outOfSyncFollowers} follower${outOfSyncFollowers === 1 ? "" : "s"} need position adjustments.`,
       outOfSyncFollowers,
       unavailableFollowers,
+      disabledFollowers,
     };
   }
 
   if (unavailableFollowers > 0) {
     return {
       status: "UNAVAILABLE",
-      summary: `${unavailableFollowers} follower${unavailableFollowers === 1 ? "" : "s"} are still waiting on live positions.`,
+      summary:
+        disabledFollowers > 0
+          ? `${unavailableFollowers} follower${unavailableFollowers === 1 ? "" : "s"} are still waiting on live positions, and ${disabledFollowers} ${disabledFollowers === 1 ? "is" : "are"} disabled.`
+          : `${unavailableFollowers} follower${unavailableFollowers === 1 ? "" : "s"} are still waiting on live positions.`,
       outOfSyncFollowers,
       unavailableFollowers,
+      disabledFollowers,
+    };
+  }
+
+  if (disabledFollowers === input.followerPlans.length) {
+    return {
+      status: "IN_SYNC",
+      summary: `All ${disabledFollowers} follower${disabledFollowers === 1 ? "" : "s"} are currently disabled for sync.`,
+      outOfSyncFollowers: 0,
+      unavailableFollowers: 0,
+      disabledFollowers,
+    };
+  }
+
+  if (disabledFollowers > 0) {
+    return {
+      status: "IN_SYNC",
+      summary: `${disabledFollowers} follower${disabledFollowers === 1 ? "" : "s"} ${disabledFollowers === 1 ? "is" : "are"} disabled. Remaining followers are aligned.`,
+      outOfSyncFollowers: 0,
+      unavailableFollowers: 0,
+      disabledFollowers,
     };
   }
 
@@ -123,6 +162,7 @@ function summarizeGroupSyncStatus(input: {
     summary: "Followers are aligned with the master.",
     outOfSyncFollowers: 0,
     unavailableFollowers: 0,
+    disabledFollowers: 0,
   };
 }
 
@@ -200,6 +240,7 @@ export function buildPositionSyncOverview(input: {
       followerCount: followerPlans.length,
       outOfSyncFollowers: groupStatus.outOfSyncFollowers,
       unavailableFollowers: groupStatus.unavailableFollowers,
+      disabledFollowers: groupStatus.disabledFollowers,
       followers: followerPlans,
     } satisfies PositionSyncGroupOverviewItem;
   });
@@ -217,6 +258,10 @@ export function buildPositionSyncOverview(input: {
       ),
       unavailableFollowers: groups.reduce(
         (sum, group) => sum + group.unavailableFollowers,
+        0,
+      ),
+      disabledFollowers: groups.reduce(
+        (sum, group) => sum + group.disabledFollowers,
         0,
       ),
     },

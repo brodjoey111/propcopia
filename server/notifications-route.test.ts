@@ -9,6 +9,11 @@ test("routes expose the authenticated notifications endpoint", () => {
   assert.match(routesSource, /req\.session\?\.userId/);
   assert.match(routesSource, /buildNotifications/);
   assert.match(routesSource, /copyGroupManager\s*\.\s*getAllGroups\(\)/);
+  assert.match(routesSource, /getObservability:\s*\(groupId\)\s*=>\s*copyGroupManager\.getRuntime\(groupId\)\?\.observability/);
+  assert.match(routesSource, /copyGroupAlertStore\.listActiveStories/);
   assert.match(routesSource, /tradovateInstances/);
   assert.match(routesSource, /tradeifyInstances/);
+  assert.match(routesSource, /rithmicInstances/);
+  assert.match(routesSource, /rithmicReconnectValidationStore/);
+  assert.match(routesSource, /rithmicReadinessReviewStore/);
 });
