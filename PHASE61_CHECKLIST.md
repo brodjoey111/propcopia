@@ -5,4 +5,4 @@
 - [x] Rename the combined `SENT`/`ACKNOWLEDGED` lifecycle bucket so the dashboard reflects broker-state work more clearly
 - [x] Add focused offline client tests for `SENT` broker-wait summaries
 - [x] Verify the focused client execution-summary suite and `npm run check`
-- [ ] Commit and push the Phase 61 checkpoint
+- [x] Commit and push the Phase 61 checkpoint
