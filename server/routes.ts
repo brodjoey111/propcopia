@@ -83,6 +83,7 @@ import {
 } from "@shared/auth";
 import { establishAuthenticatedSession } from "./auth-session";
 import { buildLicenseSnapshot } from "./license-service";
+import { operationalLogger } from "./operational-logger";
 
 tradeHistoryPersistence.attach(tradeHistoryStore);
 
@@ -2356,7 +2357,7 @@ export function registerRoutes(app: Express): Server {
         user: { id: user.id, username: user.username },
       });
     } catch (error) {
-      console.error('Signup error:', error);
+      operationalLogger.error("auth.signup_failed", { error });
       return res.status(500).json({
         success: false,
         message: "Failed to create account",
@@ -2400,7 +2401,7 @@ export function registerRoutes(app: Express): Server {
         user: { id: user.id, username: user.username },
       });
     } catch (error) {
-      console.error('Login error:', error);
+      operationalLogger.error("auth.login_failed", { error });
       return res.status(500).json({
         success: false,
         message: "Failed to complete login",
@@ -2464,7 +2465,10 @@ export function registerRoutes(app: Express): Server {
         message: "Password updated successfully",
       });
     } catch (error) {
-      console.error("Password change error:", error);
+      operationalLogger.error("auth.password_change_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
         message: "Failed to update password",

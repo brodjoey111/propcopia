@@ -1,5 +1,6 @@
 import { db } from './db';
 import { trades, type InsertTrade } from '@shared/schema';
+import { sanitizeOperationalValue } from './operational-logger';
 
 type TradeLogWriter = (entries: InsertTrade[]) => Promise<void>;
 type TradeLogScheduler = (
@@ -167,7 +168,7 @@ export class TradeLogger {
     try {
       await this.flush();
     } catch (err) {
-      this.logger.error('[TradeLogger] Batch flush error:', err);
+      this.logger.error('[TradeLogger] Batch flush error:', sanitizeOperationalValue(err));
     }
   }
 
@@ -185,7 +186,7 @@ export class TradeLogger {
       this.stats.lastFlushedAt = new Date().toISOString();
       this.logger.log(`[TradeLogger] Flushed ${tradesToWrite.length} trades to DB`);
     } catch (error) {
-      this.logger.error('[TradeLogger] Failed to write trades:', error);
+      this.logger.error('[TradeLogger] Failed to write trades:', sanitizeOperationalValue(error));
       // Re-queue failed trades
       this.pendingTrades.unshift(...tradesToWrite);
       this.syncPendingStats();

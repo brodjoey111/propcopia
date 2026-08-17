@@ -46,6 +46,7 @@ test('flush writes a full batch and updates stats', async () => {
 
 test('failed flush re-queues trades and records the error stats', async () => {
   let attempts = 0;
+  const loggedErrors: unknown[][] = [];
   const logger = new TradeLogger({
     autoStart: false,
     writer: async () => {
@@ -54,7 +55,9 @@ test('failed flush re-queues trades and records the error stats', async () => {
     },
     logger: {
       log() {},
-      error() {},
+      error(...args) {
+        loggedErrors.push(args);
+      },
     },
   });
 
@@ -66,6 +69,10 @@ test('failed flush re-queues trades and records the error stats', async () => {
   assert.equal(logger.getStats().totalFailedFlushes, 1);
   assert.equal(logger.getStats().maxPendingCount, 1);
   assert.equal(logger.getStats().lastErrorMessage, 'db unavailable');
+  assert.deepEqual(loggedErrors[0]?.[1], {
+    name: 'Error',
+    message: 'db unavailable',
+  });
 });
 
 test('shutdown drains queued trades even when auto-start is disabled', async () => {
