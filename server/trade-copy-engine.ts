@@ -17,6 +17,7 @@ import { TradovateAdapter } from './brokers/TradovateAdapter';
 import { RithmicAdapter } from './brokers/RithmicAdapter';
 import { evaluateFollowerTradeRuleWithEvidence } from './follower-trade-rule-engine';
 import { ExecutionManager } from './execution-manager';
+import { operationalLogger } from './operational-logger';
 import { TradeIntentManager } from './trade-intent-manager';
 import type {
   BrokerOrderRequest,
@@ -397,7 +398,10 @@ export class TradeCopyEngine extends EventEmitter {
         });
         
         this.masterWebSocket.on('error', (error) => {
-          console.error('[TradeCopy] Master WebSocket error:', error);
+          operationalLogger.error('trade_copy.master_websocket_error', {
+            error,
+            masterAccountId: accountId,
+          });
           reject(error);
         });
         
@@ -719,7 +723,10 @@ export class TradeCopyEngine extends EventEmitter {
       });
       
       connection.ws.on('error', (error) => {
-        console.error(`[TradeCopy] Follower ${connection.accountId} WebSocket error:`, error);
+        operationalLogger.warn('trade_copy.follower_websocket_error', {
+          error,
+          followerAccountId: connection.accountId,
+        });
       });
       
       connection.ws.on('close', () => {
@@ -738,9 +745,10 @@ export class TradeCopyEngine extends EventEmitter {
     }
 
     if (connection.reconnectAttempts >= MAX_LEGACY_FOLLOWER_RECONNECT_ATTEMPTS) {
-      console.warn(
-        `[TradeCopy] Follower ${connection.accountId} marked unavailable after ${connection.reconnectAttempts} reconnect attempts`,
-      );
+      operationalLogger.warn('trade_copy.follower_reconnect_exhausted', {
+        followerAccountId: connection.accountId,
+        reconnectAttempts: connection.reconnectAttempts,
+      });
       return;
     }
 
@@ -799,9 +807,14 @@ export class TradeCopyEngine extends EventEmitter {
     const candidate = this.executionManager.findOpenExecutionForFill(fill);
 
     if (!candidate) {
-      console.warn(
-        `[TradeCopy] No execution candidate found for follower fill ${fill.fillId ?? 'unknown'} (${fill.symbol} ${fill.side})`,
-      );
+      operationalLogger.warn('trade_copy.follower_fill_unmatched', {
+        followerAccountId: fill.accountId,
+        brokerKey: fill.brokerKey,
+        brokerOrderId: fill.brokerOrderId,
+        fillId: fill.fillId,
+        symbol: fill.symbol,
+        side: fill.side,
+      });
       return;
     }
 
@@ -816,10 +829,13 @@ export class TradeCopyEngine extends EventEmitter {
         averageFillPrice: fill.averageFillPrice,
       });
     } catch (error) {
-      console.error(
-        `[TradeCopy] Failed to record follower fill for intent ${candidate.intentId}:`,
+      operationalLogger.error('trade_copy.follower_fill_record_failed', {
         error,
-      );
+        intentId: candidate.intentId,
+        followerAccountId: fill.accountId,
+        brokerOrderId: fill.brokerOrderId,
+        fillId: fill.fillId,
+      });
     }
   }
 
@@ -881,7 +897,10 @@ export class TradeCopyEngine extends EventEmitter {
       this.copyTradeToFollowers(trade, receiveTime, processTime);
       
     } catch (error) {
-      console.error('[TradeCopy] Error processing master fill:', error);
+      operationalLogger.error('trade_copy.master_fill_processing_failed', {
+        error,
+        masterAccountId: this.masterAccountId,
+      });
     }
   }
 
@@ -1006,9 +1025,12 @@ export class TradeCopyEngine extends EventEmitter {
             reasonCode: ruleResult.reasonCode,
             ...riskEvidenceFields,
           });
-          console.warn(
-            `[TradeCopy] Rejecting ${follower.accountId} for ${trade.symbol}: ${ruleResult.reasonCode}`
-          );
+          operationalLogger.warn('trade_copy.rule_rejected', {
+            followerAccountId: follower.accountId,
+            masterFillId: trade.fillId,
+            symbol: trade.symbol,
+            reasonCode: ruleResult.reasonCode,
+          });
           return { success: false, reason: 'rule_rejected' };
         }
 
@@ -1069,7 +1091,12 @@ export class TradeCopyEngine extends EventEmitter {
           });
         } catch (enqueueError) {
           releaseTradeSlot();
-          console.error(`[TradeCopy] Failed to enqueue for ${follower.accountId}:`, enqueueError);
+          operationalLogger.error('trade_copy.enqueue_failed', {
+            error: enqueueError,
+            followerAccountId: follower.accountId,
+            intentId: intent.intentId,
+            symbol: trade.symbol,
+          });
           this.failedSends++;
           return { success: false, reason: 'enqueue_error', error: enqueueError };
         }
@@ -1084,16 +1111,21 @@ export class TradeCopyEngine extends EventEmitter {
 
         if (executionResult.status === 'FAILED') {
           releaseTradeSlot();
-          console.error(
-            `[TradeCopy] Execution failed for ${follower.accountId}: ${executionResult.errorMessage ?? 'unknown error'}`
-          );
+          operationalLogger.error('trade_copy.execution_failed', {
+            followerAccountId: follower.accountId,
+            intentId: intent.intentId,
+            errorMessage: executionResult.errorMessage ?? 'unknown error',
+          });
           this.failedSends++;
           return { success: false, reason: 'execution_failed', error: executionResult.errorMessage };
         }
 
         if (executionResult.status === 'CANCELLED') {
           releaseTradeSlot();
-          console.error(`[TradeCopy] Execution cancelled for ${follower.accountId}`);
+          operationalLogger.warn('trade_copy.execution_cancelled', {
+            followerAccountId: follower.accountId,
+            intentId: intent.intentId,
+          });
           this.failedSends++;
           return { success: false, reason: 'execution_cancelled' };
         }
@@ -1102,7 +1134,12 @@ export class TradeCopyEngine extends EventEmitter {
         return { success: false, reason: 'execution_incomplete' };
       } catch (error) {
         releaseTradeSlot();
-        console.error(`[TradeCopy] Error copying to ${follower.accountId}:`, error);
+        operationalLogger.error('trade_copy.copy_to_follower_failed', {
+          error,
+          followerAccountId: follower.accountId,
+          symbol: trade.symbol,
+          masterFillId: trade.fillId,
+        });
         this.failedSends++;
         return { success: false, reason: 'general_error', error };
       }
@@ -1132,7 +1169,12 @@ export class TradeCopyEngine extends EventEmitter {
         failureCount
       });
     } else {
-      console.warn(`[TradeCopy] Trade ${trade.fillId} failed to copy to all followers`);
+      operationalLogger.warn('trade_copy.copy_all_followers_failed', {
+        masterFillId: trade.fillId,
+        masterAccountId: trade.accountId,
+        symbol: trade.symbol,
+        followerCount: followers.length,
+      });
     }
   }
 
@@ -1203,9 +1245,11 @@ export class TradeCopyEngine extends EventEmitter {
     const receiveTime = performance.now();
 
     if (!this.masterBrokerAccountId || fill.accountId !== this.masterBrokerAccountId) {
-      console.warn(
-        `[TradeCopy] Ignoring Rithmic fill for broker account ${fill.accountId}; expected ${this.masterBrokerAccountId ?? 'none'}`,
-      );
+      operationalLogger.warn('trade_copy.rithmic_master_fill_ignored', {
+        receivedBrokerAccountId: fill.accountId,
+        expectedBrokerAccountId: this.masterBrokerAccountId ?? 'none',
+        fillId: fill.fillId,
+      });
       return;
     }
 
