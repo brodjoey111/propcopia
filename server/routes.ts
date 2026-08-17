@@ -2208,9 +2208,13 @@ export function registerRoutes(app: Express): Server {
         runtime,
       });
     } catch (error) {
-      return res.status(400).json({
+      operationalLogger.error("copy_group.register_failed", {
+        error,
+        userId: req.session?.userId,
+      });
+      return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to register copy group",
       });
     }
   });
@@ -2303,9 +2307,14 @@ export function registerRoutes(app: Express): Server {
         runtime,
       });
     } catch (error) {
-      return res.status(400).json({
+      operationalLogger.error("copy_group.start_failed", {
+        error,
+        userId: req.session?.userId,
+        groupId: req.body?.groupId,
+      });
+      return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to start copy group",
       });
     }
   });
@@ -2349,9 +2358,14 @@ export function registerRoutes(app: Express): Server {
         runtime,
       });
     } catch (error) {
-      return res.status(400).json({
+      operationalLogger.error("copy_group.stop_failed", {
+        error,
+        userId: req.session?.userId,
+        groupId: req.body?.groupId,
+      });
+      return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to stop copy group",
       });
     }
   });
@@ -2395,9 +2409,14 @@ export function registerRoutes(app: Express): Server {
         runtime,
       });
     } catch (error) {
-      return res.status(400).json({
+      operationalLogger.error("copy_group.pause_failed", {
+        error,
+        userId: req.session?.userId,
+        groupId: req.body?.groupId,
+      });
+      return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to pause copy group",
       });
     }
   });
@@ -2450,9 +2469,14 @@ export function registerRoutes(app: Express): Server {
         runtime,
       });
     } catch (error) {
-      return res.status(400).json({
+      operationalLogger.error("copy_group.resume_failed", {
+        error,
+        userId: req.session?.userId,
+        groupId: req.body?.groupId,
+      });
+      return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to resume copy group",
       });
     }
   });
@@ -2497,9 +2521,14 @@ export function registerRoutes(app: Express): Server {
         runtime,
       });
     } catch (error) {
-      return res.status(400).json({
+      operationalLogger.error("copy_group.emergency_stop_failed", {
+        error,
+        userId: req.session?.userId,
+        groupId: req.body?.groupId,
+      });
+      return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to emergency stop copy group",
       });
     }
   });
@@ -2531,9 +2560,14 @@ export function registerRoutes(app: Express): Server {
         message: `Copy group unregistered: ${groupId}`,
       });
     } catch (error) {
-      return res.status(400).json({
+      operationalLogger.error("copy_group.delete_failed", {
+        error,
+        userId: req.session?.userId,
+        groupId: req.params?.groupId,
+      });
+      return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to delete copy group",
       });
     }
   });
@@ -4365,10 +4399,13 @@ export function registerRoutes(app: Express): Server {
           console.error('[TradeCopy] Error cleaning up failed session start:', disconnectError);
         });
       }
-      console.error('Error starting trade copying:', error);
+      operationalLogger.error("trade_copy.start_failed", {
+        error,
+        userId: reservedUserId ?? req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to start trade copying",
       });
     } finally {
       if (reservedUserId) {
@@ -4477,10 +4514,14 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      console.error('Error adding follower account:', error);
+      operationalLogger.error("trade_copy.add_follower_failed", {
+        error,
+        userId: req.session?.userId,
+        accountId: req.body?.accountId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to add follower account",
       });
     }
   });
@@ -4517,10 +4558,13 @@ export function registerRoutes(app: Express): Server {
         message: "Trade copying stopped successfully",
       });
     } catch (error) {
-      console.error('Error stopping trade copying:', error);
+      operationalLogger.error("trade_copy.stop_failed", {
+        error,
+        userId: req.session?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to stop trade copying",
       });
     }
   });
@@ -4555,10 +4599,14 @@ export function registerRoutes(app: Express): Server {
         data: stats,
       });
     } catch (error) {
-      console.error('Error fetching trade copy stats:', error);
+      operationalLogger.error("trade_copy.stats_load_failed", {
+        error,
+        userId: req.session?.userId,
+        requestedUserId: req.params?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to load trade copy stats",
       });
     }
   });
@@ -4591,10 +4639,14 @@ export function registerRoutes(app: Express): Server {
         data: engine.getStatus(),
       });
     } catch (error) {
-      console.error('Error fetching trade copy status:', error);
+      operationalLogger.error("trade_copy.status_load_failed", {
+        error,
+        userId: req.session?.userId,
+        requestedUserId: req.params?.userId,
+      });
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: "Failed to load trade copy status",
       });
     }
   });
