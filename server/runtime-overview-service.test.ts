@@ -114,32 +114,33 @@ test("summarizeExecutionRecovery adds checkpoint and recovery-window context for
     },
   );
 
-  assert.equal(result.items[0]?.historyId, "failed-reviewed");
+  assert.equal(result.items[0]?.historyId, "ack-stale");
   assert.equal(result.counts.fillWait, 0);
   assert.equal(result.counts.brokerWait, 0);
-  assert.equal(result.items[0]?.checkpoint.label, "Execution failed");
-  assert.equal(result.items[0]?.recoveryWindow.label, "Review captured");
-  assert.equal(result.items[1]?.historyId, "ack-stale");
-  assert.equal(result.items[1]?.headline, "Acknowledged trade is now stale");
+  assert.equal(result.primaryActionLabel, "Recheck broker state");
+  assert.equal(result.items[0]?.headline, "Acknowledged trade is now stale");
   assert.equal(
-    result.items[1]?.detail,
+    result.items[0]?.detail,
     "No fill updates have arrived 25 minutes after broker acknowledgement.",
   );
-  assert.equal(result.items[1]?.checkpoint.label, "Broker acknowledged");
-  assert.equal(result.items[1]?.recoveryWindow.label, "Fill update overdue");
+  assert.equal(result.items[0]?.checkpoint.label, "Broker acknowledged");
+  assert.equal(result.items[0]?.recoveryWindow.label, "Fill update overdue");
   assert.equal(
-    result.items[1]?.recoveryWindow.detail,
+    result.items[0]?.recoveryWindow.detail,
     "25 minutes since broker acknowledgement (stale window 5m).",
   );
-  assert.equal(result.items[2]?.historyId, "partial-fresh");
-  assert.equal(result.items[2]?.headline, "Waiting on remaining fills");
-  assert.equal(result.items[2]?.detail, "1 filled, 1 still open.");
-  assert.equal(result.items[2]?.checkpoint.label, "Partial fill active");
+  assert.equal(result.items[1]?.historyId, "partial-fresh");
+  assert.equal(result.items[1]?.headline, "Waiting on remaining fills");
+  assert.equal(result.items[1]?.detail, "1 filled, 1 still open.");
+  assert.equal(result.items[1]?.checkpoint.label, "Partial fill active");
   assert.equal(
-    result.items[2]?.checkpoint.detail,
+    result.items[1]?.checkpoint.detail,
     "1/2 filled with 1 contract still open after 2 partial fills.",
   );
-  assert.equal(result.items[2]?.recoveryWindow.label, "Fresh partial window");
+  assert.equal(result.items[1]?.recoveryWindow.label, "Fresh partial window");
+  assert.equal(result.items[2]?.historyId, "failed-reviewed");
+  assert.equal(result.items[2]?.checkpoint.label, "Execution failed");
+  assert.equal(result.items[2]?.recoveryWindow.label, "Review captured");
 });
 
 test("restart-interrupted executions require immediate review without broker replay", () => {

@@ -50,6 +50,7 @@ Branch: `feature/broker-manager`
 - Execution-manager lifecycle handling now has explicit offline coverage proving a terminal full fill blocks any later partial-fill mutation attempt at the source execution record
 - Client trade-history rows now preserve the terminal fill story when partial fills happened earlier, so completed executions show both prior partial progress and the final fill in operator-facing labels
 - Reviewed execution follow-up failures now stop showing an open review action in the dashboard/runtime queue once the operator note is already captured
+- Server execution-recovery summaries now sort reviewed failures behind open stale/partial work and choose the first still-open action for the dashboard primary recovery label
 
 ## Current Verification Baseline
 
@@ -80,6 +81,7 @@ Branch: `feature/broker-manager`
 - Focused execution-manager suite: `52/52` passing on 2026-08-17 after terminal full-fill partial regression coverage was added
 - Focused client trade-history suite: `21/21` passing on 2026-08-17 after terminal fill label coverage was added
 - Focused runtime overview suite: `3/3` passing on 2026-08-18 after reviewed failure action-label coverage was added
+- Focused server runtime overview suite: `9/9` passing on 2026-08-18 after reviewed-item ordering and primary-action coverage was added
 
 ## Remaining Phase 1 Work
 

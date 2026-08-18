@@ -164,6 +164,22 @@ function buildRecoveryActionCounts(
     });
 }
 
+function buildPrimaryRecoveryActionLabel(input: {
+  items: DashboardExecutionRecoveryItem[];
+  actionCounts: DashboardExecutionRecoveryOverview["actionCounts"];
+  completedCount: number;
+}): string {
+  const openItemLabel = input.items.find((item) => item.reviewStatus !== "reviewed")?.recommendedActionLabel;
+  if (openItemLabel) {
+    return openItemLabel;
+  }
+
+  return (
+    input.actionCounts[0]?.label ??
+    (input.completedCount > 0 ? "No recovery action needed" : "Waiting for recovery candidates")
+  );
+}
+
 function formatRecoveryAgeLabel(ageMinutes: number): string {
   return ageMinutes === 1 ? "1 minute" : `${ageMinutes} minutes`;
 }
@@ -1080,6 +1096,12 @@ export function summarizeExecutionRecovery(
     )
     .filter((item): item is DashboardExecutionRecoveryItem => item !== null)
     .sort((left, right) => {
+      const leftReviewed = left.reviewStatus === "reviewed" ? 1 : 0;
+      const rightReviewed = right.reviewStatus === "reviewed" ? 1 : 0;
+      if (leftReviewed !== rightReviewed) {
+        return leftReviewed - rightReviewed;
+      }
+
       const priorityDiff = (priority.get(left.category) ?? 99) - (priority.get(right.category) ?? 99);
       if (priorityDiff !== 0) {
         return priorityDiff;
@@ -1088,9 +1110,11 @@ export function summarizeExecutionRecovery(
     })
     .slice(0, limit);
   const actionCounts = buildRecoveryActionCounts(items);
-  const primaryActionLabel =
-    actionCounts[0]?.label ??
-    (counts.completed > 0 ? "No recovery action needed" : "Waiting for recovery candidates");
+  const primaryActionLabel = buildPrimaryRecoveryActionLabel({
+    items,
+    actionCounts,
+    completedCount: counts.completed,
+  });
 
   if (counts.failed > 0) {
     return {
