@@ -113,6 +113,8 @@ export interface DashboardRuntimeOverviewResponse {
         stale: number;
         partial: number;
         active: number;
+        brokerWait: number;
+        fillWait: number;
         completed: number;
       };
       actionCounts: Array<{

@@ -67,6 +67,8 @@ export interface DashboardExecutionRecoveryOverview {
     stale: number;
     partial: number;
     active: number;
+    brokerWait: number;
+    fillWait: number;
     completed: number;
   };
   actionCounts: Array<{
@@ -1042,6 +1044,12 @@ export function summarizeExecutionRecovery(
         return summary;
       }
 
+      if (record.lifecycleStatus === "SENT") {
+        summary.brokerWait += 1;
+      } else if (record.lifecycleStatus === "ACKNOWLEDGED") {
+        summary.fillWait += 1;
+      }
+
       summary.active += 1;
       return summary;
     },
@@ -1050,6 +1058,8 @@ export function summarizeExecutionRecovery(
       stale: 0,
       partial: 0,
       active: 0,
+      brokerWait: 0,
+      fillWait: 0,
       completed: 0,
     },
   );

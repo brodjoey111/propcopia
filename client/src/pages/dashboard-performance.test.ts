@@ -33,8 +33,10 @@ test("dashboard reuses its overview payload and defers optional detail panels", 
   assert.match(source, /DashboardSignalMatrixPanel/);
   assert.match(source, /runtimeOverviewData\?\.tradeLogger/);
   assert.match(source, /const tradeLoggerStats = runtimeOverviewData\?\.tradeLogger/);
-  assert.match(source, /const brokerWaitCount = executionRecovery\.items\.filter/);
-  assert.match(source, /const fillWaitCount = executionRecovery\.items\.filter/);
+  assert.match(source, /brokerWait: 0/);
+  assert.match(source, /fillWait: 0/);
+  assert.match(source, /executionRecovery\.counts\.brokerWait/);
+  assert.match(source, /executionRecovery\.counts\.fillWait/);
   assert.match(source, /Trade Logger/);
   assert.match(source, /Broker wait/);
   assert.match(source, /Fill wait/);

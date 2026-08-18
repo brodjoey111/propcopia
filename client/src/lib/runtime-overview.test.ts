@@ -18,6 +18,8 @@ function buildExecutionRecovery(): DashboardRuntimeOverviewResponse["tradeAnalyt
       stale: 1,
       partial: 1,
       active: 1,
+      brokerWait: 0,
+      fillWait: 1,
       completed: 0,
     },
     actionCounts: [],

@@ -455,17 +455,13 @@ export default function Dashboard() {
       stale: 0,
       partial: 0,
       active: 0,
+      brokerWait: 0,
+      fillWait: 0,
       completed: 0,
     },
     actionCounts: [],
       items: [],
     };
-  const brokerWaitCount = executionRecovery.items.filter(
-    (item) => item.lifecycleStatus === "SENT",
-  ).length;
-  const fillWaitCount = executionRecovery.items.filter(
-    (item) => item.lifecycleStatus === "ACKNOWLEDGED",
-  ).length;
   const tradeLoggerStats = runtimeOverviewData?.tradeLogger ?? {
     pendingCount: 0,
     maxPendingCount: 0,
@@ -1292,8 +1288,8 @@ export default function Dashboard() {
                   { label: "Failed", value: executionRecovery.counts.failed },
                   { label: "Stale", value: executionRecovery.counts.stale },
                   { label: "Partial", value: executionRecovery.counts.partial },
-                  { label: "Broker wait", value: brokerWaitCount },
-                  { label: "Fill wait", value: fillWaitCount },
+                  { label: "Broker wait", value: executionRecovery.counts.brokerWait },
+                  { label: "Fill wait", value: executionRecovery.counts.fillWait },
                   { label: "Cleared", value: executionRecovery.counts.completed },
                 ].map((item) => (
                   <div key={item.label} className="rounded-2xl border border-white/8 bg-black/10 px-3 py-3">

@@ -115,6 +115,8 @@ test("summarizeExecutionRecovery adds checkpoint and recovery-window context for
   );
 
   assert.equal(result.items[0]?.historyId, "failed-reviewed");
+  assert.equal(result.counts.fillWait, 0);
+  assert.equal(result.counts.brokerWait, 0);
   assert.equal(result.items[0]?.checkpoint.label, "Execution failed");
   assert.equal(result.items[0]?.recoveryWindow.label, "Review captured");
   assert.equal(result.items[1]?.historyId, "ack-stale");
@@ -188,6 +190,8 @@ test("summarizeExecutionRecovery distinguishes fresh and stale sent broker submi
   );
 
   assert.equal(result.items[0]?.historyId, "sent-stale");
+  assert.equal(result.counts.brokerWait, 1);
+  assert.equal(result.counts.fillWait, 0);
   assert.equal(result.items[0]?.headline, "Broker acknowledgement overdue");
   assert.equal(
     result.items[0]?.detail,
@@ -228,6 +232,8 @@ test("summarizeExecutionRecovery calls out active broker waits and fill waits in
   );
 
   assert.equal(result.headline, "2 executions awaiting broker progress");
+  assert.equal(result.counts.brokerWait, 1);
+  assert.equal(result.counts.fillWait, 1);
   assert.equal(
     result.detail,
     "1 broker submission is still waiting on acknowledgement and 1 acknowledged order is still waiting on fills.",
