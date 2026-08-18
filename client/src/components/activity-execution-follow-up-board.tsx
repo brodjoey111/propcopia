@@ -130,7 +130,7 @@ export function ActivityExecutionFollowUpBoard(
               Partial {props.partialExecutionFollowUpCount}
             </span>
             <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-zinc-300">
-              Active {props.activeExecutionFollowUpCount}
+              Active waits {props.activeExecutionFollowUpCount}
             </span>
             <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-sky-100">
               Broker wait {brokerWaitCount}
@@ -167,7 +167,7 @@ export function ActivityExecutionFollowUpBoard(
                         ? `Stale (${props.staleExecutionFollowUpCount})`
                         : filter === "partial"
                           ? `Partial (${props.partialExecutionFollowUpCount})`
-                          : `Active (${props.activeExecutionFollowUpCount})`}
+                          : `Active waits (${props.activeExecutionFollowUpCount})`}
             </button>
           ))}
           {props.filteredExecutionFollowUpItems.length > 0 && (

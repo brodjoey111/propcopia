@@ -35,6 +35,7 @@ Branch: `feature/broker-manager`
 - Dashboard execution-recovery help text now explains stale executions in broker-state terms instead of using a generic in-flight description
 - Server notification trade-story helpers now recognize `SENT` as a working broker state instead of a failure fallback if that lifecycle is ever surfaced through low-noise trade stories
 - Server execution-recovery active headlines now describe broker progress explicitly instead of using the generic “currently in flight” wording
+- Activity execution follow-up filter labels now use `Active waits` so the operator queue wording matches the broker-wait and fill-wait breakdown
 
 ## Current Verification Baseline
 
@@ -50,6 +51,7 @@ Branch: `feature/broker-manager`
 - Focused dashboard wording suite: `1/1` passing on 2026-08-17
 - Focused notification suite: `33/33` passing on 2026-08-17 after `SENT` trade-story hardening
 - Focused execution recovery wording suite: `13/13` passing on 2026-08-17 after active headline cleanup
+- Focused activity board suite: `2/2` passing on 2026-08-17 after active-wait label cleanup
 
 ## Remaining Phase 1 Work
 
