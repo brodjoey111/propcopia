@@ -41,6 +41,7 @@ Branch: `feature/broker-manager`
 - Server execution-recovery payloads now expose explicit `brokerWait` and `fillWait` counts so dashboard and follow-up consumers can reuse the broker-state breakdown without recomputing it
 - Dashboard recovery cards now label those counts as `Fresh broker wait` and `Fresh fill wait` so the UI matches the non-stale semantics of the payload
 - Execution follow-up review routes and dashboard recovery review actions now have direct offline source-level coverage so Phase 1 operator review endpoints stay pinned while live Rithmic validation is pending
+- Reconnect coordination now has explicit offline coverage for failed in-flight reconnects so intentional disconnects remain unblocked even when saved-session restoration rejects
 
 ## Current Verification Baseline
 
@@ -62,6 +63,7 @@ Branch: `feature/broker-manager`
 - Focused recovery-count contract suite: `13/13` passing on 2026-08-17 after broker-wait/fill-wait payload counts were added
 - Focused dashboard label suite: `1/1` passing on 2026-08-17 after fresh-wait label cleanup
 - Focused execution follow-up review route suite: `1/1` passing on 2026-08-17
+- Focused reconnect coordinator suite: `4/4` passing on 2026-08-17 after failed reconnect wait coverage was added
 
 ## Remaining Phase 1 Work
 

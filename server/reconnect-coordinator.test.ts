@@ -53,3 +53,20 @@ test("intentional disconnect can wait for an in-flight reconnect to settle", asy
   assert.equal(disconnectReady, true);
   assert.equal(coordinator.isReconnecting("account-1"), false);
 });
+
+test("intentional disconnect wait still resolves after a failed reconnect", async () => {
+  const coordinator = new ReconnectCoordinator();
+  const reconnect = coordinator.run("account-1", async () => {
+    throw new Error("Login rejected");
+  });
+  let disconnectReady = false;
+  const waitingDisconnect = coordinator.waitFor("account-1").then(() => {
+    disconnectReady = true;
+  });
+
+  await assert.rejects(reconnect.promise, /Login rejected/);
+  await waitingDisconnect;
+
+  assert.equal(disconnectReady, true);
+  assert.equal(coordinator.isReconnecting("account-1"), false);
+});
