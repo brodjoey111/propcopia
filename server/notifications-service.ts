@@ -395,7 +395,7 @@ function buildExecutionFollowUpNotifications(input: {
       return `Partial fill progress has been stalled for ${ageMinutes} minutes without a new fill update.${ownerLabel}`;
     }
 
-    return `${formatTradeLifecycleLabel(record.lifecycleStatus)} has been in flight for ${ageMinutes} minutes without a new lifecycle update.${ownerLabel}`;
+    return `${formatTradeLifecycleLabel(record.lifecycleStatus)} has been waiting ${ageMinutes} minutes for the next lifecycle update.${ownerLabel}`;
   };
 
   for (const record of input.records) {

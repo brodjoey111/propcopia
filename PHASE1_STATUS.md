@@ -37,6 +37,7 @@ Branch: `feature/broker-manager`
 - Server execution-recovery active headlines now describe broker progress explicitly instead of using the generic “currently in flight” wording
 - Activity execution follow-up filter labels now use `Active waits` so the operator queue wording matches the broker-wait and fill-wait breakdown
 - Client trade-history lifecycle overview headlines now describe broker progress explicitly instead of using the generic `in flight` wording for active sent and acknowledged work
+- Server recovery and notification fallback wording now avoids the generic `in flight` phrase even for edge-case lifecycle defaults
 
 ## Current Verification Baseline
 
@@ -54,6 +55,7 @@ Branch: `feature/broker-manager`
 - Focused execution recovery wording suite: `13/13` passing on 2026-08-17 after active headline cleanup
 - Focused activity board suite: `2/2` passing on 2026-08-17 after active-wait label cleanup
 - Focused trade-history wording suite: `23/23` passing on 2026-08-17 after broker-progress headline cleanup
+- Focused recovery and notification fallback suite: `42/42` passing on 2026-08-17
 
 ## Remaining Phase 1 Work
 

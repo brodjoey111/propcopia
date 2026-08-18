@@ -184,6 +184,7 @@ test("notification trade-story helpers recognize sent lifecycle states without t
   assert.match(source, /if \(record\.lifecycleStatus === "SENT"\)/);
   assert.match(source, /waiting on acknowledgement/);
   assert.match(source, /record\.lifecycleStatus === "SENT" \|\|/);
+  assert.match(source, /waiting .* for the next lifecycle update/);
 });
 
 test("buildNotifications includes Rithmic readiness alerts when reconnect proof is still missing", async () => {

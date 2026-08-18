@@ -391,7 +391,7 @@ function buildExecutionRecoveryHeadline(input: {
       case "ACKNOWLEDGED":
         return "Waiting on fill updates";
       default:
-        return "Still in flight";
+        return "Awaiting next routing update";
     }
   }
 

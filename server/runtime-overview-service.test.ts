@@ -64,6 +64,7 @@ test("dashboard runtime overview exposes compact trade logger observability for 
   assert.match(source, /import \{ tradeLogger, type TradeLoggerStats \} from "\.\/trade-logger";/);
   assert.match(source, /tradeLogger:\s*TradeLoggerStats;/);
   assert.match(source, /tradeLogger:\s*tradeLogger\.getStats\(\),/);
+  assert.match(source, /Awaiting next routing update/);
 });
 
 test("dashboard runtime overview shares one position snapshot across account and operations summaries", () => {
