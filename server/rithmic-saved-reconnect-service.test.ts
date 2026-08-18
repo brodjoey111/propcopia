@@ -10,7 +10,10 @@ type TestSession = {
   disconnectCalls: number;
 };
 
-function createSession(authentication = { success: true, message: "Connected" }): TestSession {
+function createSession(
+  authentication = { success: true, message: "Connected" },
+  options: { disconnectError?: Error } = {},
+): TestSession {
   return {
     disconnectCalls: 0,
     async authenticate() {
@@ -18,6 +21,9 @@ function createSession(authentication = { success: true, message: "Connected" })
     },
     async disconnect() {
       this.disconnectCalls += 1;
+      if (options.disconnectError) {
+        throw options.disconnectError;
+      }
     },
   };
 }
@@ -193,4 +199,33 @@ test("successful reconnect disconnects and replaces an older cached session", as
   assert.equal(previousSession.disconnectCalls, 1);
   assert.equal(newSession.disconnectCalls, 0);
   assert.equal(sessions.get("test-user"), newSession);
+});
+
+test("successful reconnect still replaces an older cached session when stale-session cleanup fails", async () => {
+  const validationStore = new RithmicReconnectValidationStore();
+  const previousSession = createSession(undefined, {
+    disconnectError: new Error("Socket already closed"),
+  });
+  const newSession = createSession();
+  const sessions = new Map([["test-user", previousSession]]);
+
+  const result = await reconnectSavedRithmicTestAccount({
+    account: createAccount(),
+    systemName: "Rithmic Test",
+    sessions,
+    validationStore,
+    createSession: () => newSession,
+    async refreshIdentity(account) {
+      return account;
+    },
+    now: () => "2026-08-17T12:05:00.000Z",
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(previousSession.disconnectCalls, 1);
+  assert.equal(sessions.get("test-user"), newSession);
+  assert.deepEqual(validationStore.get("account-1"), {
+    validatedAt: "2026-08-17T12:05:00.000Z",
+    source: "saved_connect",
+  });
 });

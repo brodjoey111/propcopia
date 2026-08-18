@@ -43,6 +43,7 @@ Branch: `feature/broker-manager`
 - Execution follow-up review routes and dashboard recovery review actions now have direct offline source-level coverage so Phase 1 operator review endpoints stay pinned while live Rithmic validation is pending
 - Reconnect coordination now has explicit offline coverage for failed in-flight reconnects so intentional disconnects remain unblocked even when saved-session restoration rejects
 - Account recovery connect/disconnect routes now have direct offline coverage for ownership checks, reconnect handoff, runtime-cache invalidation, validation-store cleanup, and operational failure logging
+- Saved Rithmic reconnect service now has explicit offline coverage proving stale cached-session cleanup failures do not block a successful reconnect handoff or readiness validation update
 
 ## Current Verification Baseline
 
@@ -66,6 +67,7 @@ Branch: `feature/broker-manager`
 - Focused execution follow-up review route suite: `1/1` passing on 2026-08-17
 - Focused reconnect coordinator suite: `4/4` passing on 2026-08-17 after failed reconnect wait coverage was added
 - Focused account recovery route suite: `3/3` passing on 2026-08-17 after reconnect/disconnect error-path coverage was expanded
+- Focused saved reconnect service suite: `7/7` passing on 2026-08-17 after stale-session cleanup failure coverage was added
 
 ## Remaining Phase 1 Work
 
