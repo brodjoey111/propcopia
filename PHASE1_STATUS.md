@@ -8,6 +8,7 @@ Branch: `feature/broker-manager`
 - Complete copy-group workflow hardening: complete
 - Foundational observability and route-level error hardening: complete
 - Offline route and workflow coverage for the Phase 1 runtime surface: complete
+- Offline acknowledgement/fill/recovery hardening across execution, history, dashboard, notifications, and activity surfaces: complete
 - Larger focused regression suite after hardening passes: complete
 
 ## Completed Checkpoint Areas
@@ -56,6 +57,7 @@ Branch: `feature/broker-manager`
 ## Current Verification Baseline
 
 - `npm run check`: passing
+- Consolidated Phase 1 focused regression suite: `156/156` passing on 2026-08-18
 - Larger focused regression suite: `85/85` passing on 2026-08-17
 - Focused client execution-summary suite: `29/29` passing on 2026-08-17
 - Focused execution-recovery suite: `18/18` passing on 2026-08-17
@@ -89,12 +91,17 @@ Branch: `feature/broker-manager`
 
 - End-to-end saved-account reconnect validation in Rithmic Test after full server restart
 - Real Rithmic Test session validation for account discovery, connection status, and readiness flows
-- Order acknowledgement state flow wiring beyond offline route coverage
-- Fill handling state updates beyond offline route coverage
+- Real acknowledgement evidence captured from Rithmic Test sessions
+- Real fill evidence captured from Rithmic Test sessions
 - Manual validation of disconnect/reconnect behavior under live Rithmic Test sessions
+
+## Offline Phase 1 Closeout
+
+- Offline Phase 1 hardening is complete for the current codebase and test surface.
+- Remaining Phase 1 work is now live-environment validation against Rithmic Test, not additional offline workflow hardening.
 
 ## Recommended Next Phase
 
 1. Re-run the saved Rithmic reconnect path against a real Rithmic Test session after server restart.
-2. Validate order acknowledgement and fill state transitions using the existing offline execution pipeline.
-3. Move from offline route pinning into saved-account reconnect and real Rithmic Test validation so the remaining Phase 1 gaps are proven against live account/session behavior.
+2. Capture real account discovery, connection status, acknowledgement, and fill evidence from Rithmic Test.
+3. Validate disconnect/reconnect behavior under live Rithmic Test sessions and treat that as the remaining Phase 1 completion gate.
