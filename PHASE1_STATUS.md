@@ -39,6 +39,7 @@ Branch: `feature/broker-manager`
 - Client trade-history lifecycle overview headlines now describe broker progress explicitly instead of using the generic `in flight` wording for active sent and acknowledged work
 - Server recovery and notification fallback wording now avoids the generic `in flight` phrase even for edge-case lifecycle defaults
 - Server execution-recovery payloads now expose explicit `brokerWait` and `fillWait` counts so dashboard and follow-up consumers can reuse the broker-state breakdown without recomputing it
+- Dashboard recovery cards now label those counts as `Fresh broker wait` and `Fresh fill wait` so the UI matches the non-stale semantics of the payload
 
 ## Current Verification Baseline
 
@@ -58,6 +59,7 @@ Branch: `feature/broker-manager`
 - Focused trade-history wording suite: `23/23` passing on 2026-08-17 after broker-progress headline cleanup
 - Focused recovery and notification fallback suite: `42/42` passing on 2026-08-17
 - Focused recovery-count contract suite: `13/13` passing on 2026-08-17 after broker-wait/fill-wait payload counts were added
+- Focused dashboard label suite: `1/1` passing on 2026-08-17 after fresh-wait label cleanup
 
 ## Remaining Phase 1 Work
 

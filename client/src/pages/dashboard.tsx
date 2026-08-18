@@ -1288,8 +1288,8 @@ export default function Dashboard() {
                   { label: "Failed", value: executionRecovery.counts.failed },
                   { label: "Stale", value: executionRecovery.counts.stale },
                   { label: "Partial", value: executionRecovery.counts.partial },
-                  { label: "Broker wait", value: executionRecovery.counts.brokerWait },
-                  { label: "Fill wait", value: executionRecovery.counts.fillWait },
+                  { label: "Fresh broker wait", value: executionRecovery.counts.brokerWait },
+                  { label: "Fresh fill wait", value: executionRecovery.counts.fillWait },
                   { label: "Cleared", value: executionRecovery.counts.completed },
                 ].map((item) => (
                   <div key={item.label} className="rounded-2xl border border-white/8 bg-black/10 px-3 py-3">
