@@ -285,6 +285,31 @@ test("describeTradeLifecycleOverview calls out partial fills as active work", ()
   assert.equal(overview.tone, "warn");
 });
 
+test("describeTradeLifecycleOverview uses broker-progress wording for active sent and acknowledged work", () => {
+  const overview = describeTradeLifecycleOverview([
+    createRecord({
+      lifecycleStatus: "SENT",
+      filledAt: undefined,
+      sentAt: "2026-08-04T12:00:03.000Z",
+      updatedAt: "2026-08-04T12:00:03.000Z",
+    }),
+    createRecord({
+      historyId: "2",
+      lifecycleStatus: "ACKNOWLEDGED",
+      filledAt: undefined,
+      acknowledgedAt: "2026-08-04T12:00:04.000Z",
+      updatedAt: "2026-08-04T12:00:04.000Z",
+    }),
+  ]);
+
+  assert.equal(overview.headline, "2 executions awaiting broker progress");
+  assert.equal(
+    overview.detail,
+    "1 order is still waiting on broker acknowledgement and 1 broker acknowledgement received so far.",
+  );
+  assert.equal(overview.tone, "warn");
+});
+
 test("buildTradeLifecycleStageCards groups records into simple lifecycle buckets", () => {
   const cards = buildTradeLifecycleStageCards([
     createRecord({ lifecycleStatus: "INTENT_CREATED", filledAt: undefined }),

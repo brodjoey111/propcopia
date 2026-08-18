@@ -243,6 +243,18 @@ function buildBrokerPipelineDetail(input: {
   return `${parts.join(" and ")}.`;
 }
 
+function buildBrokerPipelineHeadline(input: {
+  sentCount: number;
+  acknowledgedCount: number;
+  inFlightCount: number;
+}): string {
+  if (input.sentCount > 0 || input.acknowledgedCount > 0) {
+    return `${input.inFlightCount} execution${input.inFlightCount === 1 ? "" : "s"} awaiting broker progress`;
+  }
+
+  return `${input.inFlightCount} execution${input.inFlightCount === 1 ? "" : "s"} moving through routing`;
+}
+
 function buildExecutionSummary(record: TradeHistoryApiRecord): TradeHistoryRow["executionSummary"] {
   const filledQuantity =
     typeof record.filledQuantity === "number"
@@ -623,7 +635,11 @@ export function describeTradeLifecycleOverview(
       headline:
         partialCount > 0
           ? `${partialCount} execution${partialCount === 1 ? "" : "s"} partially filled`
-          : `${inFlightCount} execution${inFlightCount === 1 ? " is" : "s are"} in flight`,
+          : buildBrokerPipelineHeadline({
+              sentCount,
+              acknowledgedCount,
+              inFlightCount,
+            }),
       detail:
         partialCount > 0
           ? `${partialCount} order${partialCount === 1 ? " still needs" : " orders still need"} remaining fills before they are complete.`
