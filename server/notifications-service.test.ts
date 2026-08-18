@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { Account } from "@shared/schema";
@@ -173,6 +174,16 @@ test("buildNotifications merges copy-group, trade, and position alerts", async (
     tradeHistoryStore.stop();
     tradeHistoryStore.clear();
   }
+});
+
+test("notification trade-story helpers recognize sent lifecycle states without treating them as failures", () => {
+  const source = readFileSync("server/notifications-service.ts", "utf8");
+
+  assert.match(source, /if \(status === "SENT"\)/);
+  assert.match(source, /storyState: "working"/);
+  assert.match(source, /if \(record\.lifecycleStatus === "SENT"\)/);
+  assert.match(source, /waiting on acknowledgement/);
+  assert.match(source, /record\.lifecycleStatus === "SENT" \|\|/);
 });
 
 test("buildNotifications includes Rithmic readiness alerts when reconnect proof is still missing", async () => {

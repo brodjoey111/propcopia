@@ -193,6 +193,13 @@ function summarizeTradeStoryState(
     };
   }
 
+  if (status === "SENT") {
+    return {
+      storyState: "working",
+      attention: "watch",
+    };
+  }
+
   return {
     storyState: "failed",
     attention: status === "RULE_SKIPPED" ? "watch" : "alert",
@@ -222,6 +229,10 @@ function summarizeTradeNotificationMessage(record: ReturnType<typeof tradeHistor
 
   if (record.lifecycleStatus === "ACKNOWLEDGED") {
     return `${record.symbol} is acknowledged and waiting on fills.${latestEvent ? ` Latest update: ${latestEvent}` : ""}`;
+  }
+
+  if (record.lifecycleStatus === "SENT") {
+    return `${record.symbol} was sent to the broker and is waiting on acknowledgement.${latestEvent ? ` Latest update: ${latestEvent}` : ""}`;
   }
 
   if (record.lifecycleStatus === "RULE_SKIPPED" || record.lifecycleStatus === "RULE_REJECTED") {
@@ -258,7 +269,10 @@ function buildTradeNotification(record: ReturnType<typeof tradeHistoryStore.get>
   const severity: NotificationSeverity =
     record.lifecycleStatus === "FILLED"
       ? "info"
-      : record.lifecycleStatus === "ACKNOWLEDGED" || record.lifecycleStatus === "PARTIALLY_FILLED" || record.lifecycleStatus === "RULE_SKIPPED"
+      : record.lifecycleStatus === "SENT" ||
+          record.lifecycleStatus === "ACKNOWLEDGED" ||
+          record.lifecycleStatus === "PARTIALLY_FILLED" ||
+          record.lifecycleStatus === "RULE_SKIPPED"
       ? "warn"
       : "error";
 
