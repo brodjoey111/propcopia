@@ -1412,6 +1412,38 @@ export default function Activity() {
     }
   };
 
+  const handleReopenExecutionFollowUpItem = async (historyId: string) => {
+    try {
+      if (!user?.id) {
+        return;
+      }
+
+      const currentReview = executionReviewsByHistoryId.get(historyId);
+      const now = new Date().toISOString();
+      await saveExecutionFollowUpReviewsMutation.mutateAsync([
+        buildExecutionFollowUpReviewPayload({
+          historyId,
+          currentReview,
+          operatorName: currentReview?.operatorName ?? user.username,
+          note: executionFollowUpNotes[historyId]?.trim() || currentReview?.note,
+          status: "pending",
+          assignmentReason: "Reopened execution follow-up item",
+          reviewedAt: now,
+        }),
+      ]);
+      toast({
+        title: "Execution Reopened",
+        description: "That execution follow-up item is back in the open recovery queue.",
+      });
+    } catch (error) {
+      toast({
+        title: "Execution Reopen Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleBulkRecheckExecutionFollowUpItems = async () => {
     const selectedItems = filteredExecutionFollowUpItems.filter((item) =>
       selectedExecutionFollowUpHistoryIds.includes(item.historyId),
@@ -1793,7 +1825,11 @@ export default function Activity() {
         onTakeOwnership={handleTakeExecutionFollowUpOwnership}
         onSaveNote={handleSaveExecutionFollowUpNote}
         onRecheck={handleExecutionFollowUpRecheck}
-        onReview={handleExecutionFollowUpReview}
+        onToggleReviewed={(historyId, reviewed) =>
+          reviewed
+            ? handleReopenExecutionFollowUpItem(historyId)
+            : handleExecutionFollowUpReview(historyId)
+        }
       />
 
       <ActivityRithmicReadinessBoard

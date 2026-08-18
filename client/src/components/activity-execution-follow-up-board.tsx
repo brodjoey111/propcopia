@@ -35,7 +35,7 @@ interface ActivityExecutionFollowUpBoardProps {
   onTakeOwnership: (historyId: string) => void;
   onSaveNote: (historyId: string) => void;
   onRecheck: (historyId: string) => void;
-  onReview: (historyId: string) => void;
+  onToggleReviewed: (historyId: string, reviewed: boolean) => void;
 }
 
 export function ActivityExecutionFollowUpBoard(
@@ -306,10 +306,10 @@ export function ActivityExecutionFollowUpBoard(
                         ? "border-white/10 bg-white/[0.03] text-zinc-200 hover:bg-white/[0.06]"
                         : "border-emerald-400/20 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"
                     }
-                    onClick={() => props.onReview(item.historyId)}
-                    disabled={props.isSaving || item.reviewStatus === "reviewed"}
+                    onClick={() => props.onToggleReviewed(item.historyId, item.reviewStatus === "reviewed")}
+                    disabled={props.isSaving}
                   >
-                    {item.reviewStatus === "reviewed" ? "Reviewed" : "Mark reviewed"}
+                    {item.reviewStatus === "reviewed" ? "Reopen" : "Mark reviewed"}
                   </Button>
                 )}
               </div>

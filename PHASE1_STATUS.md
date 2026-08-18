@@ -51,6 +51,7 @@ Branch: `feature/broker-manager`
 - Client trade-history rows now preserve the terminal fill story when partial fills happened earlier, so completed executions show both prior partial progress and the final fill in operator-facing labels
 - Reviewed execution follow-up failures now stop showing an open review action in the dashboard/runtime queue once the operator note is already captured
 - Server execution-recovery summaries now sort reviewed failures behind open stale/partial work and choose the first still-open action for the dashboard primary recovery label
+- Activity execution follow-up boards now let operators reopen a reviewed failed item directly from the row, matching the bulk controls and notifications surface
 
 ## Current Verification Baseline
 
@@ -82,6 +83,7 @@ Branch: `feature/broker-manager`
 - Focused client trade-history suite: `21/21` passing on 2026-08-17 after terminal fill label coverage was added
 - Focused runtime overview suite: `3/3` passing on 2026-08-18 after reviewed failure action-label coverage was added
 - Focused server runtime overview suite: `9/9` passing on 2026-08-18 after reviewed-item ordering and primary-action coverage was added
+- Focused activity execution follow-up suites: `2/2` passing on 2026-08-18 after single-item reopen coverage was added
 
 ## Remaining Phase 1 Work
 

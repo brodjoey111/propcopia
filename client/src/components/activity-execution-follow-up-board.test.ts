@@ -31,6 +31,8 @@ test("activity execution follow-up board keeps shared execution queue controls",
   assert.match(source, /Save note/);
   assert.match(source, /Recheck/);
   assert.match(source, /Mark reviewed/);
+  assert.match(source, /Reopen/);
+  assert.match(source, /onToggleReviewed\(item\.historyId, item\.reviewStatus === "reviewed"\)/);
   assert.match(source, /ExecutionFollowUpSignalSummary/);
   assert.match(source, /checkpoint=\{item\.checkpoint\}/);
   assert.match(source, /recoveryWindow=\{item\.recoveryWindow\}/);

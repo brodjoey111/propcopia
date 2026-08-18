@@ -152,6 +152,7 @@ test("activity page summarizes shared position sync review counts", () => {
   assert.match(source, /handleClearExecutionFollowUpSelection/);
   assert.match(source, /handleExecutionFollowUpRecheck/);
   assert.match(source, /handleExecutionFollowUpReview/);
+  assert.match(source, /handleReopenExecutionFollowUpItem/);
   assert.match(source, /handleBulkRecheckExecutionFollowUpItems/);
   assert.match(source, /handleBulkReviewExecutionFollowUpItems/);
   assert.match(source, /handleBulkTakeExecutionFollowUpOwnership/);
