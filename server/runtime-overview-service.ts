@@ -485,6 +485,22 @@ function buildExecutionRecoveryActiveSummaryDetail(
   return `${parts.join(" and ")}.`;
 }
 
+function buildExecutionRecoveryActiveSummaryHeadline(
+  records: TradeHistoryRecord[],
+  activeCount: number,
+): string {
+  const sentCount = records.filter((record) => record.lifecycleStatus === "SENT").length;
+  const acknowledgedCount = records.filter(
+    (record) => record.lifecycleStatus === "ACKNOWLEDGED",
+  ).length;
+
+  if (sentCount > 0 || acknowledgedCount > 0) {
+    return `${activeCount} execution${activeCount === 1 ? "" : "s"} awaiting broker progress`;
+  }
+
+  return `${activeCount} execution${activeCount === 1 ? "" : "s"} moving through routing`;
+}
+
 function buildExecutionRecoveryItem(
   record: TradeHistoryRecord,
   nowMs: number,
@@ -1110,7 +1126,7 @@ export function summarizeExecutionRecovery(
 
   if (counts.active > 0) {
     return {
-      headline: `${counts.active} execution${counts.active === 1 ? "" : "s"} currently in flight`,
+      headline: buildExecutionRecoveryActiveSummaryHeadline(records, counts.active),
       detail: buildExecutionRecoveryActiveSummaryDetail(records),
       tone: "ok",
       staleThresholdMinutes,

@@ -34,6 +34,7 @@ Branch: `feature/broker-manager`
 - Client notification attention helpers and types now recognize `SENT` trade alerts explicitly so broker-submission waits are labeled separately from acknowledged fill waits
 - Dashboard execution-recovery help text now explains stale executions in broker-state terms instead of using a generic in-flight description
 - Server notification trade-story helpers now recognize `SENT` as a working broker state instead of a failure fallback if that lifecycle is ever surfaced through low-noise trade stories
+- Server execution-recovery active headlines now describe broker progress explicitly instead of using the generic “currently in flight” wording
 
 ## Current Verification Baseline
 
@@ -48,6 +49,7 @@ Branch: `feature/broker-manager`
 - Focused notification label suite: `32/32` passing on 2026-08-17 after `SENT` label coverage updates
 - Focused dashboard wording suite: `1/1` passing on 2026-08-17
 - Focused notification suite: `33/33` passing on 2026-08-17 after `SENT` trade-story hardening
+- Focused execution recovery wording suite: `13/13` passing on 2026-08-17 after active headline cleanup
 
 ## Remaining Phase 1 Work
 

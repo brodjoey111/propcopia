@@ -226,7 +226,7 @@ test("summarizeExecutionRecovery calls out active broker waits and fill waits in
     },
   );
 
-  assert.equal(result.headline, "2 executions currently in flight");
+  assert.equal(result.headline, "2 executions awaiting broker progress");
   assert.equal(
     result.detail,
     "1 broker submission is still waiting on acknowledgement and 1 acknowledged order is still waiting on fills.",
