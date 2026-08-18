@@ -936,6 +936,40 @@ test('ExecutionManager', { concurrency: false }, async (t) => {
     assert.equal(harness.filledEvents.length, 1);
   });
 
+  await t.test('partial fills cannot be recorded after a full fill has already completed the intent', async () => {
+    const harness = createHarness();
+    t.after(harness.cleanup);
+
+    harness.adapter.queueAccepted({ brokerOrderId: 'broker-order-filled-then-partial' });
+    const intent = createReadyIntent(harness.tradeIntentManager, 'filled-then-partial', 2);
+    await harness.executionManager.enqueue(createContext(intent));
+    await waitForStatus(harness.executionManager, intent.intentId, 'COMPLETED');
+
+    harness.executionManager.recordFill(intent.intentId, {
+      brokerOrderId: 'broker-order-filled-then-partial',
+      fillId: 'fill-terminal-first',
+      filledQuantity: 2,
+      filledAt: '2026-08-04T12:00:05.000Z',
+    });
+
+    assert.throws(
+      () =>
+        harness.executionManager.recordPartialFill(intent.intentId, {
+          brokerOrderId: 'broker-order-filled-then-partial',
+          fillId: 'fill-terminal-late-partial',
+          filledQuantity: 1,
+          cumulativeFilledQuantity: 1,
+          remainingQuantity: 1,
+          filledAt: '2026-08-04T12:00:04.000Z',
+        }),
+      /Cannot record partial fill after full fill/,
+    );
+
+    assert.equal(harness.tradeIntentManager.getIntent(intent.intentId)?.status, 'FILLED');
+    assert.equal(harness.partialFillEvents.length, 0);
+    assert.equal(harness.filledEvents.length, 1);
+  });
+
   await t.test('final incremental fill completes prior partial progress without changing broker identity', async () => {
     const harness = createHarness();
     t.after(harness.cleanup);
