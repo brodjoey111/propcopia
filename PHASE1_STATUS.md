@@ -46,6 +46,7 @@ Branch: `feature/broker-manager`
 - Saved Rithmic reconnect service now has explicit offline coverage proving stale cached-session cleanup failures do not block a successful reconnect handoff or readiness validation update
 - Rithmic readiness list/detail/revalidate routes now have tighter offline coverage for reconnect failure responses, reconnect-validation lookups, and post-revalidate success payload construction
 - Rithmic identity refresh fallback logic now has explicit offline coverage proving reconnect discovery failures can warn and preserve the saved account state without forcing an unsafe session rewrite
+- Trade-history lifecycle storage now has explicit offline coverage proving late partial-fill events cannot reopen or mutate a terminal filled execution record
 
 ## Current Verification Baseline
 
@@ -72,6 +73,7 @@ Branch: `feature/broker-manager`
 - Focused saved reconnect service suite: `7/7` passing on 2026-08-17 after stale-session cleanup failure coverage was added
 - Focused Rithmic readiness route suite: `5/5` passing on 2026-08-17 after reconnect failure and success-payload coverage was expanded
 - Focused Rithmic session-ownership suite: `3/3` passing on 2026-08-17 after discovery-failure fallback coverage was added
+- Focused trade-history store suite: `12/12` passing on 2026-08-17 after late partial-fill terminal-state coverage was added
 
 ## Remaining Phase 1 Work
 

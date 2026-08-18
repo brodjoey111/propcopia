@@ -228,6 +228,60 @@ test('late acknowledgements do not downgrade a filled trade history record', () 
   store.clear();
 });
 
+test('late partial fills do not reopen a filled trade history record', () => {
+  const store = new TradeHistoryStore();
+  store.start();
+
+  propCopiaEventBus.publish('intent.created', {
+    intent: {
+      intentId: 'intent-filled-partial-stable',
+      masterAccountId: 'master-filled-partial-stable',
+      masterFillId: 'fill-filled-partial-stable',
+      followerAccountId: 'follower-filled-partial-stable',
+      symbol: 'ES',
+      side: 'BUY',
+      quantity: 2,
+      createdAt: '2026-08-04T12:00:00.000Z',
+      status: 'NEW',
+    },
+  });
+  propCopiaEventBus.publish('execution.filled', {
+    intentId: 'intent-filled-partial-stable',
+    followerAccountId: 'follower-filled-partial-stable',
+    brokerKey: 'rithmic:follower-filled-partial-stable',
+    brokerOrderId: 'broker-filled-partial-stable',
+    fillId: 'fill-follow-filled-partial-stable',
+    filledQuantity: 2,
+    averageFillPrice: 5400.25,
+    filledAt: '2026-08-04T12:00:05.000Z',
+  });
+  propCopiaEventBus.publish('execution.partial_fill', {
+    intentId: 'intent-filled-partial-stable',
+    followerAccountId: 'follower-filled-partial-stable',
+    brokerKey: 'rithmic:follower-filled-partial-stable',
+    brokerOrderId: 'broker-filled-partial-stable',
+    fillId: 'fill-follow-filled-partial-stable-partial',
+    filledQuantity: 1,
+    cumulativeFilledQuantity: 1,
+    remainingQuantity: 1,
+    averageFillPrice: 5400.0,
+    filledAt: '2026-08-04T12:00:04.000Z',
+  });
+
+  const record = store.get('intent-filled-partial-stable');
+  assert.ok(record);
+  assert.equal(record.lifecycleStatus, 'FILLED');
+  assert.equal(record.filledAt, '2026-08-04T12:00:05.000Z');
+  assert.equal(record.filledQuantity, 2);
+  assert.equal(record.remainingQuantity, 0);
+  assert.equal(record.partialFillCount, undefined);
+  assert.equal(record.events.length, 2);
+  assert.equal(record.events[0]?.type, 'execution.filled');
+
+  store.stop();
+  store.clear();
+});
+
 test('duplicate filled events do not append redundant terminal history entries', () => {
   const store = new TradeHistoryStore();
   store.start();
