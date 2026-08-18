@@ -42,6 +42,7 @@ Branch: `feature/broker-manager`
 - Dashboard recovery cards now label those counts as `Fresh broker wait` and `Fresh fill wait` so the UI matches the non-stale semantics of the payload
 - Execution follow-up review routes and dashboard recovery review actions now have direct offline source-level coverage so Phase 1 operator review endpoints stay pinned while live Rithmic validation is pending
 - Reconnect coordination now has explicit offline coverage for failed in-flight reconnects so intentional disconnects remain unblocked even when saved-session restoration rejects
+- Account recovery connect/disconnect routes now have direct offline coverage for ownership checks, reconnect handoff, runtime-cache invalidation, validation-store cleanup, and operational failure logging
 
 ## Current Verification Baseline
 
@@ -64,6 +65,7 @@ Branch: `feature/broker-manager`
 - Focused dashboard label suite: `1/1` passing on 2026-08-17 after fresh-wait label cleanup
 - Focused execution follow-up review route suite: `1/1` passing on 2026-08-17
 - Focused reconnect coordinator suite: `4/4` passing on 2026-08-17 after failed reconnect wait coverage was added
+- Focused account recovery route suite: `3/3` passing on 2026-08-17 after reconnect/disconnect error-path coverage was expanded
 
 ## Remaining Phase 1 Work
 
