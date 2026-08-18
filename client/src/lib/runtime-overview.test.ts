@@ -136,6 +136,10 @@ test("buildExecutionRecoveryFollowUpQueue prioritizes open failures and stale it
   );
   assert.equal(result[2]?.checkpoint.tone, "ok");
   assert.equal(result[3]?.reviewStatus, "reviewed");
+  assert.equal(
+    result[3]?.actionLabel,
+    "Review is already captured. Reopen only if the broker state changes.",
+  );
   assert.equal(result[3]?.recoveryWindow.label, "Review captured");
 });
 

@@ -377,7 +377,9 @@ export function buildExecutionRecoveryFollowUpQueue(
       detail: item.detail,
       actionLabel:
         item.category === "failed"
-          ? "Capture the operator note, then mark the failure reviewed once follow-up is complete."
+          ? item.reviewStatus === "reviewed"
+            ? "Review is already captured. Reopen only if the broker state changes."
+            : "Capture the operator note, then mark the failure reviewed once follow-up is complete."
           : item.category === "stale"
             ? "Recheck the latest broker state before the next copy decision."
             : item.category === "partial"
