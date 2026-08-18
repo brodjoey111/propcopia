@@ -208,6 +208,36 @@ test("toTradeHistoryRows builds partial-fill progress details for expanded recor
   );
 });
 
+test("toTradeHistoryRows keeps a completed execution terminal when earlier partial fills existed", () => {
+  const row = toTradeHistoryRows([
+    createRecord({
+      lifecycleStatus: "FILLED",
+      partialFillCount: 2,
+      filledQuantity: 2,
+      remainingQuantity: 0,
+      updatedAt: "2026-08-04T12:00:06.000Z",
+      filledAt: "2026-08-04T12:00:06.000Z",
+    }),
+  ])[0];
+
+  assert.equal(row.statusLabel, "Filled");
+  assert.equal(row.executionSummary.headline, "Filled");
+  assert.equal(row.executionSummary.detail, "2/2 contracts complete");
+  assert.equal(row.detail.progressLabel, "2/2 filled");
+  assert.equal(row.detail.fillCountLabel, "2 partial fills + final fill");
+  assert.deepEqual(
+    row.detail.stageFlow.map((stage) => `${stage.label}:${stage.state}`),
+    [
+      "Created:done",
+      "Queued:done",
+      "Sent:done",
+      "Acknowledged:done",
+      "Partial:done",
+      "Filled:active",
+    ],
+  );
+});
+
 test("toTradeHistoryRows uses the latest partial-fill update as its activity timestamp", () => {
   const row = toTradeHistoryRows([
     createRecord({

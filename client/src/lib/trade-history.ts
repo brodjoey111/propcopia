@@ -497,7 +497,9 @@ export function toTradeHistoryRows(records: TradeHistoryApiRecord[]): TradeHisto
           : "Pending";
     const fillCountLabel =
       typeof record.partialFillCount === "number" && record.partialFillCount > 0
-        ? `${record.partialFillCount} partial fill${record.partialFillCount === 1 ? "" : "s"}`
+        ? record.lifecycleStatus === "FILLED"
+          ? `${record.partialFillCount} partial fill${record.partialFillCount === 1 ? "" : "s"} + final fill`
+          : `${record.partialFillCount} partial fill${record.partialFillCount === 1 ? "" : "s"}`
         : record.lifecycleStatus === "FILLED"
           ? "1 final fill"
           : "No fills yet";

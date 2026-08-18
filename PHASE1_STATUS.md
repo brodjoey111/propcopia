@@ -48,6 +48,7 @@ Branch: `feature/broker-manager`
 - Rithmic identity refresh fallback logic now has explicit offline coverage proving reconnect discovery failures can warn and preserve the saved account state without forcing an unsafe session rewrite
 - Trade-history lifecycle storage now has explicit offline coverage proving late partial-fill events cannot reopen or mutate a terminal filled execution record
 - Execution-manager lifecycle handling now has explicit offline coverage proving a terminal full fill blocks any later partial-fill mutation attempt at the source execution record
+- Client trade-history rows now preserve the terminal fill story when partial fills happened earlier, so completed executions show both prior partial progress and the final fill in operator-facing labels
 
 ## Current Verification Baseline
 
@@ -76,6 +77,7 @@ Branch: `feature/broker-manager`
 - Focused Rithmic session-ownership suite: `3/3` passing on 2026-08-17 after discovery-failure fallback coverage was added
 - Focused trade-history store suite: `12/12` passing on 2026-08-17 after late partial-fill terminal-state coverage was added
 - Focused execution-manager suite: `52/52` passing on 2026-08-17 after terminal full-fill partial regression coverage was added
+- Focused client trade-history suite: `21/21` passing on 2026-08-17 after terminal fill label coverage was added
 
 ## Remaining Phase 1 Work
 
