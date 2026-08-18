@@ -23,3 +23,10 @@ test("Rithmic identity refresh closes locally-created sessions after discovery f
     /if \(!connectionTest\.success\) \{\s*if \(ownsNewSession\) \{\s*await disconnectBrokerSessionQuietly\(api\)/,
   );
 });
+
+test("Rithmic identity refresh can warn and preserve the saved account when reconnect discovery fails", () => {
+  assert.match(refreshIdentity, /if \(options\?\.allowDiscoveryFailure\) \{/);
+  assert.match(refreshIdentity, /console\.warn\(/);
+  assert.match(refreshIdentity, /\[Rithmic\] Skipping account identity refresh for/);
+  assert.match(refreshIdentity, /return account;/);
+});
