@@ -40,6 +40,7 @@ Branch: `feature/broker-manager`
 - Server recovery and notification fallback wording now avoids the generic `in flight` phrase even for edge-case lifecycle defaults
 - Server execution-recovery payloads now expose explicit `brokerWait` and `fillWait` counts so dashboard and follow-up consumers can reuse the broker-state breakdown without recomputing it
 - Dashboard recovery cards now label those counts as `Fresh broker wait` and `Fresh fill wait` so the UI matches the non-stale semantics of the payload
+- Execution follow-up review routes and dashboard recovery review actions now have direct offline source-level coverage so Phase 1 operator review endpoints stay pinned while live Rithmic validation is pending
 
 ## Current Verification Baseline
 
@@ -60,6 +61,7 @@ Branch: `feature/broker-manager`
 - Focused recovery and notification fallback suite: `42/42` passing on 2026-08-17
 - Focused recovery-count contract suite: `13/13` passing on 2026-08-17 after broker-wait/fill-wait payload counts were added
 - Focused dashboard label suite: `1/1` passing on 2026-08-17 after fresh-wait label cleanup
+- Focused execution follow-up review route suite: `1/1` passing on 2026-08-17
 
 ## Remaining Phase 1 Work
 
@@ -73,4 +75,4 @@ Branch: `feature/broker-manager`
 
 1. Re-run the saved Rithmic reconnect path against a real Rithmic Test session after server restart.
 2. Validate order acknowledgement and fill state transitions using the existing offline execution pipeline.
-3. Extend the broker-state review trail into remaining offline execution-review surfaces so live Rithmic Test validation can focus on reconnect and real acknowledgement/fill evidence.
+3. Move from offline route pinning into saved-account reconnect and real Rithmic Test validation so the remaining Phase 1 gaps are proven against live account/session behavior.
