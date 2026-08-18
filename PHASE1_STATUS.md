@@ -44,6 +44,7 @@ Branch: `feature/broker-manager`
 - Reconnect coordination now has explicit offline coverage for failed in-flight reconnects so intentional disconnects remain unblocked even when saved-session restoration rejects
 - Account recovery connect/disconnect routes now have direct offline coverage for ownership checks, reconnect handoff, runtime-cache invalidation, validation-store cleanup, and operational failure logging
 - Saved Rithmic reconnect service now has explicit offline coverage proving stale cached-session cleanup failures do not block a successful reconnect handoff or readiness validation update
+- Rithmic readiness list/detail/revalidate routes now have tighter offline coverage for reconnect failure responses, reconnect-validation lookups, and post-revalidate success payload construction
 
 ## Current Verification Baseline
 
@@ -68,6 +69,7 @@ Branch: `feature/broker-manager`
 - Focused reconnect coordinator suite: `4/4` passing on 2026-08-17 after failed reconnect wait coverage was added
 - Focused account recovery route suite: `3/3` passing on 2026-08-17 after reconnect/disconnect error-path coverage was expanded
 - Focused saved reconnect service suite: `7/7` passing on 2026-08-17 after stale-session cleanup failure coverage was added
+- Focused Rithmic readiness route suite: `5/5` passing on 2026-08-17 after reconnect failure and success-payload coverage was expanded
 
 ## Remaining Phase 1 Work
 
